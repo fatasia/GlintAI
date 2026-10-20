@@ -1,0 +1,33 @@
+{
+  "name": "glint-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Glint web player — the same component tree as studio renders, playing in any browser (desktop and mobile)",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "serve": "tsx server/index.mjs",
+    "verify": "tsx server/verify.mjs"
+  },
+  "dependencies": {
+    "@glintai/composer": "workspace:*",
+    "@glintai/knowledge": "workspace:*",
+    "@glintai/listener": "workspace:*",
+    "@glintai/llm": "workspace:*",
+    "@glintai/scenescript": "workspace:*",
+    "@glintai/video": "workspace:*",
+    "@remotion/player": "^4.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.19.0",
+    "vite": "^6.0.0"
+  }
+}

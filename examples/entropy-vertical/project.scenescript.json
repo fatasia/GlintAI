@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "entropy-vertical",
+  "title": "熵与生命 · 竖屏",
+  "language": "zh-CN",
+  "aspect": "9:16",
+  "fps": 30,
+  "knowledgeSources": [
+    { "id": "entropy-source", "kind": "markdown", "name": "../entropy-lecture/source.md" }
+  ],
+  "theme": "glint-dark",
+  "scenes": [
+    {
+      "id": "intro",
+      "kind": "title",
+      "title": "熵与生命",
+      "subtitle": "竖屏版",
+      "narration": { "text": "今天聊一个词:熵。" }
+    },
+    {
+      "id": "what-is",
+      "kind": "definition",
+      "term": "熵",
+      "definition": "描述系统混乱程度的物理量。",
+      "narration": { "text": "熵衡量混乱程度。" }
+    },
+    {
+      "id": "second-law",
+      "kind": "bullets",
+      "heading": "熵增原理",
+      "items": ["孤立系统的熵永不减少", "系统必须孤立", "允许可逆过程"],
+      "narration": { "text": "热力学第二定律说,孤立系统的熵永不减少。" }
+    },
+    {
+      "id": "life",
+      "kind": "quote",
+      "text": "生命以负熵为食。",
+      "attribution": "薛定谔",
+      "narration": { "text": "生命以负熵为食。" }
+    }
+  ]
+}

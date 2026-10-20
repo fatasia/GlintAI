@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Builds
+dist/
+build/
+*.tsbuildinfo
+quality-report.json
+
+# Render outputs and generated runtime assets (narration audio, copied figures)
+out/
+.cache/
+apps/studio/public/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Editor & OS noise
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*

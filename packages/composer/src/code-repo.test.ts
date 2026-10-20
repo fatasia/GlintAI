@@ -1,0 +1,23 @@
+import { afterEach, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { composeFromSource } from "./source";
+import { surveyCodeRepo } from "./code-repo";
+const dirs: string[] = [];
+afterEach(() => { for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true }); });
+it("includes real files, declaration line numbers and imports without executing code", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glint-code-test-")); dirs.push(dir);
+  fs.mkdirSync(path.join(dir, "src"));
+  fs.writeFileSync(path.join(dir, "src", "index.ts"), 'import { add } from "./math";\nexport function start() { return add(1, 2); }\nthrow new Error("DO NOT RUN");');
+  fs.writeFileSync(path.join(dir, "src", "math.ts"), "export const add = (a: number, b: number) => a + b;");
+  fs.writeFileSync(path.join(dir, ".env"), "SECRET");
+  const survey = surveyCodeRepo(dir);
+  expect(survey.files[0]!.symbols[0]).toEqual({ name: "start", line: 2 });
+  expect(survey.files[0]!.imports).toEqual(["./math"]);
+  expect(survey.markdown).not.toContain("SECRET");
+  const result = await composeFromSource({ code: dir }, undefined, { template: "code-walkthrough" });
+  expect(result.sourceText).toContain("return add(1, 2)");
+  expect(result.project.scenes.some((scene) => scene.kind === "code" && scene.code.includes("return add"))).toBe(true);
+  expect(() => surveyCodeRepo(dir, { maxDepth: 99 })).toThrow("maxDepth");
+});

@@ -1,0 +1,47 @@
+{
+  "name": "glint-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Glint Studio — Remotion preview and render channel driven by SceneScript",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "glint": "tsx scripts/glint.ts",
+    "studio": "remotion studio src/index.ts",
+    "render": "tsx scripts/render.ts",
+    "verify:render": "tsx scripts/verify-render.ts",
+    "verify:layout": "tsx scripts/verify-layout.ts",
+    "benchmark:encoding": "tsx scripts/benchmark-encoding.ts",
+    "verify:voice": "tsx scripts/verify-voice.ts",
+    "decoders": "tsx scripts/decoders.ts",
+    "ask": "tsx scripts/ask.ts",
+    "rehearse": "tsx scripts/rehearse.ts",
+    "reexplain": "tsx scripts/reexplain.ts",
+    "verify:batch": "tsx scripts/verify-batch.ts",
+    "verify:media": "tsx scripts/verify-media.ts",
+    "verify:edge": "tsx scripts/verify-edge.ts",
+    "verify:preview": "tsx scripts/verify-preview.ts"
+  },
+  "dependencies": {
+    "@glintai/composer": "workspace:*",
+    "@glintai/design-tokens": "workspace:*",
+    "@glintai/knowledge": "workspace:*",
+    "@glintai/listener": "workspace:*",
+    "@glintai/llm": "workspace:*",
+    "@glintai/music": "workspace:*",
+    "@glintai/scenescript": "workspace:*",
+    "@glintai/tts": "workspace:*",
+    "@glintai/video": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@remotion/bundler": "^4.0.0",
+    "@remotion/cli": "^4.0.0",
+    "@remotion/renderer": "^4.0.0",
+    "@types/react": "^19.0.0",
+    "esbuild": "0.25.12",
+    "tsx": "^4.19.0"
+  }
+}

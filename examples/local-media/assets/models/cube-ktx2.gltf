@@ -1,0 +1,190 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "Glint own checker; official Basis Universal ETC1S encoder",
+    "copyright": "Copyright 2026 Glint contributors. Apache-2.0."
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "AuthoredCube",
+      "mesh": 0,
+      "translation": [
+        10,
+        3,
+        -2
+      ]
+    }
+  ],
+  "meshes": [
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1,
+            "TEXCOORD_0": 2
+          },
+          "indices": 3,
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "pbrMetallicRoughness": {
+        "baseColorTexture": {
+          "index": 0
+        },
+        "metallicFactor": 0.1,
+        "roughnessFactor": 0.65
+      }
+    }
+  ],
+  "textures": [
+    {
+      "sampler": 0,
+      "extensions": {
+        "KHR_texture_basisu": {
+          "source": 0
+        }
+      }
+    }
+  ],
+  "images": [
+    {
+      "uri": "checker.ktx2",
+      "mimeType": "image/ktx2"
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "cube.bin",
+      "byteLength": 900
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 288
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 288,
+      "byteLength": 288
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 576,
+      "byteLength": 192
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 768,
+      "byteLength": 72
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 840,
+      "byteLength": 12
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 852,
+      "byteLength": 48
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 24,
+      "type": "VEC3",
+      "min": [
+        -1,
+        -1,
+        -1
+      ],
+      "max": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 24,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 24,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5123,
+      "count": 36,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 3,
+      "type": "SCALAR",
+      "min": [
+        0
+      ],
+      "max": [
+        2
+      ]
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC4"
+    }
+  ],
+  "animations": [
+    {
+      "name": "Turn",
+      "samplers": [
+        {
+          "input": 4,
+          "output": 5,
+          "interpolation": "LINEAR"
+        }
+      ],
+      "channels": [
+        {
+          "sampler": 0,
+          "target": {
+            "node": 0,
+            "path": "rotation"
+          }
+        }
+      ]
+    }
+  ],
+  "extras": {
+    "provenance": "Original manually authored 24-vertex cube, 2x2 checker texture and rotation clip; not a render output or third-party model."
+  },
+  "extensionsRequired": [
+    "KHR_texture_basisu"
+  ],
+  "extensionsUsed": [
+    "KHR_texture_basisu"
+  ]
+}

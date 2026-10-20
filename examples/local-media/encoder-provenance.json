@@ -1,0 +1,7 @@
+{
+  "ref": "1706f948a2f0992d7a6dc2a909f35690b508571c",
+  "jsSha256": "d225ce1e7012609bcfbe338351c8778d95eb1c19d404314d513b2b2df94a6ffb",
+  "repository": "https://github.com/BinomialLLC/basis_universal",
+  "wasmSha256": "48d4e39ccaa1e290a17d00c13b353a728227bb439108d5e6c944fe6ab80552db",
+  "note": "Official build bytes verified against the recorded Git tree blob hashes; encoder binaries are kept outside the repository"
+}

@@ -1,0 +1,45 @@
+{
+  "name": "glint",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Glint — the understanding loop for explanations: rehearse before publishing, ask while watching, measure after.",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@11.18.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "verify:render": "pnpm --filter glint-studio verify:render",
+    "verify:web": "pnpm --filter glint-web verify",
+    "verify:layout": "pnpm --filter glint-studio verify:layout",
+    "benchmark:encoding": "pnpm --filter glint-studio benchmark:encoding",
+    "verify:install": "node scripts/verify-install.mjs",
+    "install:fast": "pnpm fetch --frozen-lockfile && pnpm install --offline --frozen-lockfile",
+    "verify:voice": "pnpm --filter glint-studio verify:voice",
+    "glint": "pnpm --filter glint-studio glint",
+    "studio": "pnpm --filter glint-studio studio",
+    "demo": "pnpm --filter glint-studio glint make --source=examples/entropy-lecture/source.md",
+    "ask": "pnpm --filter glint-studio ask",
+    "rehearse": "pnpm --filter glint-studio rehearse",
+    "reexplain": "pnpm --filter glint-studio reexplain",
+    "web": "pnpm --filter glint-web dev",
+    "web:serve": "pnpm --filter glint-web build && pnpm --filter glint-web serve",
+    "verify:batch": "pnpm --filter glint-studio verify:batch",
+    "verify:media": "pnpm --filter glint-studio verify:media",
+    "verify:edge": "pnpm --filter glint-studio verify:edge",
+    "verify:preview": "pnpm --filter glint-studio verify:preview",
+    "eval:quality": "pnpm --filter glint-studio exec tsx ../../scripts/evaluate-quality.mjs",
+    "verify:budget": "node scripts/check-web-budget.mjs",
+    "verify:source": "node scripts/check-source.mjs",
+    "verify:release": "node scripts/verify-release.mjs",
+    "verify:linux": "node scripts/verify-linux.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "jsdom": "^30.1.3",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

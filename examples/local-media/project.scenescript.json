@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "id": "local-media",
+  "title": "Local glTF / GLB / image fixture",
+  "aspect": "16:9",
+  "fps": 30,
+  "knowledgeSources": [],
+  "scenes": [
+    {
+      "id": "external-gltf",
+      "kind": "three",
+      "model": "gltf",
+      "src": "assets/models/cube.gltf",
+      "caption": "Original cube · local bin + texture",
+      "narration": {
+        "text": "A local textured cube with authored rotation.",
+        "durationMs": 2000
+      }
+    },
+    {
+      "id": "binary-glb",
+      "kind": "three",
+      "model": "gltf",
+      "src": "assets/models/cube.glb",
+      "caption": "Same original cube · embedded GLB",
+      "narration": {
+        "text": "The same model in a self-contained GLB.",
+        "durationMs": 2000
+      }
+    },
+    {
+      "id": "local-image",
+      "kind": "image",
+      "src": "assets/models/textures/checker.png",
+      "caption": "Original 2×2 checker texture",
+      "narration": {
+        "text": "The original local checker texture.",
+        "durationMs": 2000
+      }
+    },
+    {
+      "id": "free-layout",
+      "kind": "html",
+      "background": "#17141f",
+      "html": "<div style=\"font-family:sans-serif;color:#f5f3f7;height:100%;box-sizing:border-box;padding:48px;display:flex;flex-direction:column;gap:24px;justify-content:center\"><div style=\"display:flex;gap:20px\"><div style=\"flex:1;background:rgba(155,139,251,.16);border-radius:18px;padding:28px\"><div style=\"font-size:40px;font-weight:700;color:#9b8bfb\">HTML</div><div style=\"font-size:22px;color:#a09aae\">静态自由布局场景</div></div><div style=\"flex:1;background:rgba(255,157,138,.14);border-radius:18px;padding:28px\"><div style=\"font-size:40px;font-weight:700;color:#ff9d8a\">CSS</div><div style=\"font-size:22px;color:#a09aae\">完全自定义画面</div></div><div style=\"flex:1;background:rgba(242,246,250,.08);border-radius:18px;padding:28px\"><div style=\"font-size:40px;font-weight:700\">sandbox</div><div style=\"font-size:22px;color:#a09aae\">脚本禁用 · 逐帧确定</div></div></div><div style=\"font-size:24px;color:#a09aae\">布局不依赖脚本或 CSS 动画，保证每一帧渲染一致。</div></div>",
+      "caption": "An escape hatch for fully custom static layouts.",
+      "narration": {
+        "text": "When built-in scenes are not enough, an HTML scene renders your own static layout inside a sandboxed frame. No scripts run, so every frame stays deterministic.",
+        "durationMs": 2000
+      }
+    },
+    {
+      "id": "gsap-motion",
+      "kind": "html",
+      "animation": "gsap",
+      "background": "#121016",
+      "html": "<div id=\"card\" style=\"font-family:sans-serif;height:100%;display:grid;place-items:center\"><div style=\"background:rgba(155,139,251,.15);border-radius:24px;padding:60px 90px;text-align:center\"><div id=\"num\" style=\"font-size:120px;font-weight:800;color:#f5f3f7\">0%</div><div style=\"font-size:26px;color:#a09aae;margin-top:12px\">GSAP · frame-seek deterministic</div></div></div><script>window.__glintTimeline = (gsap) => { const tl = gsap.timeline({paused:true}); tl.fromTo(\"#card\", {scale:.6, opacity:.2}, {scale:1, opacity:1, duration:2, ease:\"power2.out\"}, 0); tl.fromTo(\"#num\", {textContent:0}, {textContent:100, duration:2, snap:{textContent:1}, ease:\"none\"}, 0); return tl; };</script>",
+      "caption": "Same frame in, same pixels out — GSAP timelines are seek-addressed.",
+      "narration": {
+        "text": "GSAP timelines are seek-addressed by the engine.",
+        "durationMs": 2000
+      }
+    }
+  ]
+}

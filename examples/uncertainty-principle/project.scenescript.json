@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "id": "uncertainty-principle",
+  "title": "The Uncertainty Principle",
+  "language": "en-US",
+  "aspect": "16:9",
+  "fps": 30,
+  "knowledgeSources": [
+    { "id": "source", "kind": "markdown", "name": "source.md" }
+  ],
+  "theme": "glint-dark",
+  "scenes": [
+    {
+      "id": "intro",
+      "kind": "title",
+      "title": "The Uncertainty Principle",
+      "subtitle": "Why nature sets a hard limit on what we can know",
+      "narration": {
+        "text": "Heisenberg's uncertainty principle says position and momentum cannot both be known precisely. This is not bad instrumentation. It is how nature works."
+      }
+    },
+    {
+      "id": "what-it-says",
+      "kind": "definition",
+      "term": "Uncertainty principle",
+      "definition": "Measuring a particle's position more sharply always widens the spread of its momentum, and vice versa.",
+      "narration": {
+        "text": "The more precisely you measure position, the less precisely you can know momentum. The limit is intrinsic, rooted in the wave nature of matter."
+      }
+    },
+    {
+      "id": "the-limit",
+      "kind": "bullets",
+      "heading": "What the rule says",
+      "items": [
+        "Sharper position means wider momentum spread",
+        "The product has a hard floor: Planck's constant over four pi",
+        "It applies to every conjugate pair, not just this one"
+      ],
+      "narration": {
+        "text": "Measuring position more sharply widens the momentum spread. The product of the two uncertainties has a hard floor, Planck's constant over four pi. And the rule applies to every conjugate pair."
+      }
+    },
+    {
+      "id": "atom-orbit",
+      "kind": "three",
+      "model": "torus-knot",
+      "caption": "THE SCALE OF ATOMS",
+      "narration": {
+        "text": "The principle sets the scale of atoms. Electrons cannot fall into the nucleus, because that would pin down position and momentum at once. Chemistry itself follows from this rule."
+      }
+    },
+    {
+      "id": "orbit-still",
+      "kind": "image",
+      "src": "assets/geometry.webp",
+      "caption": "One frame of the orbit above — an image scene showing any static asset.",
+      "narration": {
+        "text": "Image scenes freeze a moment so you can point at it. This frame comes straight from the orbit you just saw."
+      }
+    },
+    {
+      "id": "outro",
+      "kind": "quote",
+      "text": "What we observe is not nature itself, but nature exposed to our method of questioning.",
+      "attribution": "Werner Heisenberg",
+      "narration": {
+        "text": "As Heisenberg himself put it, what we observe is not nature itself, but nature exposed to our method of questioning."
+      }
+    }
+  ]
+}

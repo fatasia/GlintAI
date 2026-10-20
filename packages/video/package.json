@@ -1,0 +1,37 @@
+{
+  "name": "@glintai/video",
+  "version": "0.1.0",
+  "description": "Glint video components — one React component tree rendered by Remotion (MP4/PNG/GIF), Remotion Studio (preview) and @remotion/player (web/mobile)",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    "./size": "./src/size.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "sideEffects": false,
+  "dependencies": {
+    "@glintai/design-tokens": "workspace:*",
+    "@glintai/scenescript": "workspace:*",
+    "@react-three/fiber": "^9.8.2",
+    "@remotion/three": "^4.0.0",
+    "gsap": "^3.15.0",
+    "lottie-web": "5.13.0",
+    "react": "^19.0.0",
+    "remotion": "^4.0.0",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^30.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.180.0",
+    "jsdom": "^30.1.3",
+    "react-dom": "^19.0.0"
+  }
+}

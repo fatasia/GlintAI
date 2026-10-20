@@ -1,0 +1,175 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "Glint original cube; Three bundled DRACO encoder",
+    "copyright": "Copyright 2026 Glint contributors. Apache-2.0."
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "AuthoredCube",
+      "mesh": 0,
+      "translation": [
+        10,
+        3,
+        -2
+      ]
+    }
+  ],
+  "meshes": [
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1,
+            "TEXCOORD_0": 2
+          },
+          "indices": 3,
+          "material": 0,
+          "extensions": {
+            "KHR_draco_mesh_compression": {
+              "bufferView": 0,
+              "attributes": {
+                "POSITION": 0,
+                "NORMAL": 1,
+                "TEXCOORD_0": 2
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "pbrMetallicRoughness": {
+        "baseColorTexture": {
+          "index": 0
+        },
+        "metallicFactor": 0.1,
+        "roughnessFactor": 0.65
+      }
+    }
+  ],
+  "textures": [
+    {
+      "source": 0
+    }
+  ],
+  "images": [
+    {
+      "uri": "textures/checker.png"
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "cube-draco.bin",
+      "byteLength": 652
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 592
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 592,
+      "byteLength": 12
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 604,
+      "byteLength": 48
+    }
+  ],
+  "accessors": [
+    {
+      "componentType": 5126,
+      "count": 24,
+      "type": "VEC3",
+      "min": [
+        -1,
+        -1,
+        -1
+      ],
+      "max": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "componentType": 5126,
+      "count": 24,
+      "type": "VEC3"
+    },
+    {
+      "componentType": 5126,
+      "count": 24,
+      "type": "VEC2"
+    },
+    {
+      "componentType": 5123,
+      "count": 36,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 3,
+      "type": "SCALAR",
+      "min": [
+        0
+      ],
+      "max": [
+        2
+      ]
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC4"
+    }
+  ],
+  "animations": [
+    {
+      "name": "Turn",
+      "samplers": [
+        {
+          "input": 4,
+          "output": 5,
+          "interpolation": "LINEAR"
+        }
+      ],
+      "channels": [
+        {
+          "sampler": 0,
+          "target": {
+            "node": 0,
+            "path": "rotation"
+          }
+        }
+      ]
+    }
+  ],
+  "extras": {
+    "provenance": "Original manually authored 24-vertex cube, 2x2 checker texture and rotation clip; not a render output or third-party model."
+  },
+  "extensionsRequired": [
+    "KHR_draco_mesh_compression"
+  ],
+  "extensionsUsed": [
+    "KHR_draco_mesh_compression"
+  ]
+}

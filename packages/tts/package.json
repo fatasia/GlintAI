@@ -1,0 +1,21 @@
+{
+  "name": "@glintai/tts",
+  "version": "0.1.0",
+  "description": "TTS provider abstraction with word-level timings — mock voice for offline rehearsal, OpenAI-compatible voice for production",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src", "adapters"
+  ],
+  "sideEffects": false,
+  "dependencies": {
+    "@glintai/scenescript": "workspace:*",
+    "msedge-tts": "^2.1.0"
+  }
+}

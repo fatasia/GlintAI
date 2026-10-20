@@ -1,0 +1,146 @@
+[
+  {
+    "id": "explainer-zh",
+    "template": "explainer",
+    "language": "zh-CN",
+    "source": "# 缓存\n\n## 定义\n缓存保存最近使用的数据。\n\n## 限制\n缓存不保证数据永远最新。"
+  },
+  {
+    "id": "explainer-en",
+    "template": "explainer",
+    "language": "en-US",
+    "source": "# Caching\n\n## Definition\nA cache stores recently used data.\n\n## Limits\nA cache does not guarantee fresh data."
+  },
+  {
+    "id": "listicle-zh",
+    "template": "listicle",
+    "language": "zh-CN",
+    "source": "# 缓存检查\n\n## 检查清单\n- 记录命中率。\n- 设置过期时间。"
+  },
+  {
+    "id": "listicle-en",
+    "template": "listicle",
+    "language": "en-US",
+    "source": "# Cache checklist\n\n## Checklist\n- Record cache hit rates.\n- Set an expiration time."
+  },
+  {
+    "id": "versus-zh",
+    "template": "versus",
+    "language": "zh-CN",
+    "source": "# 两种缓存\n\n## 内存缓存\n读取时不经过网络。\n\n## 共享缓存\n多个进程可以共享数据。"
+  },
+  {
+    "id": "versus-en",
+    "template": "versus",
+    "language": "en-US",
+    "source": "# Cache choices\n\n## Memory cache\nReads avoid the network.\n\n## Shared cache\nMultiple processes can share data."
+  },
+  {
+    "id": "paper-zh",
+    "template": "paper",
+    "language": "zh-CN",
+    "source": "# 合成研究示例\n\n## 研究背景\n比较两种查询策略。\n\n## 方法\n在同一组测试数据上运行查询。\n\n## 结果\n测试数据不足，不能推广结论。"
+  },
+  {
+    "id": "paper-en",
+    "template": "paper",
+    "language": "en-US",
+    "source": "# Synthetic study example\n\n## Background\nCompare two query strategies.\n\n## Method\nRun queries against the same test data.\n\n## Results\nThe test data is insufficient to generalize."
+  },
+  {
+    "id": "howto-zh",
+    "template": "howto",
+    "language": "zh-CN",
+    "source": "# 排查缓存\n\n## 检查日志\n先检查缓存读取日志。\n\n## 比较数据\n再比较缓存和原始数据。"
+  },
+  {
+    "id": "howto-en",
+    "template": "howto",
+    "language": "en-US",
+    "source": "# Check a cache\n\n## Inspect logs\nInspect cache read logs first.\n\n## Compare data\nThen compare cached and original data."
+  },
+  {
+    "id": "timeline-zh",
+    "template": "timeline",
+    "language": "zh-CN",
+    "source": "# 项目阶段\n\n## 阶段一\n先收集需求。\n\n## 阶段二\n再验证实现。"
+  },
+  {
+    "id": "timeline-en",
+    "template": "timeline",
+    "language": "en-US",
+    "source": "# Project stages\n\n## Stage one\nCollect requirements first.\n\n## Stage two\nThen verify the implementation."
+  },
+  {
+    "id": "faq-zh",
+    "template": "faq",
+    "language": "zh-CN",
+    "source": "# 缓存问答\n\n## 什么是缓存？\n缓存保存最近使用的数据。\n\n## 是否总是最新？\n缓存不保证数据永远最新。"
+  },
+  {
+    "id": "faq-en",
+    "template": "faq",
+    "language": "en-US",
+    "source": "# Cache questions\n\n## What is a cache?\nA cache stores recently used data.\n\n## Does it stay fresh?\nA cache does not guarantee fresh data."
+  },
+  {
+    "id": "mythfact-zh",
+    "template": "mythfact",
+    "language": "zh-CN",
+    "source": "# 缓存误区\n\n## 误区\n缓存永远最新。\n\n## 事实\n缓存可能保存旧数据。"
+  },
+  {
+    "id": "mythfact-en",
+    "template": "mythfact",
+    "language": "en-US",
+    "source": "# Cache myths\n\n## Myth\nA cache is always fresh.\n\n## Fact\nA cache can contain stale data."
+  },
+  {
+    "id": "case-study-zh",
+    "template": "case-study",
+    "language": "zh-CN",
+    "source": "# 合成案例\n\n## 背景\n系统频繁读取同一份配置。\n\n## 行动\n把配置暂存在内存中。\n\n## 结果\n减少了重复读取。"
+  },
+  {
+    "id": "case-study-en",
+    "template": "case-study",
+    "language": "en-US",
+    "source": "# Synthetic case\n\n## Context\nThe system repeatedly reads the same configuration.\n\n## Action\nTemporarily store the configuration in memory.\n\n## Result\nThis reduces repeated reads."
+  },
+  {
+    "id": "problem-solution-zh",
+    "template": "problem-solution",
+    "language": "zh-CN",
+    "source": "# 重复读取\n\n## 问题\n多次读取同一份配置。\n\n## 方案\n把配置暂存在内存中。"
+  },
+  {
+    "id": "problem-solution-en",
+    "template": "problem-solution",
+    "language": "en-US",
+    "source": "# Repeated reads\n\n## Problem\nThe same configuration is read repeatedly.\n\n## Solution\nTemporarily store the configuration in memory."
+  },
+  {
+    "id": "code-walkthrough-zh",
+    "template": "code-walkthrough",
+    "language": "zh-CN",
+    "source": "# 函数示例\n\n## 相加\n函数返回两个输入的和。\n\n```ts\nexport const add = (a: number, b: number) => a + b;\n```"
+  },
+  {
+    "id": "code-walkthrough-en",
+    "template": "code-walkthrough",
+    "language": "en-US",
+    "source": "# Function example\n\n## Add\nThe function returns the sum of two inputs.\n\n```ts\nexport const add = (a: number, b: number) => a + b;\n```"
+  },
+  {
+    "id": "recap-zh",
+    "template": "recap",
+    "language": "zh-CN",
+    "source": "# 缓存回顾\n\n## 用途\n缓存减少重复读取。\n\n## 限制\n缓存不保证数据永远最新。"
+  },
+  {
+    "id": "recap-en",
+    "template": "recap",
+    "language": "en-US",
+    "source": "# Cache recap\n\n## Purpose\nA cache reduces repeated reads.\n\n## Limits\nA cache does not guarantee fresh data."
+  }
+]

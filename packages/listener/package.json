@@ -1,0 +1,23 @@
+{
+  "name": "@glintai/listener",
+  "version": "0.1.0",
+  "description": "Virtual listener rehearsal — personas watch a SceneScript project before publishing and raise scene-mapped confusions; one-click re-explain rewrites the exact scene",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./catalog": "./src/catalog.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "sideEffects": false,
+  "dependencies": {
+    "@glintai/llm": "workspace:*",
+    "@glintai/scenescript": "workspace:*",
+    "zod": "^3.23.8"
+  }
+}

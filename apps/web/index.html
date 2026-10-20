@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b0f14" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <title>Glint — 理解闭环讲解</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      button:disabled { cursor: not-allowed !important; opacity: .48; }
+      :focus-visible { outline: 2px solid #aecef6; outline-offset: 3px; }
+      body {
+        background: #0b0f14;
+        color: #f2f6fa;
+        font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+        min-height: 100vh;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

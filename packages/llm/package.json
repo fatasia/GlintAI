@@ -1,0 +1,17 @@
+{
+  "name": "@glintai/llm",
+  "version": "0.1.0",
+  "description": "LLM provider abstraction — OpenAI-compatible client that works with GLM, Qwen, DeepSeek and friends",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "sideEffects": false
+}

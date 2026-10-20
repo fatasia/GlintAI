@@ -1,0 +1,20 @@
+{
+  "name": "@glintai/scenescript",
+  "version": "0.1.0",
+  "description": "SceneScript v1 — the scene intermediate representation at the heart of every Glint explainer",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "sideEffects": false,
+  "dependencies": {
+    "zod": "^3.23.8"
+  }
+}

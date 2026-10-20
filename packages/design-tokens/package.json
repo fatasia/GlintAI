@@ -1,0 +1,17 @@
+{
+  "name": "@glintai/design-tokens",
+  "version": "0.1.0",
+  "description": "Design token schema and themes for Glint explainers",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "sideEffects": false
+}
