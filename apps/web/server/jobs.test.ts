@@ -106,3 +106,14 @@ it("renders the edited project without composing again and validates profiles", 
   expect(validateMakeInput({ project, source: "x" }).error).toBeTruthy();
   expect(validateMakeInput({ project: { ...project, scenes: [{ id: "a", kind: "html", html: "x", narration: { text: "x" } }] } }).error).toBeTruthy();
 });
+it("stages only selected library images and rejects unknown assets", () => {
+  const { options, captures } = setup();
+  const image = path.join(options.studioDir, "fixture.png"); fs.writeFileSync(image, "image fixture");
+  const runner = createJobRunner({ ...options, musicAsset: name => name === "library.png" ? image : null });
+  cleanups.push(() => runner.dispose());
+  const project = { schemaVersion: 1, id: "images", title: "Images", aspect: "16:9", knowledgeSources: [], scenes: [{ id: "image", kind: "image", src: "assets/library.png", narration: { text: "Image explanation" } }] };
+  expect(runner.submit({ project }).jobId).toBeTruthy();
+  const file = captures[0].args.find((arg: string) => arg.startsWith("--project=")).slice(10);
+  expect(fs.readFileSync(path.join(path.dirname(file), "assets", "library.png"), "utf8")).toBe("image fixture");
+  expect(runner.submit({ project: { ...project, scenes: [{ ...project.scenes[0], src: "assets/missing.png" }] } }).error).toMatch(/not found/);
+});

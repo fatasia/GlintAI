@@ -4,7 +4,7 @@ export async function generateMiniMaxMusic(prompt: string, config: MiniMaxMusicC
   if (!prompt.trim() || prompt.length > 2000) throw new Error("Music prompt must be 1..2000 characters");
   options.signal?.throwIfAborted();
   const deadline = AbortSignal.timeout(options.timeoutMs ?? 300000), signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline;
-  const response = await fetch(`${(config.baseUrl ?? "https://api.minimax.io/v1").replace(/\/+$/, "")}/music_generation`, { method: "POST", headers: { authorization: `Bearer ${config.apiKey}`, "content-type": "application/json" }, body: JSON.stringify({ model: config.model ?? "music-3.0", prompt, is_instrumental: true, stream: false, output_format: "hex", audio_setting: { sample_rate: 44100, bitrate: 128000, format: "mp3" } }), signal });
+  const response = await fetch(`${(config.baseUrl ?? "https://api.minimax.io/v1").replace(/\/+$/, "")}/music_generation`, { method: "POST", headers: { authorization: `Bearer ${config.apiKey}`, "content-type": "application/json" }, body: JSON.stringify({ model: config.model ?? "music-3.0", prompt, is_instrumental: true, stream: false, output_format: "hex", audio_setting: { sample_rate: 44100, bitrate: 128000, format: "mp3" } }), signal, redirect: "error" });
   if (!response.ok) { await response.body?.cancel(); throw new Error(`MiniMax music returned HTTP ${response.status}`); }
   if (!response.body) throw new Error("Empty music response");
   const reader = response.body.getReader(), chunks: Uint8Array[] = []; let length = 0;

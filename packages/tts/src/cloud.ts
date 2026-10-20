@@ -25,7 +25,7 @@ async function post(url: string, headers: Record<string, string>, body: unknown,
   if (request.speakingRate !== undefined && (!Number.isFinite(request.speakingRate) || request.speakingRate < 0.7 || request.speakingRate > 1.2)) throw new Error("This voice engine supports speed 0.7..1.2");
   const deadline = AbortSignal.timeout(request.timeoutMs ?? 120000);
   const signal = request.signal ? AbortSignal.any([request.signal, deadline]) : deadline;
-  const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body), signal });
+  const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body), signal, redirect: "error" });
   if (!response.ok) { await response.body?.cancel(); throw new Error(`TTS provider returned HTTP ${response.status}`); }
   return boundedBody(response, limit);
 }

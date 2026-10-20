@@ -8,6 +8,7 @@ it("requests instrumental music without leaking the API key into payloads", asyn
   expect(result.durationMs).toBe(20000);
   const [url, request] = fetch.mock.calls[0] as unknown as [string, RequestInit];
   expect(url).toBe("https://api.minimax.io/v1/music_generation");
+  expect(request.redirect).toBe("error");
   expect(JSON.parse(request.body as string)).toMatchObject({ is_instrumental: true, output_format: "hex" });
   expect(request.body).not.toContain("private-test");
 });
