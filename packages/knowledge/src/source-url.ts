@@ -30,7 +30,7 @@ async function resolveHost(hostname: string, signal: AbortSignal) {
   }
 }
 
-export async function fetchSource(url: string, signal: AbortSignal, redirects = 0, httpsOnly = false): Promise<{ bytes: Buffer; contentType: string }> {
+export async function fetchSource(url: string, signal: AbortSignal, redirects = 0, httpsOnly = false, resolver = resolveHost): Promise<{ bytes: Buffer; contentType: string }> {
   signal.throwIfAborted();
   const parsed = new URL(url);
   if(httpsOnly && parsed.protocol !== "https:")throw new Error("HTTPS is required, including redirects");
@@ -39,7 +39,7 @@ export async function fetchSource(url: string, signal: AbortSignal, redirects = 
   const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
   const addresses = isIP(hostname)
     ? [{ address: hostname, family: isIP(hostname) }]
-    : await resolveHost(hostname, signal);
+    : await resolver(hostname, signal);
   signal.throwIfAborted();
   if (!addresses.length || addresses.some(({ address }) => !isPublicAddress(address))) throw new Error("Private, loopback or reserved source URL is not allowed");
   const pinned = addresses[0]!;
@@ -55,7 +55,7 @@ export async function fetchSource(url: string, signal: AbortSignal, redirects = 
       if ([301, 302, 303, 307, 308].includes(res.statusCode ?? 0) && res.headers.location) {
         res.destroy();
         try {
-          fetchSource(new URL(res.headers.location, parsed).href, signal, redirects + 1, httpsOnly).then(resolve, reject);
+          fetchSource(new URL(res.headers.location, parsed).href, signal, redirects + 1, httpsOnly, resolver).then(resolve, reject);
         } catch (error) { reject(error); }
         return;
       }

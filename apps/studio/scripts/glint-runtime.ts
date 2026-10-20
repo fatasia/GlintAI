@@ -4,8 +4,8 @@ import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const PATH_ARGS = new Set(["source", "code", "project", "out", "batch", "adapters", "persona-pack", "tts-model", "transcription-model", "reference-audio"]);
-const SCRIPT_NAMES = new Set(["render", "render-worker", "preview-code", "ask", "rehearse", "reexplain"]);
+const PATH_ARGS = new Set(["source", "code", "project", "out", "batch", "adapters", "persona-pack", "tts-model", "transcription-model", "reference-audio", "params"]);
+const SCRIPT_NAMES = new Set(["render", "render-worker", "preview-code", "ask", "rehearse", "reexplain", "media"]);
 
 export function resolvePaths(args: string[], callerDir: string): string[] {
   return args.map((arg) => {
@@ -20,7 +20,7 @@ export function resolvePaths(args: string[], callerDir: string): string[] {
     }
     if(name === "catalog")return `--catalog=${path.resolve(callerDir,value!)}`;
     if(name === "preview-config")return `--preview-config=${path.resolve(callerDir,value!)}`;
-    if (PATH_ARGS.has(name!) || (name === "music" && !["auto", "off"].includes(value!))) {
+    if (PATH_ARGS.has(name!) || (name === "music" && !["auto", "off", "minimax", "gateway"].includes(value!))) {
       if (!value?.trim()) throw new Error(`--${name} requires a path`);
       return `--${name}=${path.resolve(callerDir, value)}`;
     }

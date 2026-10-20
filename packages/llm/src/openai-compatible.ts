@@ -3,6 +3,11 @@ import { requestLifetime } from "./request";
 import { readSseData } from "./sse";
 
 export const DEFAULT_LLM_TIMEOUT_MS = 60_000;
+export function parseReasoningEffort(value: string | undefined): "low" | "high" | "max" | undefined {
+  if (value === undefined || value === "") return undefined;
+  if (value === "low" || value === "high" || value === "max") return value;
+  throw new Error("LLM reasoning effort must be low, high or max");
+}
 
 export interface OpenAICompatibleConfig {
   /** API root, without `/chat/completions`. Gateway compatibility must be verified. */
@@ -10,6 +15,8 @@ export interface OpenAICompatibleConfig {
   apiKey: string;
   model: string;
   timeoutMs?: number;
+  /** Optional provider-supported reasoning budget; omit for older gateways. */
+  reasoningEffort?: "low" | "high" | "max";
 }
 
 export class LlmHttpError extends Error {
@@ -24,6 +31,7 @@ export class OpenAICompatibleProvider implements LlmProvider {
   private readonly endpoint: string;
 
   constructor(private readonly config: OpenAICompatibleConfig) {
+    parseReasoningEffort(config.reasoningEffort);
     this.endpoint = `${config.baseUrl.replace(/\/+$/, "")}/chat/completions`;
     this.name = `openai-compatible:${config.model}`;
   }
@@ -36,6 +44,7 @@ export class OpenAICompatibleProvider implements LlmProvider {
         ...request.messages,
       ],
       ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+      ...(this.config.reasoningEffort ? { reasoning_effort: this.config.reasoningEffort } : {}),
     };
   }
 

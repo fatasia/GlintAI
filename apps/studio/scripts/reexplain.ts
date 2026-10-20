@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { OpenAICompatibleProvider } from "@glintai/llm";
+import { llmFromEnvironment } from "@glintai/llm";
 import { parseProject } from "@glintai/scenescript";
 import { reexplain } from "@glintai/listener";
 
@@ -25,11 +25,7 @@ async function main(): Promise<void> {
   if (!process.env.GLINT_LLM_API_KEY) {
     throw new Error("Set GLINT_LLM_API_KEY (and optionally GLINT_LLM_BASE_URL / GLINT_LLM_MODEL).");
   }
-  const llm = new OpenAICompatibleProvider({
-    baseUrl: process.env.GLINT_LLM_BASE_URL ?? "https://open.bigmodel.cn/api/paas/v4",
-    apiKey: process.env.GLINT_LLM_API_KEY,
-    model: process.env.GLINT_LLM_MODEL ?? "glm-4",
-  });
+  const llm = llmFromEnvironment();
 
   console.log(`[glint] re-explaining scene "${sceneId}"...`);
   const updated = await reexplain(project, llm, {

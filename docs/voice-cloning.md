@@ -30,22 +30,21 @@ pnpm glint make --source=source.md --tts=qwen --tts-python=C:/path/to/venv/Scrip
 
 音频按真实 WAV 时长回填，词级字幕时间仍是估计，不是语音识别对齐。当前使用固定参考声音与原始语速，不接受另一个 `voice` id 或非 1 的 speakingRate。
 
-## 本机验证
+## 自动验证
 
 ```bash
-pnpm verify:voice --python=C:/path/to/venv/Scripts/python.exe --model=D:/models/Qwen3-TTS-0.6B-Base --reference=D:/voices/reference.wav
+pnpm verify:voice --extended --python=/path/to/python --model=/path/to/model --reference=/path/to/reference.wav
+python scripts/verify-voice-asr.py --help
 ```
 
-该命令在临时目录保存真实 WAV、带配音的 MP4 和报告，再检查缓存字节一致、音频非静音及视频流。包内协议单测不加载模型。
+验证使用独立临时缓存，先生成新音频，再检查第二次缓存命中和字节一致。PCM16 波形检查包括时长、RMS、有效音频占比、峰值削波与首尾静音；不能只凭文件非空判定有声音。
 
-2026-10-20 在 Windows、RTX 4060 Laptop 8 GB、Qwen 0.6B Base 上，使用官方演示录音、不提供对应文字的 x-vector-only 模式，完成中文单句合成和 MP4 导出：WAV 3.28 秒、157484 bytes；首次加载及合成约 14.0 秒，缓存读取约 2.4 ms。MP4 为 960×540、24 fps，包含 H.264 和 AAC。音频均值音量 -26.8 dB、峰值 -9.0 dB。
+长旁白按句子拆成不超过 180 字的块，复用参考 prompt，块间加入 120ms 停顿；保留全部非空白文字，防止长段尾部丢失。过大峰值限制增益，非有限值和完全静音直接报错。
 
-这是单句通路记录；后续长文本与资源测量见下。人工声音相似度听评未执行。参考音频与生成音频都只保存在本机，不随项目分发。
+自动识别用独立的 Whisper-small、CPU int8、显式中英语言。中文只给简体提示，不给预期正文；比较前仅做 NFKC、大小写和标点归一化，不替换同音字或数字。默认阈值：中文 CER ≤10%，英文 WER ≤15%。识别误差和合成误差无法完全分开。
 
-## 长文本与资源测量
+在 Windows、RTX 4060 Laptop 8 GB、Qwen 0.6B Base 上，官方参考录音的 5 段新推理样本均通过波形与识别阈值。长中文样本约 49.32 秒，推理约 83.72 秒，PyTorch allocated 显存峰值约 2609 MiB；英文样本约 10.48 秒、推理约 17.84 秒。这里只记录固定样本，不外推其他硬件。
 
-给 `verify:voice` 加 `--extended` 会绕过样本缓存，在同一模型 worker 中生成中短句、中文段落及英文段落，并保存音频和诊断。
+同模型 speaker encoder 的 cosine 仅用于诊断，不能证明声音相似度或自然度。人工试听仍需实际听者；工作台提供本地 A/B 听评，不自动填写分数。
 
-本机三段样本为 4.24 / 28.80 / 11.04 秒，推理耗时约 6.85 / 46.72 / 17.96 秒。PyTorch allocated 显存峰值约 2200 / 2609 / 2341 MiB，reserved 最大 3018 MiB；不是进程总显存或系统总占用。
-
-同一 Qwen speaker encoder 的参考/生成 embedding cosine 为 0.9868 / 0.9865 / 0.9887。它是同模型诊断代理指标，不是独立说话人鉴定、人工相似度评分或身份验证。后续 Whisper tiny 转录的中文 CER 为 9.09% / 5.00%，英文 WER 为 0%；识别误差与合成误差不能据此分开。
+更多云端 TTS 与音色配置见 [模型与媒体服务](providers.md)。

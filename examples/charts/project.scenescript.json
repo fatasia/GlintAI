@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "editable-chart",
+  "title": "可编辑图表",
+  "language": "zh-CN",
+  "aspect": "16:9",
+  "fps": 24,
+  "theme": "cream-editorial",
+  "knowledgeSources": [],
+  "scenes": [{
+    "id": "quarterly-demo",
+    "kind": "chart",
+    "chartType": "bar",
+    "heading": "季度数据 · 虚构示例",
+    "data": [{ "label": "第一季度", "value": 40 }, { "label": "第二季度", "value": 56 }, { "label": "第三季度", "value": 73 }, { "label": "第四季度", "value": 62 }],
+    "narration": { "text": "这是一组虚构数据，用来展示可编辑的动态图表。" }
+  }]
+}

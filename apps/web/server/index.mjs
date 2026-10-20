@@ -4,12 +4,17 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { AnswerEngine, loadMarkdown, LexicalKnowledgeBase } from "@glintai/knowledge";
-import { OpenAICompatibleProvider } from "@glintai/llm";
+import { llmFromEnvironment } from "@glintai/llm";
 import { TEMPLATES, composeFromMarkdown, composeFromSource, composeWithLlm, reviewProject } from "@glintai/composer";
 import { parseProject } from "@glintai/scenescript";
 import { PERSONA_CATALOG, parsePersonaCatalog } from "@glintai/listener/catalog";
+import { configuredVoiceEngines, createConfiguredTtsProvider, synthesizeBatch } from "@glintai/tts";
 import { createJobRunner } from "./jobs.mjs";
 import { createCheckStore } from "./checks.mjs";
+import { createLlmSettings } from "./llm-settings.mjs";
+import { reexplain } from "@glintai/listener";
+import { requestAccess } from "./access.mjs";
+import { createMediaJobs } from "./media-jobs.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(__dirname, "..", "dist");
@@ -25,11 +30,7 @@ function getEngine(projectKey) {
   if (engines.has(projectKey)) return engines.get(projectKey);
   const kb = new LexicalKnowledgeBase();
   kb.addDocument(loadMarkdown(fs.readFileSync(path.join(EXAMPLES, project.dir, "source.md"), "utf8"), { docId: project.id }));
-  const llm = new OpenAICompatibleProvider({
-    baseUrl: process.env.GLINT_LLM_BASE_URL ?? "https://open.bigmodel.cn/api/paas/v4",
-    apiKey: process.env.GLINT_LLM_API_KEY,
-    model: process.env.GLINT_LLM_MODEL ?? "glm-4",
-  });
+  const llm = llmFromEnvironment();
   const engine = new AnswerEngine({ kb, llm, topK: 4 });
   engines.set(projectKey, engine);
   return engine;
@@ -75,23 +76,34 @@ async function sendEvent(res, payload, signal) {
 }
 
 const STUDIO_DIR = path.join(__dirname, "..", "..", "studio");
-const defaultMakeRunner = createJobRunner({ studioDir: STUDIO_DIR, templates: TEMPLATES });
+const defaultMediaJobs = createMediaJobs(path.join(STUDIO_DIR, "out", ".media"));
+const defaultMakeRunner = createJobRunner({ studioDir: STUDIO_DIR, templates: TEMPLATES, musicAsset: name => defaultMediaJobs.asset(name) });
 const defaultCheckStore = createCheckStore(path.join(STUDIO_DIR, "out", ".checks"));
 
 /** Injection keeps HTTP contract tests local and independent of API credentials. */
-export function createWebServer({ engineForProject = getEngine, timeoutMs = 65_000, makeRunner = defaultMakeRunner, checkStore = defaultCheckStore, personaCatalog = PERSONA_CATALOG, distDir = DIST } = {}) {
+export function createWebServer({ engineForProject = getEngine, timeoutMs = 65_000, makeRunner = defaultMakeRunner, checkStore = defaultCheckStore, personaCatalog = PERSONA_CATALOG, distDir = DIST, llmSettings = createLlmSettings(), publicHost = process.env.GLINT_PUBLIC_HOST, accessToken = process.env.GLINT_ACCESS_TOKEN, mediaJobs = defaultMediaJobs } = {}) {
+  if (publicHost && (!accessToken || accessToken.length < 24)) throw new Error("Public hosting requires a strong GLINT_ACCESS_TOKEN");
   const jobs = makeRunner;
+  let voicePreviewBusy = false;
   const personas=parsePersonaCatalog(personaCatalog);
 
   return http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
-    let localHost = false;
-    try { localHost = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(`http://${req.headers.host}`).hostname); } catch { /* Invalid host. */ }
-    if (!localHost) return sendJson(res, 403, { error: "This service accepts local hosts only" });
+    if (req.method === "GET" && url.pathname === "/healthz") return sendJson(res, 200, { status: "ok" });
+    const access = requestAccess(req, { publicHost, accessToken });
+    if (access.status !== 200) {
+      if (access.status === 401) res.setHeader("www-authenticate", 'Basic realm="Glint", charset="UTF-8"');
+      return sendJson(res, access.status, { error: access.status === 401 ? "Authentication required" : "Host not allowed" });
+    }
     if (req.method === "GET" && url.pathname === "/api/health") {
-      return sendJson(res, 200, { status: "ok", service: "glint-web", version: process.env.GLINT_VERSION ?? "0.1.0", modelConfigured: Boolean(process.env.GLINT_LLM_API_KEY), voices: ["mock", "edge", ...(process.platform === "win32" ? ["sapi"] : []), ...(process.env.GLINT_QWEN_MODEL && process.env.GLINT_QWEN_REFERENCE ? ["qwen"] : [])], uptimeSeconds: Math.round(process.uptime()) });
+      return sendJson(res, 200, { status: "ok", service: "glint-web", version: process.env.GLINT_VERSION ?? "0.1.0", modelConfigured: Boolean(process.env.GLINT_LLM_API_KEY), voices: configuredVoiceEngines(), uptimeSeconds: Math.round(process.uptime()) });
     }
     if(req.method === "GET" && url.pathname === "/api/personas")return sendJson(res,200,personas);
+    const libraryImage = url.pathname.match(/^\/assets\/([a-zA-Z0-9_-]{1,100}\.(?:png|jpg|webp))$/);
+    if (libraryImage && req.method === "GET") {
+      const file = mediaJobs.asset(libraryImage[1]);
+      if (file) { res.writeHead(200, { "content-type": MIME[path.extname(file)], "content-length": fs.statSync(file).size, "cache-control": "private, max-age=86400", "x-content-type-options": "nosniff" }); fs.createReadStream(file).pipe(res); return; }
+    }
     const personaPack=url.pathname.match(/^\/api\/personas\/([a-z0-9-]+)$/);
     if(req.method === "GET" && personaPack){
       const entry=personas.entries.find(entry=>entry.id===personaPack[1]);
@@ -103,6 +115,81 @@ export function createWebServer({ engineForProject = getEngine, timeoutMs = 65_0
       let sameOrigin = false;
       try { sameOrigin = new URL(req.headers.origin).host === req.headers.host; } catch { /* Invalid origin. */ }
       if (!sameOrigin) return sendJson(res, 403, { error: "Cross-origin mutation rejected" });
+    }
+    if (url.pathname.startsWith("/api/settings/llm")) {
+      if (req.method === "GET" && url.pathname === "/api/settings/llm") return sendJson(res, 200, llmSettings.read());
+      if (req.method !== "POST") return sendJson(res, 405, { error: "Method not allowed" });
+      const controller = new AbortController();
+      const stop = () => { if (!res.writableEnded) controller.abort(); }; res.once("close", stop);
+      try {
+        const body = JSON.parse(await readBody(req, controller.signal, 8000));
+        if (url.pathname.endsWith("/models")) return sendJson(res, 200, await llmSettings.models(body, AbortSignal.any([controller.signal, AbortSignal.timeout(20000)])));
+        if (url.pathname.endsWith("/test")) return sendJson(res, 200, await llmSettings.test(controller.signal));
+        if (url.pathname !== "/api/settings/llm") return sendJson(res, 404, { error: "Unknown settings endpoint" });
+        const result = llmSettings.save(body); engines.clear(); return sendJson(res, 200, result);
+      } catch { if (!res.destroyed) return sendJson(res, 400, { error: "Model configuration failed. Check address, key, model and protocol; enter a key again when changing services." }); }
+      finally { res.off("close", stop); }
+      return;
+    }
+    if (url.pathname.startsWith("/api/media/")) {
+      const controller = new AbortController();
+      const stop = () => { if (!res.writableEnded) controller.abort(); }; res.once("close", stop);
+      try {
+        if (req.method === "GET" && url.pathname === "/api/media/library") return sendJson(res, 200, { assets: mediaJobs.library() });
+        if (req.method === "GET" && url.pathname === "/api/media/models") {
+          const type = url.searchParams.get("type"); if (!["audio", "image", "video"].includes(type)) return sendJson(res, 400, { error: "Unknown media type" });
+          return sendJson(res, 200, { configured: mediaJobs.configured(), models: mediaJobs.configured() ? await mediaJobs.models(type) : [] });
+        }
+        if (req.method === "POST" && url.pathname === "/api/media/submit") return sendJson(res, 202, await mediaJobs.submit(JSON.parse(await readBody(req, controller.signal, 2 * 1024 * 1024)), controller.signal));
+        const request = url.pathname.match(/^\/api\/media\/request\/([a-zA-Z0-9_-]{1,100})$/);
+        if (request && req.method === "GET") {
+          const record = mediaJobs.findRequest(request[1]);
+          return sendJson(res, record ? 200 : 404, record ?? { error: "Submission receipt is unconfirmed; inspect the gateway before submitting again" });
+        }
+        const status = url.pathname.match(/^\/api\/media\/status\/([a-zA-Z0-9_-]{1,100})$/);
+        if (status && req.method === "GET") return sendJson(res, 200, await mediaJobs.status(status[1], controller.signal));
+        const asset = url.pathname.match(/^\/api\/media\/assets\/([^/]+)$/);
+        if (asset && req.method === "GET") {
+          const file = mediaJobs.asset(asset[1]); if (!file) return sendJson(res, 404, { error: "Asset not found" });
+          const type = { ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".mp4": "video/mp4", ".mp3": "audio/mpeg", ".wav": "audio/wav" }[path.extname(file)];
+          res.writeHead(200, { "content-type": type, "content-length": fs.statSync(file).size, "cache-control": "private, max-age=86400", "x-content-type-options": "nosniff" }); fs.createReadStream(file).pipe(res); return;
+        }
+        return sendJson(res, 404, { error: "Unknown media endpoint" });
+      } catch { if (!res.destroyed) sendJson(res, 400, { error: "Media request failed. Check gateway configuration and model parameters; do not resubmit an uncertain task." }); }
+      finally { res.off("close", stop); }
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/edit-scene") {
+      const controller = new AbortController();
+      const stop = () => { if (!res.writableEnded) controller.abort(); }; res.once("close", stop);
+      try {
+        const body = JSON.parse(await readBody(req, controller.signal, 300000)), project = parseProject(body.project);
+        if (project.scenes.length > 30 || typeof body.instruction !== "string" || !body.instruction.trim() || body.instruction.length > 2000 || typeof body.sceneId !== "string") return sendJson(res, 400, { error: "Choose one scene and enter 1..2000 characters" });
+        if (!process.env.GLINT_LLM_API_KEY) return sendJson(res, 503, { error: "Configure a text model first" });
+        const edited = await reexplain(project, llmFromEnvironment(), { sceneId: body.sceneId, confusion: body.instruction, signal: controller.signal, timeoutMs: 60000 });
+        return sendJson(res, 200, { project: edited });
+      } catch { if (!res.destroyed) return sendJson(res, 400, { error: "Scene edit failed; the original project is unchanged" }); }
+      finally { res.off("close", stop); }
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/voice-preview") {
+      if (voicePreviewBusy) return sendJson(res, 429, { error: "Voice preview is busy" });
+      voicePreviewBusy = true;
+      const controller = new AbortController();
+      const stop = () => { if (!res.writableEnded) controller.abort(); };
+      res.once("close", stop);
+      let provider;
+      try {
+        const input = JSON.parse(await readBody(req, controller.signal, 4000));
+        if (typeof input.text !== "string" || !input.text.trim() || input.text.length > 300 || (input.voice !== undefined && (typeof input.voice !== "string" || input.voice.length > 128)) || (input.speakingRate !== undefined && (!Number.isFinite(input.speakingRate) || input.speakingRate < 0.5 || input.speakingRate > 2))) return sendJson(res, 400, { error: "Preview requires 1..300 characters, valid voice and speed" });
+        if (!configuredVoiceEngines().includes(input.engine) || input.engine === "mock") return sendJson(res, 400, { error: "Select a configured speech engine" });
+        provider = createConfiguredTtsProvider(input.engine);
+        const [audio] = await synthesizeBatch(provider, [{ text: input.text, voice: input.voice || undefined, speakingRate: input.speakingRate, signal: controller.signal }], { cacheDir: path.join(STUDIO_DIR, ".cache", "tts"), concurrency: 1, signal: controller.signal });
+        if (!res.destroyed) { res.writeHead(200, { "content-type": audio.mimeType, "cache-control": "no-store", "content-length": audio.audio.length, "x-content-type-options": "nosniff" }); res.end(audio.audio); }
+      } catch {
+        if (!res.destroyed) sendJson(res, 502, { error: "Voice preview failed; check server voice configuration and provider availability" });
+      } finally { provider?.dispose?.(); voicePreviewBusy = false; res.off("close", stop); }
+      return;
     }
     if (["/api/compose", "/api/review"].includes(url.pathname) && req.method === "POST") {
       const controller = new AbortController();
@@ -122,7 +209,7 @@ export function createWebServer({ engineForProject = getEngine, timeoutMs = 65_0
         let project, basis = source;
         if (idea || body.engine === "llm") {
           if (!process.env.GLINT_LLM_API_KEY) return sendJson(res, 503, { error: "Configure GLINT_LLM_API_KEY to use model composition" });
-          const llm = new OpenAICompatibleProvider({ baseUrl: process.env.GLINT_LLM_BASE_URL ?? "https://open.bigmodel.cn/api/paas/v4", apiKey: process.env.GLINT_LLM_API_KEY, model: process.env.GLINT_LLM_MODEL ?? "glm-4" });
+          const llm = llmFromEnvironment();
           if (idea) {
             const composed = await composeFromSource({ idea }, llm, options, { signal: controller.signal });
             project = composed.project; basis = composed.sourceText;
@@ -271,5 +358,7 @@ export function createWebServer({ engineForProject = getEngine, timeoutMs = 65_0
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT ?? 4175);
-  createWebServer().listen(port, "127.0.0.1", () => console.log(`[glint-web] serving ${DIST} on http://localhost:${port}`));
+  const host = process.env.GLINT_HOST ?? "127.0.0.1";
+  if (host !== "127.0.0.1" && !process.env.GLINT_PUBLIC_HOST) throw new Error("Network binding requires GLINT_PUBLIC_HOST and GLINT_ACCESS_TOKEN");
+  createWebServer().listen(port, host, () => console.log(`[glint-web] serving ${DIST} on ${host}:${port}`));
 }

@@ -53,6 +53,15 @@ describe("rehearse", () => {
 });
 
 describe("reexplain", () => {
+  it("invalidates old audio and timings while preserving voice and other scenes", async () => {
+    const project = tinyProject();
+    project.scenes[1]!.narration = { text: "Old", voice: "voice-a", speakingRate: 1.1, audioRef: "old.wav", durationMs: 1000, segments: [{ text: "Old", startMs: 0, endMs: 1000 }] };
+    const llm = new MockLlmProvider(() => JSON.stringify({ ...project.scenes[1], narration: { ...project.scenes[1]!.narration, text: "New" } }));
+    const updated = await reexplain(project, llm, { sceneId: "define" });
+    expect(updated.scenes[0]).toBe(project.scenes[0]);
+    expect(updated.scenes[1]!.narration).toEqual({ text: "New", voice: "voice-a", speakingRate: 1.1 });
+    expect(project.scenes[1]!.narration.audioRef).toBe("old.wav");
+  });
   it("rewrites exactly one scene, keeping id and kind", async () => {
     const rewritten = {
       id: "define",

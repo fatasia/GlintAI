@@ -81,13 +81,13 @@ pnpm glint render --project=examples/entropy-lecture/project.scenescript.json --
 pnpm glint make --source=examples/entropy-lecture/source.md --engine=heuristic --tts=mock --music=off --format=png --encoding=quality --out=out/lecture.png
 ```
 
-本轮根 `make` 的中文空格绝对输入/输出路径与 PNG 有真实执行证据，不由此推广所有格式与系统均通过。
+`make` 支持包含中文和空格的绝对路径；请按目标系统验证具体格式。
 
 `--tts=mock` 是静音测试，不是配音成片。可按已确认合同选择 `--music=auto`；它不代表用户素材已获许可，也不保证所有环境都可用。编码可选 `--encoding=compact|balanced|quality`，默认 balanced；参数名字不构成观感或体积保证。只写本次真实执行过的输出文件、尺寸、时长与失败原因，不承诺所有格式都已验证。
 
 先静音短样/目标片段校验，用户需要语音再按本地已配置 TTS 路径运行；远程 TTS 的可用性、服务条款和商业用途许可需单独确认。不要自动请求付费模型、启用收费服务或全局安装依赖。
 
-需要浏览器审阅时，真实打开并检查首中尾场景、长文本、切换项目和错误态。没有跑过浏览器或跨端设备时明确“未过视觉闭环/未做跨端验收”，不使用“最高审美”“所有平台实测”“全部超越竞品”等绝对断言。
+需要浏览器审阅时，真实打开并检查首中尾场景、长文本、切换项目和错误态。没有跑过浏览器或跨端设备时明确“未做视觉检查/未做跨端验收”，不使用“最高审美”“所有平台实测”“全部超越竞品”等绝对断言。
 
 ## 三种回归场景
 

@@ -24,6 +24,7 @@ jobs:
       - run: pnpm verify:source
       - run: pnpm typecheck
       - run: pnpm test
+      - run: python3 scripts/test-qwen-text.py
       - run: pnpm eval:quality
       - run: pnpm --filter glint-web build
       - run: pnpm verify:budget

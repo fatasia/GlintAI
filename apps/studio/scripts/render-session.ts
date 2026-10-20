@@ -39,7 +39,7 @@ export class RenderSession {
       copy(source, destination);
     }
     if (!this.browser) {
-      this.browser = await openBrowser("chrome");
+      this.browser = await openBrowser("chrome", { ...(process.env.GLINT_CHROME_EXECUTABLE ? { browserExecutable: process.env.GLINT_CHROME_EXECUTABLE } : {}) });
       this.stats.browsers++;
     }
     this.stats.jobs++;

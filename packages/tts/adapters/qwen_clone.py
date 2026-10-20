@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import os
+import re
 from pathlib import Path
 import sys
 import time
@@ -21,6 +22,24 @@ def emit(value):
     sys.stdout.write(json.dumps(value) + "\n")
     sys.stdout.flush()
 
+def split_text(text, limit=180):
+    """Bound each inference to a short phrase; preserve every non-whitespace character."""
+    chunks, current = [], ""
+    for phrase in re.findall(r"[^。！？.!?；;\n]+[。！？.!?；;\n]*|[。！？.!?；;\n]+", text):
+        while phrase:
+            room = limit - len(current)
+            if len(phrase) <= room:
+                current += phrase
+                break
+            if current:
+                chunks.append(current.strip()); current = ""
+                continue
+            cut = max(phrase.rfind(mark, 0, limit + 1) for mark in [" ", "，", ",", "、"])
+            cut = cut + 1 if cut >= limit // 2 else limit
+            chunks.append(phrase[:cut].strip()); phrase = phrase[cut:]
+    if current.strip(): chunks.append(current.strip())
+    return [chunk for chunk in chunks if chunk]
+
 def main():
     config = json.loads(sys.stdin.readline())
     model_dir = Path(config["modelDir"])
@@ -30,6 +49,7 @@ def main():
     with contextlib.redirect_stdout(sys.stderr):
         import torch
         import soundfile as sf
+        import numpy as np
         from qwen_tts import Qwen3TTSModel
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         model = Qwen3TTSModel.from_pretrained(
@@ -53,21 +73,31 @@ def main():
                 torch.cuda.synchronize()
                 torch.cuda.reset_peak_memory_stats()
             started = time.perf_counter()
-            wavs, sr = model.generate_voice_clone(
-                text=text, language=request.get("language", "Auto"),
-                voice_clone_prompt=prompt, max_new_tokens=2048,
-            )
+            parts = []
+            chunks = split_text(text)
+            for chunk in chunks:
+                wavs, sr = model.generate_voice_clone(
+                    text=chunk, language=request.get("language", "Auto"),
+                    voice_clone_prompt=prompt, max_new_tokens=2048,
+                )
+                if parts: parts.append(np.zeros(round(sr * 0.12), dtype=np.float32))
+                parts.append(wavs[0])
+            waveform = np.concatenate(parts)
+            if not np.isfinite(waveform).all() or not waveform.size or np.max(np.abs(waveform)) < 1e-5:
+                raise ValueError("Invalid or silent generated waveform")
+            peak = float(np.max(np.abs(waveform)))
+            if peak > 0.98: waveform = waveform * (0.98 / peak)
             if device.startswith("cuda"):
                 torch.cuda.synchronize()
             diagnostics = {"inferenceMs": (time.perf_counter()-started)*1000,
                 "peakAllocatedMiB": torch.cuda.max_memory_allocated()/1048576 if device.startswith("cuda") else 0,
                 "peakReservedMiB": torch.cuda.max_memory_reserved()/1048576 if device.startswith("cuda") else 0}
             if config.get("measureQuality"):
-                generated_prompt = model.create_voice_clone_prompt(ref_audio=(wavs[0],sr), x_vector_only_mode=True)
+                generated_prompt = model.create_voice_clone_prompt(ref_audio=(waveform,sr), x_vector_only_mode=True)
                 score = torch.nn.functional.cosine_similarity(prompt[0].ref_spk_embedding.reshape(1,-1).float(), generated_prompt[0].ref_spk_embedding.reshape(1,-1).float()).item()
                 diagnostics["speakerEmbeddingCosine"] = score
             buffer = io.BytesIO()
-            sf.write(buffer, wavs[0], sr, format="WAV", subtype="PCM_16")
+            sf.write(buffer, waveform, sr, format="WAV", subtype="PCM_16")
         audio = buffer.getvalue()
         if len(audio) > 32 * 1024 * 1024:
             raise ValueError("Audio output too large")

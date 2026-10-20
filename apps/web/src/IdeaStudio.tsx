@@ -30,7 +30,19 @@ export function IdeaStudio({ cardStyle }: { cardStyle: CSSProperties }) {
   const [composing, setComposing] = useState(false);
   const [engine, setEngine] = useState("heuristic");
   const [tts, setTts] = useState("mock");
+  const [voiceEngines, setVoiceEngines] = useState<string[]>(["mock"]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/health", { signal: controller.signal }).then(response => response.json()).then(value => { if (Array.isArray(value.voices)) setVoiceEngines(value.voices); }).catch(() => {});
+    return () => controller.abort();
+  }, []);
   const [encoding, setEncoding] = useState("draft");
+  const [music, setMusic] = useState("off");
+  const [musicAssets, setMusicAssets] = useState<{ name: string }[]>([]);
+  const refreshMusic = async () => {
+    try { const response = await fetch("/api/media/library"); const data = await response.json(); if (response.ok && Array.isArray(data.assets)) setMusicAssets(data.assets.filter((asset: { name: string }) => /\.(mp3|wav)$/.test(asset.name))); } catch { /* Optional media library. */ }
+  };
+  useEffect(() => { void refreshMusic(); }, []);
   const [storageStatus, setStorageStatus] = useState("");
   const [restored, setRestored] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -135,7 +147,7 @@ export function IdeaStudio({ cardStyle }: { cardStyle: CSSProperties }) {
     if (lock.current || busy || (!text.trim() && !project)) return;
     lock.current = true; setSubmitting(true); setError("");
     const controller = new AbortController(); active.current = controller;
-    const payload = { ...(project ? { project: { ...project, aspect, theme } } : { [mode]: text }), template, theme, aspect, tts, encoding };
+    const payload = { ...(project ? { project: { ...project, aspect, theme } } : { [mode]: text }), template, theme, aspect, tts, encoding, music };
     const signature = JSON.stringify(payload);
     if (submission.current?.signature !== signature) submission.current = { signature, requestId: crypto.randomUUID() };
     try { localStorage.setItem(`${key}:request`,submission.current.requestId); } catch {}
@@ -199,7 +211,7 @@ export function IdeaStudio({ cardStyle }: { cardStyle: CSSProperties }) {
     </fieldset>
     <fieldset disabled={busy || composing || submitting} style={{ minWidth: 0, border: 0, padding: 0, margin: 0, display: "grid", gap: 14 }}>
       <button type="button" disabled={!text.trim() || composing || busy} onClick={() => void compose()} style={button}>{composing ? "正在编排…" : project ? "重新编排（替换当前分镜）" : "编排分镜"}</button>
-      {editorProject && <SceneEditor key={`${editorProject.id}-${editorVersion}`} project={editorProject} onChange={value => { setProject(value); setReview(null); }} />}
+      {editorProject && <SceneEditor key={`${editorProject.id}-${editorVersion}`} project={editorProject} voiceEngine={tts} onChange={value => { setProject(value); setReview(null); }} />}
       {project && <button type="button" style={button} disabled={!evidence} onClick={() => void recheck()}>重新核对旁白依据</button>}
       {review && <details><summary>旁白依据 · {review.flagged}/{review.sentences.length} 句需核对</summary><p style={{ color: "#a7b4c4", fontSize: 13 }}>{review.basis}</p>{review.sentences.filter((sentence) => sentence.flags.length).map((sentence, i) => <div key={i} style={{ padding: 10, borderBottom: "1px solid #304053" }}><strong>{sentence.sceneId}</strong><p>{sentence.text}</p><small>{sentence.flags.join(" / ")}</small>{sentence.candidates[0] && <blockquote>资料候选：{sentence.candidates[0].text}</blockquote>}</div>)}</details>}
     </fieldset>
@@ -207,7 +219,8 @@ export function IdeaStudio({ cardStyle }: { cardStyle: CSSProperties }) {
       <strong>03 · 制作与下载</strong>
       <p style={{ color: "#a7b4c4", fontSize: 13, margin: 0 }}>分镜优先于输入资料；改写资料或模板后请重新编排。Edge 配音联网，系统音色仅支持 Windows，本地克隆使用服务端参考音频。</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,210px),1fr))", gap: 12 }}>
-        <label>配音<select aria-label="配音" style={field} value={tts} onChange={event => setTts(event.target.value)} disabled={busy || submitting}><option value="mock">无声草稿 · 最快</option><option value="sapi">Windows 系统配音 · 离线</option><option value="edge">Edge 配音 · 联网</option><option value="qwen">Qwen 克隆 · 需配置参考录音</option></select></label>
+        <label>配音<select aria-label="配音" style={field} value={tts} onChange={event => setTts(event.target.value)} disabled={busy || submitting}>{Object.entries({ mock: "无声草稿 · 最快", sapi: "Windows 系统配音 · 离线", edge: "Edge 配音 · 联网", qwen: "Qwen 本地克隆", openai: "OpenAI 兼容配音", elevenlabs: "ElevenLabs · 音色与精准字幕", fish: "Fish Audio · 多语言配音", minimax: "MiniMax · 高品质配音", gateway: "媒体网关 · 云端配音" }).map(([id, label]) => <option key={id} value={id} disabled={!voiceEngines.includes(id)}>{label}{voiceEngines.includes(id) ? "" : " · 未配置"}</option>)}</select></label>
+        <label>背景配乐<select aria-label="背景配乐" style={field} value={music} onFocus={() => void refreshMusic()} onChange={event => setMusic(event.target.value)} disabled={busy || submitting}><option value="off">无配乐</option><option value="auto">本地氛围音 · 不联网</option>{musicAssets.map(asset => <option key={asset.name} value={asset.name}>{asset.name}</option>)}</select><small>在素材工坊生成 Suno / MiniMax 音乐后，回到这里选择；复用素材不会重新生成。</small></label>
         <label>导出规格<select aria-label="导出规格" style={field} value={encoding} onChange={event => setEncoding(event.target.value)} disabled={busy || submitting}><option value="draft">预览 · 半尺寸 / 快速</option><option value="compact">紧凑 · 全尺寸 / CRF24</option><option value="balanced">均衡 · 全尺寸 / CRF20</option><option value="quality">母版 · 全尺寸 / CRF16</option></select></label>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>

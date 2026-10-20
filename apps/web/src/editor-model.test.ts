@@ -15,9 +15,13 @@ it("moves scenes immutably and ignores out-of-range movement", () => {
   expect(original.scenes[0]?.id).toBe("a");
   expect(moveScene(original, 0, -1)).toEqual(original);
 });
+it("preserves the selected speaker and speed when editing narration", () => {
+  const original = project(); original.scenes[0]!.narration.voice = "speaker-a"; original.scenes[0]!.narration.speakingRate = 1.1;
+  expect(changeNarration(original, 0, "New words").scenes[0]!.narration).toEqual({ text: "New words", voice: "speaker-a", speakingRate: 1.1 });
+});
 it("rejects imported script or external media projects", () => {
   const original = project();
-  expect(() => parseEditorProject({ ...original, scenes: [{ id: "x", kind: "html", html: "<script>bad()</script>", narration: { text: "x" } }] })).toThrow(/文字场景/);
+  expect(() => parseEditorProject({ ...original, scenes: [{ id: "x", kind: "html", html: "<script>bad()</script>", narration: { text: "x" } }] })).toThrow(/素材库/);
   expect(() => parseEditorProject({ ...original, scenes: Array.from({ length: 31 }, (_, index) => ({ ...original.scenes[0], id: `s-${index}` })) })).toThrow(/30/);
 });
 it("rejects whitespace-only narration instead of crashing the timeline", () => {

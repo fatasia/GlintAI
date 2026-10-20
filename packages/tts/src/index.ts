@@ -10,6 +10,10 @@ export { parseMp3DurationMs, detectEdgeVoice, EdgeTtsProvider, type EdgeTtsConfi
 export { SapiTtsProvider, type SapiTtsConfig } from "./sapi";
 export { synthesizeBatch } from "./batch";
 export { QwenLocalTtsProvider, type QwenLocalTtsConfig } from "./qwen";
+export { analyzePcm16Wav } from "./audio-quality";
+export { ElevenLabsTtsProvider, FishTtsProvider, MiniMaxTtsProvider, type ElevenLabsTtsConfig, type FishTtsConfig, type MiniMaxTtsConfig } from "./cloud";
+export { configuredVoiceEngines, createConfiguredTtsProvider } from "./configured";
+export { GatewayTtsProvider, type GatewayTtsConfig } from "./gateway";
 
 export const DEFAULT_TTS_TIMEOUT_MS = 120_000;
 

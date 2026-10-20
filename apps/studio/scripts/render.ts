@@ -7,7 +7,7 @@ import {
   composeWithLlm,
 } from "@glintai/composer";
 import { readSourceText } from "@glintai/knowledge";
-import { OpenAICompatibleProvider } from "@glintai/llm";
+import { llmFromEnvironment } from "@glintai/llm";
 import {
   parseProject,
   buildTimeline,
@@ -22,9 +22,10 @@ import {
   SapiTtsProvider,
   synthesizeBatch,
   QwenLocalTtsProvider,
+  createConfiguredTtsProvider,
   type TtsProvider,
 } from "@glintai/tts";
-import { generateAmbientMusic } from "@glintai/music";
+import { generateAmbientMusic, generateMiniMaxMusic, generateGatewayMusic } from "@glintai/music";
 import { copyRuntimeDecoders, ensureDecoders } from "./decoders";
 import { pathToFileURL } from "node:url";
 import { RenderSession } from "./render-session";
@@ -36,7 +37,7 @@ const DEFAULT_SOURCE = "../../examples/entropy-lecture/source.md";
 const COMPOSITION_ID = "Glint";
 
 type OutputFormat = "mp4" | "png" | "gif";
-type TtsEngine = "auto" | "edge" | "sapi" | "mock" | "qwen";
+type TtsEngine = "auto" | "edge" | "sapi" | "mock" | "qwen" | "openai" | "elevenlabs" | "fish" | "minimax" | "gateway";
 
 interface RenderArgs {
   projectPath?: string;
@@ -70,6 +71,7 @@ function parseArgs(argv: string[]): RenderArgs {
     frame: 0,
     outPath: "",
     tts: "auto",
+    ...(process.env.GLINT_RENDER_CONCURRENCY ? { concurrency: Number(process.env.GLINT_RENDER_CONCURRENCY) } : {}),
   };
   for (const arg of argv) {
     const read = (name: string) => {
@@ -102,7 +104,7 @@ function parseArgs(argv: string[]): RenderArgs {
   }
   encodingOptions(args.encoding);
   if (!["mp4", "png", "gif"].includes(args.format)) throw new Error("format must be mp4, png or gif");
-  if (!["auto", "edge", "sapi", "mock", "qwen"].includes(args.tts)) throw new Error("tts must be auto, edge, sapi, mock or qwen");
+  if (!["auto", "edge", "sapi", "mock", "qwen", "openai", "elevenlabs", "fish", "minimax", "gateway"].includes(args.tts)) throw new Error("Unknown TTS engine");
   if (args.tts === "qwen" && (!args.ttsModel || !args.referenceAudio)) throw new Error("qwen requires --tts-model=<local directory> and --reference-audio=<local audio>");
   if (!["heuristic", "llm"].includes(args.engine)) throw new Error("Invalid engine");
   if (args.ttsConcurrency !== undefined && (!Number.isInteger(args.ttsConcurrency) || args.ttsConcurrency < 1 || args.ttsConcurrency > 8)) throw new Error("tts-concurrency must be 1..8");
@@ -138,11 +140,7 @@ async function composeProject(args: RenderArgs, sourcePath: string): Promise<Sce
     sourceName: path.basename(sourcePath),
   };
   if (args.engine === "llm") {
-    const llm = new OpenAICompatibleProvider({
-      baseUrl: requireEnv("GLINT_LLM_BASE_URL"),
-      apiKey: requireEnv("GLINT_LLM_API_KEY"),
-      model: process.env.GLINT_LLM_MODEL ?? "glm-4",
-    });
+    const llm = llmFromEnvironment();
     console.log(`[glint] composing with ${llm.name}...`);
     return composeWithLlm(source, llm, options);
   }
@@ -190,6 +188,7 @@ async function buildTtsProvider(args: RenderArgs): Promise<TtsProvider> {
     if (engine === "edge") return new EdgeTtsProvider();
     if (engine === "sapi") return new SapiTtsProvider();
     if (engine === "qwen") return new QwenLocalTtsProvider({ python: args.ttsPython ?? "python", modelDir: path.resolve(args.ttsModel!), referenceAudio: path.resolve(args.referenceAudio!), referenceText: args.referenceText });
+    if (["openai", "elevenlabs", "fish", "minimax", "gateway"].includes(engine)) return createConfiguredTtsProvider(engine);
     return new MockTtsProvider();
   };
   if (args.tts !== "auto") {
@@ -278,6 +277,16 @@ export async function renderOnce(argv: string[], session: RenderSession): Promis
       fs.writeFileSync(path.resolve(publicDir, musicPath), bgm.audio);
       prepared.music = { src: musicPath, volume: 0.12 };
       console.log("[glint] background music: synthesized ambient pad (volume 12%)");
+    } else if (musicArg === "gateway") {
+      if (!process.env.GLINT_MEDIA_API_KEY || !process.env.GLINT_MEDIA_BASE_URL || !process.env.GLINT_MUSIC_PROMPT || !process.env.GLINT_MEDIA_MUSIC_MODEL) throw new Error("Configure media gateway, music model and prompt");
+      const bgm = await generateGatewayMusic({ baseUrl: process.env.GLINT_MEDIA_BASE_URL, apiKey: process.env.GLINT_MEDIA_API_KEY, model: process.env.GLINT_MEDIA_MUSIC_MODEL, prompt: process.env.GLINT_MUSIC_PROMPT, params: process.env.GLINT_MEDIA_MUSIC_PARAMS ? JSON.parse(process.env.GLINT_MEDIA_MUSIC_PARAMS) : {}, publicDns: process.env.GLINT_MEDIA_PUBLIC_DNS === "1" });
+      fs.writeFileSync(path.join(audioDir, `bgm.${bgm.extension}`), bgm.audio);
+      prepared.music = { src: `${path.relative(publicDir, audioDir).split(path.sep).join("/")}/bgm.${bgm.extension}`, volume: 0.12 };
+    } else if (musicArg === "minimax") {
+      if (!process.env.GLINT_MINIMAX_API_KEY || !process.env.GLINT_MUSIC_PROMPT) throw new Error("MiniMax music requires GLINT_MINIMAX_API_KEY and GLINT_MUSIC_PROMPT");
+      const bgm = await generateMiniMaxMusic(process.env.GLINT_MUSIC_PROMPT, { apiKey: process.env.GLINT_MINIMAX_API_KEY, baseUrl: process.env.GLINT_MINIMAX_BASE_URL, model: process.env.GLINT_MINIMAX_MUSIC_MODEL });
+      fs.writeFileSync(path.join(audioDir, "bgm.mp3"), bgm.audio);
+      prepared.music = { src: `${path.relative(publicDir, audioDir).split(path.sep).join("/")}/bgm.mp3`, volume: 0.12 };
     } else {
       if (!fs.existsSync(path.resolve(musicArg))) {
         throw new Error(`Music file not found: ${musicArg}`);

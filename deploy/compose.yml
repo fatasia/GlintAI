@@ -1,0 +1,25 @@
+services:
+  glint:
+    build: ..
+    image: glint:local
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:4180:4175"
+    volumes:
+      - glint-projects:/app/apps/studio/out
+      - glint-cache:/app/apps/studio/.cache
+    mem_limit: 1536m
+    cpus: 1.5
+    pids_limit: 256
+    shm_size: 256m
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  glint-projects:
+  glint-cache:

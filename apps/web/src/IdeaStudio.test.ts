@@ -27,8 +27,7 @@ async function mount() {
 it("restores a lost POST receipt using requestId, without replaying paid work", async () => {
   localStorage.setItem("glint.last-job:request", "request-1234");
   const fetch = vi.fn(
-    async (_url: string, _init?: RequestInit) =>
-      new Response(
+    async (_url: string, _init?: RequestInit) => _url === "/api/media/library" ? Response.json({ assets: [] }) : _url === "/api/health" ? Response.json({ voices: ["mock", "edge"] }) : new Response(
         JSON.stringify({
           id: "idea-recovered",
           status: "done",
@@ -39,21 +38,20 @@ it("restores a lost POST receipt using requestId, without replaying paid work", 
   );
   vi.stubGlobal("fetch", fetch);
   await mount();
-  expect(fetch.mock.calls[0]![0]).toBe("/api/make/request/request-1234");
-  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(fetch.mock.calls.filter(([url]) => url.startsWith("/api/make"))[0]![0]).toBe("/api/make/request/request-1234");
+  expect(fetch).toHaveBeenCalledTimes(3);
   expect(localStorage.getItem("glint.last-job")).toBe("idea-recovered");
   expect(localStorage.getItem("glint.last-job:request")).toBeNull();
 });
 it("pauses a failed lookup and retries GET only when requested", async () => {
   localStorage.setItem("glint.last-job:request", "request-1234");
-  const fetch = vi
-    .fn()
-    .mockResolvedValueOnce(new Response("{}", { status: 404 }))
-    .mockResolvedValue(
-      new Response(
-        JSON.stringify({ id: "idea-recovered", status: "done", log: [] }),
-      ),
-    );
+  let queries = 0;
+  const fetch = vi.fn(async (url: string, _init?: RequestInit) => {
+    if (url === "/api/health") return Response.json({ voices: ["mock", "edge"] });
+    if (url === "/api/media/library") return Response.json({ assets: [] });
+    if (++queries === 1) return new Response("{}", { status: 404 });
+    return Response.json({ id: "idea-recovered", status: "done", log: [] });
+  });
   vi.stubGlobal("fetch", fetch);
   const div = await mount();
   expect(div.textContent).toContain("回执未确认");
@@ -64,7 +62,7 @@ it("pauses a failed lookup and retries GET only when requested", async () => {
     button.click();
     await new Promise((r) => setTimeout(r, 0));
   });
-  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(fetch).toHaveBeenCalledTimes(4);
   expect(fetch.mock.calls.every((call) => !call[1]?.method)).toBe(true);
 });
 const editedProject = { schemaVersion: 1, id: "editor-test", title: "编辑测试", aspect: "16:9", knowledgeSources: [], scenes: [

@@ -1,6 +1,8 @@
 
 
 import { IdeaStudio } from "./IdeaStudio";
+import { ModelSettings } from "./ModelSettings";
+import { MediaWorkshop } from "./MediaWorkshop";
 import { PersonaLibrary } from "./PersonaLibrary";
 import { OfflineStatus } from "./OfflineStatus";
 import { UnderstandingCheck } from "./UnderstandingCheck";
@@ -134,7 +136,9 @@ export const App: React.FC = () => {
         </span>
       </header>
 
+      <div style={cardStyle}><ModelSettings /></div>
       <IdeaStudio cardStyle={cardStyle} />
+      <div style={cardStyle}><MediaWorkshop /></div>
 
       <h2 style={{ fontSize: 18, color: "#a7b4c4", margin: 0 }}>示例与试讲</h2>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>

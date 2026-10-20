@@ -13,5 +13,6 @@
   "files": [
     "src"
   ],
-  "sideEffects": false
+  "sideEffects": false,
+  "dependencies": { "@glintai/media": "workspace:*" }
 }

@@ -152,3 +152,10 @@ it("exposes health capabilities without credentials or local paths", async () =>
   expect(value.status).toBe("ok"); expect(value.voices).toContain("mock");
   expect(JSON.stringify(value)).not.toMatch(/apiKey|referenceAudio|modelDir/);
 });
+it("rejects unavailable, silent and oversized voice previews before synthesis", async () => {
+  const url = (await start({})).replace("/api/ask", "/api/voice-preview");
+  for (const input of [{ engine: "mock", text: "Test" }, { engine: "unknown", text: "Test" }, { engine: "edge", text: "a".repeat(301) }, { engine: "edge", text: "Test", speakingRate: 3 }]) {
+    expect((await post(url, input)).status).toBe(400);
+  }
+  expect((await fetch(url, { method: "POST", headers: { origin: "https://other.test" }, body: JSON.stringify({ engine: "edge", text: "Test" }) })).status).toBe(403);
+});

@@ -28,6 +28,11 @@ function setup() {
   return { runner, options, children, captures, killTree, success };
 }
 describe("make input", () => {
+  it("rejects filesystem paths and URLs as background music", () => {
+    for (const music of ["../../private.wav", "https://test/audio.mp3", "C:/private.wav"]) expect(validateMakeInput({ idea: "test", music }).error).toBeTruthy();
+    expect(validateMakeInput({ idea: "test", music: "task-123.mp3" }).music).toBe("task-123.mp3");
+    expect(validateMakeInput({ idea: "test", music: "auto" }).music).toBe("auto");
+  });
   it("validates source, limits, template, theme and aspect", () => {
     for (const input of [{}, { idea: "a", source: "b" }, { idea: "a".repeat(2001) }, { idea: "a", theme: "unknown" }, { idea: "a", aspect: "4:3" }, { idea: "a", template: "unknown" }]) expect(validateMakeInput(input, TEMPLATES).error).toBeTruthy();
     expect(validateMakeInput({ source: "# Source\nUseful text", template: "recap", theme: "mint-clean" }, TEMPLATES).error).toBeUndefined();

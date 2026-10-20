@@ -29,19 +29,20 @@
     "@glintai/listener": "workspace:*",
     "@glintai/llm": "workspace:*",
     "@glintai/music": "workspace:*",
+    "@glintai/media": "workspace:*",
     "@glintai/scenescript": "workspace:*",
     "@glintai/tts": "workspace:*",
     "@glintai/video": "workspace:*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "remotion": "^4.0.0"
-  },
-  "devDependencies": {
+    "remotion": "^4.0.0",
     "@remotion/bundler": "^4.0.0",
-    "@remotion/cli": "^4.0.0",
     "@remotion/renderer": "^4.0.0",
-    "@types/react": "^19.0.0",
     "esbuild": "0.25.12",
     "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "@remotion/cli": "^4.0.0",
+    "@types/react": "^19.0.0"
   }
 }

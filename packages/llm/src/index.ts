@@ -3,3 +3,4 @@ export * from "./openai-compatible";
 export * from "./anthropic";
 export * from "./mock";
 export * from "./sse";
+export * from "./configuration";

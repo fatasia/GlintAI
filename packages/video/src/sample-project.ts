@@ -34,10 +34,10 @@ export const SAMPLE_PROJECT = parseProject({
     {
       id: "outro",
       kind: "bullets",
-      heading: "三层理解闭环",
+      heading: "讲解的三个环节",
       items: ["发布前:虚拟听众试讲", "观看时:观众可以提问", "发布后:哪页没讲清,看得见"],
       narration: {
-        text: "Glint 围绕理解构建三层闭环:试讲、对话、以及理解数据。",
+        text: "Glint 把试讲、对话和理解检查放在同一个创作流程中。",
       },
     },
   ],

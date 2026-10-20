@@ -154,6 +154,16 @@ export const HtmlScene = z.object({
 export type HtmlScene = z.infer<typeof HtmlScene>;
 
 // A nested model discriminator preserves a precise src requirement for glTF.
+export const ChartScene = z.object({
+  ...sceneBase,
+  kind: z.literal("chart"),
+  chartType: z.enum(["bar", "line"]),
+  heading: z.string().optional(),
+  unit: z.string().max(16).optional(),
+  data: z.array(z.object({ label: z.string().min(1).max(24), value: z.number().finite().min(-1e12).max(1e12) })).min(1).max(24),
+});
+export type ChartScene = z.infer<typeof ChartScene>;
+
 export const Scene = z.union([
   TitleScene,
   BulletsScene,
@@ -165,6 +175,7 @@ export const Scene = z.union([
   ImageScene,
   DiagramScene,
   HtmlScene,
+  ChartScene,
 ]);
 export type Scene = z.infer<typeof Scene>;
 

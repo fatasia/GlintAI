@@ -22,7 +22,7 @@ export class QwenLocalTtsProvider implements TtsProvider {
     const modelFiles = fs.readdirSync(config.modelDir).filter((file) => /(?:\.json|\.safetensors)$/.test(file)).sort().map((file) => {
       const stat = fs.statSync(path.join(config.modelDir, file)); return [file, stat.size, stat.mtimeMs];
     });
-    this.cacheKey = createHash("sha256").update(JSON.stringify([this.name, 1, path.resolve(config.modelDir), modelFiles, config.referenceText ?? ""])).update(fs.readFileSync(config.referenceAudio)).digest("hex");
+    this.cacheKey = createHash("sha256").update(JSON.stringify([this.name, 2, path.resolve(config.modelDir), modelFiles, config.referenceText ?? ""])).update(fs.readFileSync(config.referenceAudio)).digest("hex");
   }
   private stop(error: Error) {
     this.stopped = true;

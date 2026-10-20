@@ -16,7 +16,7 @@ Windows、Node 24.18.1、i9-12900HX。混合动画 fixture：960×540、24 fps�
 
 另外确认的改进：
 
-- 播放器在点击预览后加载，修正 manualChunks 把共享 React 与 Player 提前打包的问题。首屏静态 JS 约 104 kB gzip，CI 上限 160 KiB；Three 延迟块仍约 940 kB，未将它从功能中删除。
+- 播放器在点击预览后加载，修正 manualChunks 把共享 React 与 Player 提前打包的问题。首屏静态 JS 约 109 kB gzip，CI 上限 160 KiB；Three 延迟块仍约 940 kB，未将它从功能中删除。
 - PWA 首次只预缓存轻量页面，播放器和示例素材在用过后缓存。服务端使用预生成 Brotli/gzip、ETag 和哈希资源长期缓存；构建检查会验证解压后字节一致。
 - 每个渲染会话使用独立临时 public，不再复制历史任务的约 33.9 MB 素材；结束清理该会话的 public 与 bundle 目录。文字项目不准备动画解码器。
 - 无声草稿直接计算字幕时长，不生成、缓存和解码静音 WAV；字幕时间与旧 MockTtsProvider 相同。
@@ -43,7 +43,7 @@ pnpm install:fast
 | balanced | 100% | 20 / slow | 默认交付 |
 | quality | 100% | 16 / slow | 母版 |
 
-没有单一参数能同时得到最快、最小、最高画质。试过 compact/veryfast 后，样本 PSNR 从 46.89 降到 46.40 dB，速度收益不稳定，已撤回。不要把降低 CRF、分辨率或帧率当成无损提速。
+速度、文件大小和画质存在取舍。draft 降低分辨率并用快速编码，交付时选择 compact / balanced / quality；降低分辨率或帧率不属于无损提速。
 
 ```bash
 pnpm benchmark:encoding '--concurrency=1,2,4' --profiles=balanced --repeats=2

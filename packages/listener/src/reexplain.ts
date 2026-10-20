@@ -15,6 +15,7 @@ export async function reexplain(
     /** Who is confused; free text. Falls back to a generic sharpening pass. */
     confusion?: string;
     timeoutMs?: number;
+    signal?: AbortSignal;
   },
 ): Promise<SceneScriptProject> {
   const index = project.scenes.findIndex((scene) => scene.id === options.sceneId);
@@ -40,6 +41,7 @@ export async function reexplain(
     ].join("\n"),
     temperature: 0.5,
     timeoutMs: options.timeoutMs,
+    signal: options.signal,
     messages: [
       {
         role: "user",
@@ -82,6 +84,13 @@ export async function reexplain(
     );
   }
   const scenes = [...project.scenes];
+  // Generated narration must never keep timing/audio from the previous take.
+  delete result.data.narration.audioRef;
+  delete result.data.narration.durationMs;
+  delete result.data.narration.segments;
+  if (target.narration.voice && !result.data.narration.voice) result.data.narration.voice = target.narration.voice;
+  if (target.narration.speakingRate && !result.data.narration.speakingRate) result.data.narration.speakingRate = target.narration.speakingRate;
+  options.signal?.throwIfAborted();
   scenes[index] = result.data;
   return { ...project, scenes };
 }

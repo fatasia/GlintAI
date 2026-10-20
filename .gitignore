@@ -5,7 +5,8 @@ node_modules/
 dist/
 build/
 *.tsbuildinfo
-quality-report.json
+quality-report.json*
+__pycache__/
 
 # Render outputs and generated runtime assets (narration audio, copied figures)
 out/

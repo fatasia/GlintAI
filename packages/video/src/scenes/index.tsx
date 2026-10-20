@@ -10,12 +10,14 @@ import { QuoteSceneView } from "./QuoteScene";
 import type { SceneColors } from "./ThreeScene";
 import { DeferredThree } from "./DeferredThree";
 import { TitleSceneView } from "./TitleScene";
+import { ChartSceneView } from "./ChartScene";
 
 export const SceneRouter: React.FC<{
   scene: Scene;
   colors: SceneColors;
 }> = ({ scene, colors }) => {
   switch (scene.kind) {
+    case "chart": return <ChartSceneView scene={scene} />;
     case "title":
       return <TitleSceneView scene={scene} />;
     case "bullets":

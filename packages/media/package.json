@@ -1,0 +1,9 @@
+{
+  "name": "@glintai/media",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": { ".": { "types": "./src/index.ts", "default": "./src/index.ts" } },
+  "files": ["src"],
+  "dependencies": { "@glintai/knowledge": "workspace:*" }
+}

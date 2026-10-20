@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+export { generateMiniMaxMusic, type MiniMaxMusicConfig } from "./minimax";
+export { generateGatewayMusic } from "./gateway";
 
 export class MusicError extends Error {
   constructor(message: string) {

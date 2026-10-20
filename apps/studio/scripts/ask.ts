@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { AnswerEngine, loadMarkdown, LexicalKnowledgeBase } from "@glintai/knowledge";
-import { OpenAICompatibleProvider } from "@glintai/llm";
+import { llmFromEnvironment } from "@glintai/llm";
 
 /**
  * Ask the project's knowledge source a question and print a grounded,
@@ -37,11 +37,7 @@ async function main(): Promise<void> {
   if (!process.env.GLINT_LLM_API_KEY) {
     throw new Error("Set GLINT_LLM_API_KEY (and optionally GLINT_LLM_BASE_URL / GLINT_LLM_MODEL).");
   }
-  const llm = new OpenAICompatibleProvider({
-    baseUrl: process.env.GLINT_LLM_BASE_URL ?? "https://open.bigmodel.cn/api/paas/v4",
-    apiKey: process.env.GLINT_LLM_API_KEY,
-    model: process.env.GLINT_LLM_MODEL ?? "glm-4",
-  });
+  const llm = llmFromEnvironment();
 
   const engine = new AnswerEngine({ kb, llm, topK: 4 });
   const answer = await engine.answer(question);

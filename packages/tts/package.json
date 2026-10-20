@@ -15,6 +15,7 @@
   ],
   "sideEffects": false,
   "dependencies": {
+    "@glintai/media": "workspace:*",
     "@glintai/scenescript": "workspace:*",
     "msedge-tts": "^2.1.0"
   }

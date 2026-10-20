@@ -4,7 +4,7 @@ import process from "node:process";
 import { createHash } from "node:crypto";
 import { createCliRuntime, readArg, renderArgs, sourceInput } from "./glint-runtime";
 import { composeFromSource, isTemplateId, reviewProject } from "@glintai/composer";
-import { OpenAICompatibleProvider } from "@glintai/llm";
+import { llmFromEnvironment } from "@glintai/llm";
 import { defaultPersonas, reexplain, rehearse, parsePersonaPack } from "@glintai/listener";
 import { parseProject, type SceneScriptProject } from "@glintai/scenescript";
 import { commandSourceAdapter, officeSourceAdapters, mediaSourceAdapters, readSourceText, type SourceAdapter } from "@glintai/knowledge";
@@ -26,17 +26,13 @@ function hasFlag(args: string[], name: string): boolean {
   return args.includes(`--${name}`);
 }
 
-function requireLlm(): OpenAICompatibleProvider {
+function requireLlm() {
   if (!process.env.GLINT_LLM_API_KEY) {
     throw new Error(
       "This command needs an LLM. Set GLINT_LLM_API_KEY (GLINT_LLM_BASE_URL / GLINT_LLM_MODEL optional).",
     );
   }
-  return new OpenAICompatibleProvider({
-    baseUrl: process.env.GLINT_LLM_BASE_URL ?? "https://open.bigmodel.cn/api/paas/v4",
-    apiKey: process.env.GLINT_LLM_API_KEY,
-    model: process.env.GLINT_LLM_MODEL ?? "glm-4",
-  });
+  return llmFromEnvironment();
 }
 
 async function runMake(args: string[]): Promise<void> {
@@ -147,6 +143,8 @@ async function main(): Promise<void> {
     }
     case "render":
       return runScript("render", rest);
+    case "media":
+      return runScript("media", rest);
     case "render-worker":
       return runScript("render-worker", rest);
     case "preview-code":
