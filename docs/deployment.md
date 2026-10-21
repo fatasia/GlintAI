@@ -1,6 +1,6 @@
 # Docker 部署
 
-用于一台 Linux 服务器上的单用户工作台。建议至少 2 CPU、2 GB 可用内存和 5 GB 可用磁盘；已有应用时先检查实际余量。镜像包含 Chromium、FFmpeg 和中文字体，不下载 Python 或 GPU 模型。
+用于一台 Linux 服务器上的单用户工作台。建议至少 2 CPU、2 GB 可用内存和 5 GB 可用磁盘；已有应用时先检查实际余量。镜像包含 Chromium、FFmpeg 和中文字体，不下载 Python 或 GPU 模型。Glint 应使用独立端口或独立域名，不要抢占已有站点的默认 80/443 虚拟主机。
 
 ## 启动
 
@@ -16,6 +16,17 @@ curl --fail http://127.0.0.1:4180/healthz
 ```
 
 `GLINT_PUBLIC_HOST` 只填准确主机名，不填协议、路径或多个域名。生产默认建议 `GLINT_PUBLIC_AUTH=1`，外部访问使用 HTTP Basic，用户名 `glint`、密码为访问令牌。若设置 `GLINT_PUBLIC_AUTH=0`，页面和 API 无需登录即可进入；这会把内容、生成额度和模型接口暴露给能访问该地址的人，只适合受控网络或另有网关鉴权的场景。`/healthz` 仅返回存活状态。
+
+如果服务器已有 80/443 业务，可用独立端口运行：
+
+```yaml
+services:
+  glint:
+    ports: !override
+      - "0.0.0.0:4180:4175"
+```
+
+然后访问 `http://服务器IP:4180/`。腾讯云安全组还必须放行 TCP 4180；宿主防火墙和 Docker 监听正常，不代表云安全组已放行。不要把 Glint 的入口直接改成已有站点的默认 IP/HTTPS server。
 
 默认绑定宿主 `127.0.0.1:4180`，不占用现有 80/443。容器以非 root 运行，限制内存、CPU、进程数和日志大小，默认只运行一个生成任务。小内存服务器可在环境中设置 `GLINT_RENDER_CONCURRENCY=1`（显式 CLI 参数优先）；重型 Three / WebGL 项目可能需要更高资源。
 
