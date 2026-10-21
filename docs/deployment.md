@@ -9,14 +9,13 @@
 ```bash
 cp .env.example deploy/.env
 chmod 600 deploy/.env
-# 编辑 deploy/.env：GLINT_PUBLIC_HOST=你的域名
-# GLINT_ACCESS_TOKEN 使用 openssl rand -hex 32 的结果；按需配置模型和媒体账号
+# 编辑 deploy/.env：GLINT_PUBLIC_HOST=你的域名；GLINT_PUBLIC_AUTH=1 时再配置 GLINT_ACCESS_TOKEN
 docker compose -p glint -f deploy/compose.yml up -d --build
 docker compose -p glint -f deploy/compose.yml ps
 curl --fail http://127.0.0.1:4180/healthz
 ```
 
-`GLINT_PUBLIC_HOST` 只填准确主机名，不填协议、路径或多个域名。外部访问使用 HTTP Basic，用户名 `glint`、密码为访问令牌；必须先配置 HTTPS 再登录。`/healthz` 仅返回存活状态，其余页面和接口均鉴权。
+`GLINT_PUBLIC_HOST` 只填准确主机名，不填协议、路径或多个域名。生产默认建议 `GLINT_PUBLIC_AUTH=1`，外部访问使用 HTTP Basic，用户名 `glint`、密码为访问令牌。若设置 `GLINT_PUBLIC_AUTH=0`，页面和 API 无需登录即可进入；这会把内容、生成额度和模型接口暴露给能访问该地址的人，只适合受控网络或另有网关鉴权的场景。`/healthz` 仅返回存活状态。
 
 默认绑定宿主 `127.0.0.1:4180`，不占用现有 80/443。容器以非 root 运行，限制内存、CPU、进程数和日志大小，默认只运行一个生成任务。小内存服务器可在环境中设置 `GLINT_RENDER_CONCURRENCY=1`（显式 CLI 参数优先）；重型 Three / WebGL 项目可能需要更高资源。
 
@@ -44,7 +43,7 @@ server {
 }
 ```
 
-Nginx 如果也在容器内，不要把它的 `127.0.0.1` 当作宿主：把两者加入专用共享 Docker 网络，再代理到 Glint 的容器别名和 4175 端口。保留 Glint 的鉴权，勿开放裸服务端口。修改已有代理前备份配置、执行 `nginx -t`，通过后再 reload，不能覆盖其他项目的虚拟主机。
+Nginx 如果也在容器内，不要把它的 `127.0.0.1` 当作宿主：把两者加入专用共享 Docker 网络，再代理到 Glint 的容器别名和 4175 端口。修改已有代理前备份配置、执行 `nginx -t`，通过后再 reload，不能覆盖其他项目的虚拟主机。
 
 证书可通过 [Certbot webroot](https://eff-certbot.readthedocs.io/en/stable/using.html#webroot) 在不停止现有 HTTP 服务的情况下签发。配置续期、证书部署和 reload；用 staging / dry-run 检查流程，避免反复签发触发限额。
 

@@ -81,8 +81,8 @@ const defaultMakeRunner = createJobRunner({ studioDir: STUDIO_DIR, templates: TE
 const defaultCheckStore = createCheckStore(path.join(STUDIO_DIR, "out", ".checks"));
 
 /** Injection keeps HTTP contract tests local and independent of API credentials. */
-export function createWebServer({ engineForProject = getEngine, timeoutMs = 65_000, makeRunner = defaultMakeRunner, checkStore = defaultCheckStore, personaCatalog = PERSONA_CATALOG, distDir = DIST, llmSettings = createLlmSettings(), publicHost = process.env.GLINT_PUBLIC_HOST, accessToken = process.env.GLINT_ACCESS_TOKEN, mediaJobs = defaultMediaJobs } = {}) {
-  if (publicHost && (!accessToken || accessToken.length < 24)) throw new Error("Public hosting requires a strong GLINT_ACCESS_TOKEN");
+export function createWebServer({ engineForProject = getEngine, timeoutMs = 65_000, makeRunner = defaultMakeRunner, checkStore = defaultCheckStore, personaCatalog = PERSONA_CATALOG, distDir = DIST, llmSettings = createLlmSettings(), publicHost = process.env.GLINT_PUBLIC_HOST, accessToken = process.env.GLINT_ACCESS_TOKEN, authRequired = process.env.GLINT_PUBLIC_AUTH !== "0", mediaJobs = defaultMediaJobs } = {}) {
+  if (publicHost && authRequired && (!accessToken || accessToken.length < 24)) throw new Error("Public hosting requires a strong GLINT_ACCESS_TOKEN");
   const jobs = makeRunner;
   let voicePreviewBusy = false;
   const personas=parsePersonaCatalog(personaCatalog);
@@ -90,7 +90,7 @@ export function createWebServer({ engineForProject = getEngine, timeoutMs = 65_0
   return http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     if (req.method === "GET" && url.pathname === "/healthz") return sendJson(res, 200, { status: "ok" });
-    const access = requestAccess(req, { publicHost, accessToken });
+    const access = requestAccess(req, { publicHost, accessToken, authRequired });
     if (access.status !== 200) {
       if (access.status === 401) res.setHeader("www-authenticate", 'Basic realm="Glint", charset="UTF-8"');
       return sendJson(res, access.status, { error: access.status === 401 ? "Authentication required" : "Host not allowed" });
@@ -359,6 +359,6 @@ export function createWebServer({ engineForProject = getEngine, timeoutMs = 65_0
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT ?? 4175);
   const host = process.env.GLINT_HOST ?? "127.0.0.1";
-  if (host !== "127.0.0.1" && !process.env.GLINT_PUBLIC_HOST) throw new Error("Network binding requires GLINT_PUBLIC_HOST and GLINT_ACCESS_TOKEN");
+  if (host !== "127.0.0.1" && !process.env.GLINT_PUBLIC_HOST) throw new Error("Network binding requires GLINT_PUBLIC_HOST");
   createWebServer().listen(port, host, () => console.log(`[glint-web] serving ${DIST} on ${host}:${port}`));
 }

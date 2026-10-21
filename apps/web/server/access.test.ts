@@ -8,4 +8,5 @@ it("keeps local mode local and requires authentication in public mode", () => {
   expect(requestAccess({ headers: { host: "public.test" } }, config).status).toBe(401);
   expect(requestAccess({ headers: { host: "public.test", authorization: `Basic ${Buffer.from(`glint:${token}`).toString("base64")}` } }, config).status).toBe(200);
   expect(() => requestAccess({ headers: { host: "public.test" } }, { publicHost: "public.test" })).toThrow(/token/);
+  expect(requestAccess({ headers: { host: "public.test" } }, { publicHost: "public.test", authRequired: false }).status).toBe(200);
 });
