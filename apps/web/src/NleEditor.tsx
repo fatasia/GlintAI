@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { Player, type PlayerRef } from "@remotion/player";
-import { NleComposition } from "@glintai/video";
+import { NlePreview } from "./NlePreview";
 import {
   nleAddTrack, nleDurationMs, nleMoveClip, nleRemoveClip, nleRemoveTrack, nleSnap, nleSnapPoints, nleSplitClip, nleTrimClip, nleTransitionProgress,
   parseNleProject, type NleClip, type NleProject, type NleTrack,
@@ -116,7 +115,7 @@ export function NleEditor({ onClose }: { onClose?(): void }) {
   const [result, setResult] = useState<{ url: string; file: string } | null>(null);
   const [timelineResult, setTimelineResult] = useState<{ url: string; file: string; clips: number; textClips: number; warning?: string } | null>(null);
   const [historyTick, setHistoryTick] = useState(0);
-  const player = useRef<PlayerRef>(null);
+  const [playing, setPlaying] = useState(false);
   const undoStack = useRef<NleProject[]>([]);
   const redoStack = useRef<NleProject[]>([]);
   const projectRef = useRef(project);
@@ -126,7 +125,6 @@ export function NleEditor({ onClose }: { onClose?(): void }) {
   const ruler = useRef(false);
   const importRef = useRef<HTMLInputElement>(null);
   const duration = nleDurationMs(project);
-  const durationFrames = Math.max(1, Math.round(duration / 1000 * project.fps));
   const primary = selection.at(-1) ?? null;
   const primaryClip = useMemo(() => {
     if (!primary) return null;
@@ -192,7 +190,7 @@ export function NleEditor({ onClose }: { onClose?(): void }) {
   const seek = useCallback((ms: number) => {
     const value = Math.max(0, Math.round(ms));
     setPlayhead(value);
-    player.current?.seekTo(Math.round(value / 1000 * project.fps));
+    if (playing) setPlaying(false);
   }, [project.fps]);
   /** First unlocked track accepting the clip kind; a new track appears when none fits. */
   const targetTrack = (accepts: (kind: NleTrack["kind"]) => boolean): { project: NleProject; track: NleTrack } | null => {
@@ -397,7 +395,7 @@ export function NleEditor({ onClose }: { onClose?(): void }) {
       const current = keys.current;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") { event.preventDefault(); event.shiftKey ? current.redo() : current.undo(); return; }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "y") { event.preventDefault(); current.redo(); return; }
-      if (event.key === " ") { event.preventDefault(); player.current?.toggle(); return; }
+      if (event.key === " ") { event.preventDefault(); setPlaying(value => !value); return; }
       if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); current.removeSelected(); return; }
       if (event.key.toLowerCase() === "s" && !event.ctrlKey && !event.metaKey) { event.preventDefault(); current.split(); return; }
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); const step = event.shiftKey ? 1000 : Math.round(1000 / current.fps); current.seek(current.playhead + (event.key === "ArrowRight" ? step : -step)); return; }
@@ -450,7 +448,9 @@ export function NleEditor({ onClose }: { onClose?(): void }) {
 
       <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
         <div style={{ border: "1px solid #26262b", borderRadius: 10, overflow: "hidden", background: "#000" }}>
-          <Player ref={player} component={NleComposition} inputProps={{ project, mediaAssetBase: "/api/media/assets/" as const }} durationInFrames={durationFrames} fps={project.fps} compositionWidth={project.width} compositionHeight={project.height} controls style={{ width: "100%", aspectRatio: `${project.width} / ${project.height}`, maxHeight: "52dvh" }} acknowledgeRemotionLicense />
+          <div style={{ maxHeight: "52dvh", display: "grid", justifyItems: "center" }}>
+            <NlePreview project={project} mediaAssetBase="/api/media/assets/" tMs={playhead} playing={playing} onTimeUpdate={setPlayhead} onEnded={() => setPlaying(false)} />
+          </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", color: "#8b8b95", fontSize: 11, flexWrap: "wrap" }}>
           <span>播放头 {(playhead / 1000).toFixed(2)}s</span>
@@ -492,6 +492,35 @@ export function NleEditor({ onClose }: { onClose?(): void }) {
             <label style={label}>出场转场<select aria-label="出场转场" style={text} value={primaryClip.clip.transitionOut?.type ?? ""} onChange={event => patchClip({ transitionOut: event.target.value ? { type: event.target.value as ClipTransitionType, durationMs: primaryClip.clip.transitionOut?.durationMs ?? DEFAULT_FADE_MS } : undefined })}>{TRANSITIONS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
             {(primaryClip.clip.transitionIn || primaryClip.clip.transitionOut) && <label style={label}>转场时长 ms<input aria-label="转场时长 ms" type="number" min={100} max={5000} step={50} style={text} value={primaryClip.clip.transitionIn?.durationMs ?? primaryClip.clip.transitionOut?.durationMs ?? DEFAULT_FADE_MS} onChange={event => { const durationMs = Math.min(5000, Math.max(100, Number(event.target.value))); patchClip({ ...(primaryClip.clip.transitionIn ? { transitionIn: { ...primaryClip.clip.transitionIn, durationMs } } : {}), ...(primaryClip.clip.transitionOut ? { transitionOut: { ...primaryClip.clip.transitionOut, durationMs } } : {}) }); }} /></label>}
             <small style={{ color: "#6f6f78", fontSize: 10, lineHeight: 1.5 }}>转场在当前片段内部完成，不需要相邻片段重叠。预览与导出逐帧一致。</small>
+            <div style={{ borderTop: "1px solid #26262b", paddingTop: 8, display: "grid", gap: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <strong style={{ fontSize: 11, color: "#a1a1aa" }}>关键帧 {primaryClip.clip.keyframes?.length ?? 0}</strong>
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button type="button" aria-label="在播放头记录关键帧" style={{ ...button, padding: "3px 7px", fontSize: 10 }} onClick={() => {
+                    const local = Math.max(0, Math.min(primaryClip.clip.durationMs, Math.round(playhead - primaryClip.clip.startMs)));
+                    const existing = [...(primaryClip.clip.keyframes ?? [])].filter(frame => frame.ms !== local);
+                    const next = [...existing, { ms: local, x: primaryClip.clip.transform?.x ?? 0, y: primaryClip.clip.transform?.y ?? 0, scale: primaryClip.clip.transform?.scale ?? 1, rotate: primaryClip.clip.transform?.rotate ?? 0, opacity: primaryClip.clip.opacity ?? 1 }].sort((a, b) => a.ms - b.ms);
+                    patchClip({ keyframes: next.slice(0, 32) });
+                  }}>＋ 记录</button>
+                  <button type="button" aria-label="清除关键帧" style={{ ...button, padding: "3px 7px", fontSize: 10 }} disabled={!primaryClip.clip.keyframes?.length} onClick={() => patchClip({ keyframes: undefined })}>清除</button>
+                </div>
+              </div>
+              {(primaryClip.clip.keyframes ?? []).map((frame, index) => <div key={frame.ms} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 26px", gap: 4, alignItems: "center" }}>
+                <span style={{ fontSize: 10, color: "#8b8b95" }}>{frame.ms}ms · {Math.round((frame.opacity ?? 1) * 100)}% · {Number(frame.scale ?? 1).toFixed(2)}×</span>
+                <button type="button" style={{ ...button, padding: "2px 6px", fontSize: 10 }} onClick={() => seek(primaryClip.clip.startMs + frame.ms)}>定位</button>
+                <button type="button" aria-label={`删除关键帧 ${frame.ms}`} style={{ ...button, padding: "2px 4px", fontSize: 10 }} onClick={() => patchClip({ keyframes: primaryClip.clip.keyframes!.filter((_, i) => i !== index) })}>×</button>
+              </div>)}
+              <small style={{ color: "#6f6f78", fontSize: 10, lineHeight: 1.5 }}>记录时取当前位置/缩放/不透明度；两端之间线性或缓动插值。</small>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+              <label style={label}>混合<select aria-label="混合模式" style={text} value={primaryClip.clip.blend ?? "normal"} onChange={event => patchClip({ blend: event.target.value === "normal" ? undefined : event.target.value as NonNullable<NleClip["blend"]> })}>{["normal", "screen", "multiply", "overlay", "darken", "lighten", "soft-light"].map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+              <label style={label}>蒙版<select aria-label="蒙版形状" style={text} value={primaryClip.clip.mask?.shape ?? ""} onChange={event => patchClip({ mask: event.target.value ? { shape: event.target.value as "circle" | "rect", feather: primaryClip.clip.mask?.feather ?? 0.08, inset: primaryClip.clip.mask?.inset ?? 0.05 } : undefined })}><option value="">无</option><option value="circle">圆形</option><option value="rect">矩形</option></select></label>
+            </div>
+            {primaryClip.clip.mask && <>
+              <label style={label}>羽化 {Math.round((primaryClip.clip.mask.feather ?? 0) * 100)}%<input aria-label="蒙版羽化" type="range" min="0" max="0.5" step="0.01" value={primaryClip.clip.mask.feather ?? 0} onChange={event => patchClip({ mask: { ...primaryClip.clip.mask!, feather: Number(event.target.value) } })} /></label>
+              {primaryClip.clip.mask.shape === "rect" && <label style={label}>内缩 {Math.round((primaryClip.clip.mask.inset ?? 0) * 100)}%<input aria-label="蒙版内缩" type="range" min="0" max="0.45" step="0.01" value={primaryClip.clip.mask.inset ?? 0} onChange={event => patchClip({ mask: { ...primaryClip.clip.mask!, inset: Number(event.target.value) } })} /></label>}
+              <label style={{ ...label, display: "flex", alignItems: "center", gap: 6 }}><input aria-label="反转蒙版" type="checkbox" checked={Boolean(primaryClip.clip.mask.invert)} onChange={event => patchClip({ mask: { ...primaryClip.clip.mask!, invert: event.target.checked || undefined } })} />反转</label>
+            </>}
           </>}
         </>}
         {error && <p role="alert" style={{ margin: 0, color: "#fca5a5", fontSize: 11 }}>{error}</p>}

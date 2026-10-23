@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nleAddTrack, nleClipSourceEndMs, nleDurationMs, nleMoveClip, nleRemoveClip, nleRemoveTrack, nleSnap, nleSnapPoints, nleSplitClip, nleTransitionProgress, nleTrimClip, parseNleProject } from "./nle";
+import { nleAddTrack, nleClipSourceEndMs, nleDurationMs, nleMoveClip, nleRemoveClip, nleRemoveTrack, nleSampleMotion, nleSnap, nleSnapPoints, nleSplitClip, nleTransitionProgress, nleTrimClip, parseNleProject } from "./nle";
 
 const base = {
   schemaVersion: 1 as const, id: "nle-test", title: "NLE", fps: 30, width: 1920, height: 1080,
@@ -85,5 +85,38 @@ describe("track add/remove", () => {
     const next = nleRemoveTrack(project, "a1");
     expect(next.tracks.map(track => track.id)).toEqual(["v1"]);
     expect(nleRemoveTrack(project, "missing")).toBe(project);
+  });
+});
+
+describe("keyframes, blend and mask", () => {
+  const kfClip = {
+    keyframes: [
+      { ms: 0, opacity: 0, scale: 0.8, ease: "out" as const },
+      { ms: 1000, opacity: 1, scale: 1.2 },
+      { ms: 3000, scale: 1 },
+    ],
+  };
+  it("interpolates each animated field independently with easing", () => {
+    expect(nleSampleMotion(kfClip, 0)).toMatchObject({ opacity: 0, scale: 0.8, rotate: 0 });
+    // ease "out" on the entering segment: 60% of the way lands above linear.
+    const at600 = nleSampleMotion(kfClip, 600);
+    expect(at600.opacity).toBeCloseTo(0.936, 2);
+    expect(at600.scale).toBeGreaterThan(1.0);
+    expect(nleSampleMotion(kfClip, 1000)).toMatchObject({ opacity: 1, scale: 1.2 });
+    // Between 1000 and 3000 only scale is animated; opacity holds its last value.
+    const at2000 = nleSampleMotion(kfClip, 2000);
+    expect(at2000.opacity).toBe(1);
+    expect(at2000.scale).toBeCloseTo(1.1, 5);
+    // Clamped outside the sampled range; never-keyframed fields stay static.
+    expect(nleSampleMotion(kfClip, 3500).scale).toBe(1);
+    expect(nleSampleMotion({}, 500)).toMatchObject({ x: 0, scale: 1, opacity: 1 });
+  });
+  it("accepts blend and mask and rejects bad keyframe order", () => {
+    const next = parseNleProject({ ...base, tracks: [
+      { ...base.tracks[0]!, clips: [{ ...base.tracks[0]!.clips[0]!, blend: "screen", mask: { shape: "circle", feather: 0.2 } }] },
+      base.tracks[1]!,
+    ] });
+    expect(next.tracks[0]!.clips[0]).toMatchObject({ blend: "screen", mask: { shape: "circle", feather: 0.2 } });
+    expect(() => parseNleProject({ ...base, tracks: [{ ...base.tracks[0]!, clips: [{ ...base.tracks[0]!.clips[0]!, keyframes: [{ ms: 500, opacity: 1 }, { ms: 500, opacity: 0.5 }] }] }, base.tracks[1]!] })).toThrow(/ascending/);
   });
 });

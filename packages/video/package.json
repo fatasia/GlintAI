@@ -1,7 +1,7 @@
 {
   "name": "@glintai/video",
   "version": "0.1.0",
-  "description": "Glint video components — one React component tree rendered by Remotion (MP4/PNG/GIF), Remotion Studio (preview) and @remotion/player (web/mobile)",
+  "description": "Glint video components — the frame renderers shared by the editors, the CLI renderer and the desktop package",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -9,7 +9,8 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
-    }
+    },
+    "./nle-dom": "./src/nle/nle-dom.ts"
   },
   "files": [
     "src"

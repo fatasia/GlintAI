@@ -30,6 +30,35 @@ export const NleTransition = z.object({
 }).strict();
 export type NleTransition = z.infer<typeof NleTransition>;
 
+/** Clip-local animated property sample; absent fields are not keyframed. */
+export const NleKeyframe = z.object({
+  /** Clip-local time in ms; keyframes must be strictly ascending. */
+  ms: timeMs,
+  x: z.number().min(-1).max(1).optional(),
+  y: z.number().min(-1).max(1).optional(),
+  scale: z.number().min(0.05).max(8).optional(),
+  rotate: z.number().min(-180).max(180).optional(),
+  opacity: z.number().min(0).max(1).optional(),
+  /** Easing used on the segment leaving this keyframe. */
+  ease: z.enum(["linear", "in", "out"]).optional(),
+}).strict();
+export type NleKeyframe = z.infer<typeof NleKeyframe>;
+
+/** Compositing mode of a visual clip against what is below it. */
+export const NleBlend = z.enum(["normal", "screen", "multiply", "overlay", "darken", "lighten", "soft-light"]);
+export type NleBlend = z.infer<typeof NleBlend>;
+
+/** Geometric alpha mask in clip space; feather is a share of the shorter side. */
+export const NleMask = z.object({
+  shape: z.enum(["circle", "rect"]),
+  /** Rect only: inset from each edge as a share of that dimension. */
+  inset: z.number().min(0).max(0.45).optional(),
+  /** Edge softness, 0..0.5 of the shorter side. */
+  feather: z.number().min(0).max(0.5).optional(),
+  invert: z.boolean().optional(),
+}).strict();
+export type NleMask = z.infer<typeof NleMask>;
+
 const clipBase = {
   id,
   startMs: timeMs,
@@ -41,6 +70,10 @@ const clipBase = {
   transform: NleTransform.optional(),
   transitionIn: NleTransition.optional(),
   transitionOut: NleTransition.optional(),
+  /** 2..32 ascending clip-local keyframes; animated fields override the static ones. */
+  keyframes: z.array(NleKeyframe).min(2).max(32).optional(),
+  blend: NleBlend.optional(),
+  mask: NleMask.optional(),
   effects: z.array(SceneEffect).max(8).optional(),
 };
 
@@ -95,6 +128,9 @@ export const NleProject = z.object({
       if (clipIds.has(clip.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["tracks", trackIndex, "clips", clipIndex, "id"], message: `duplicate clip id "${clip.id}"` });
       clipIds.add(clip.id);
       if (!VISUAL[track.kind].includes(clip.kind)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["tracks", trackIndex, "clips", clipIndex, "kind"], message: `${clip.kind} clip is not allowed on a ${track.kind} track` });
+      clip.keyframes?.forEach((frame, frameIndex) => {
+        if (frameIndex > 0 && frame.ms <= clip.keyframes![frameIndex - 1]!.ms) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["tracks", trackIndex, "clips", clipIndex, "keyframes", frameIndex, "ms"], message: "keyframes must be strictly ascending" });
+      });
     });
   });
 });
@@ -105,6 +141,39 @@ export function parseNleProject(value: unknown): NleProject {
 }
 
 export const DEFAULT_NLE_TRANSITION_MS = 500;
+
+const easeInQuad = (t: number) => t * t;
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+const EASINGS: Record<NonNullable<NleKeyframe["ease"]>, (t: number) => number> = { linear: t => t, in: easeInQuad, out: easeOutCubic };
+
+export interface NleMotion { x: number; y: number; scale: number; rotate: number; opacity: number }
+
+/**
+ * Motion sample at a clip-local time. Without keyframes this is the static
+ * transform; with keyframes each animated field is interpolated independently
+ * between its own surrounding keyframes (stepping outside the first/last
+ * sample), while fields never keyframed keep their static value.
+ */
+export function nleSampleMotion(clip: Pick<NleClip, "transform" | "opacity" | "keyframes">, localMs: number): NleMotion {
+  const base: NleMotion = { x: clip.transform?.x ?? 0, y: clip.transform?.y ?? 0, scale: clip.transform?.scale ?? 1, rotate: clip.transform?.rotate ?? 0, opacity: clip.opacity ?? 1 };
+  const keyframes = clip.keyframes;
+  if (!keyframes || keyframes.length < 2) return base;
+  const sample = (field: "x" | "y" | "scale" | "rotate" | "opacity"): number => {
+    const frames = keyframes.filter(frame => frame[field] !== undefined) as Array<NleKeyframe & { [K in typeof field]: number }>;
+    if (!frames.length) return base[field];
+    if (localMs <= frames[0]!.ms) return frames[0]![field];
+    if (localMs >= frames[frames.length - 1]!.ms) return frames[frames.length - 1]![field];
+    for (let index = 1; index < frames.length; index++) {
+      if (localMs > frames[index]!.ms) continue;
+      const from = frames[index - 1]!, to = frames[index]!;
+      const span = to.ms - from.ms;
+      const progress = span <= 0 ? 1 : EASINGS[from.ease ?? "linear"]((localMs - from.ms) / span);
+      return from[field] + (to[field] - from[field]) * progress;
+    }
+    return frames[frames.length - 1]![field];
+  };
+  return { x: sample("x"), y: sample("y"), scale: sample("scale"), rotate: sample("rotate"), opacity: sample("opacity") };
+}
 
 /** Progress 0..1 of the incoming/outgoing transition at a clip-local time; null without one. */
 export function nleTransitionProgress(clip: Pick<NleClip, "durationMs" | "transitionIn" | "transitionOut">, localMs: number, edge: "in" | "out"): number | null {

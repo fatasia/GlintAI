@@ -12,7 +12,9 @@
 - **快捷键**：`Space` 播放/暂停，`Delete` / `Backspace` 删除，`S` 在播放头切分，`←`/`→` 单帧（`Shift` 为 1 秒），`Home` / `End` 首尾。
 - **音频波形**：按素材真实解码绘制 80 段峰值（SVG），同一素材只解码一次并缓存。
 - **转场**：每个视觉片段可设入场 / 出场转场：淡入淡出、滑入、缩放、擦除，时长 100–5000 ms。转场在片段自身时长内完成，不需要相邻片段重叠，因此预览与导出逐帧一致。
-- **文字片段**：内容、字号、颜色、字重、对齐。
+- **文字片段**：内容、字号、颜色、字重、对齐；Canvas 绘制，预览与导出字形一致。
+- **关键帧**：在播放头记录位置 / 缩放 / 旋转 / 不透明度，2–32 个、严格递增，段间线性或缓动插值；逐字段独立插值，未记录的字段保持静态值。
+- **混合与蒙版**：7 种混合模式（normal/screen/multiply/overlay/darken/lighten/soft-light）；圆形或矩形蒙版，支持羽化、内缩与反转。
 - **素材库**：直接使用媒体工坊生成的图片 / 视频 / 音频；一键加入匹配类型的轨道，没有可用轨道时自动新建。
 
 ## 导出
@@ -29,14 +31,19 @@
 `NleTransition`：type（fade/slide/zoom/wipe）+ durationMs（100–5000，默认 500）。
 校验：片段类型必须匹配轨道类型、id 全局唯一、时间非负。
 
-纯函数操作（全部有单测）：`nleMoveClip` / `nleTrimClip` / `nleSplitClip` / `nleRemoveClip` / `nleAddTrack` / `nleRemoveTrack` / `nleDurationMs` / `nleClipSourceEndMs` / `nleTransitionProgress` / `nleSnapPoints` / `nleSnap`。编辑器与渲染器共用同一份实现。
+纯函数操作（全部有单测）：`nleMoveClip` / `nleTrimClip` / `nleSplitClip` / `nleRemoveClip` / `nleAddTrack` / `nleRemoveTrack` / `nleDurationMs` / `nleClipSourceEndMs` / `nleTransitionProgress` / `nleSampleMotion` / `nleSnapPoints` / `nleSnap`。编辑器与渲染器共用同一份实现。
+
+## 渲染
+
+剪辑台不经过 Remotion：`renderNleFrame(host, project, tMs)` 在编辑器里由 rAF 驱动，在渲染器里由无头 Chrome 逐帧 seek 后截图，帧序列与混音交给 ffmpeg。一个实现、两种宿主，因此预览与成片不会漂移。文字用 Canvas 2D 绘制以消除合成层光栅化差异。
 
 ## 已知限制
 
-- 不支持关键帧动画与曲线变速（速度为整段匀速）。
-- 无蒙版 / 混合模式 / 局部调色。
+- 速度为整段匀速，无曲线变速。
 - 转场为片段内边缘转场，无跨片段重叠式溶解。
+- 蒙版为几何形状 + 羽化，无手绘遮罩与跟踪。
 - FCPXML/EDL 在结构层验证，未覆盖全部剪辑软件版本。
+- 渲染依赖系统 Chrome/Edge；无头截帧逐帧进行，长片导出时间随帧数线性增长。
 
 ## 用法
 
