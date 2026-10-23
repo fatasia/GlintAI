@@ -11,6 +11,7 @@ export function useFontGate(fonts: string[]): void {
     let active = true;
     let failed = false;
     let released = false;
+    if (!document.fonts?.load) { released = true; continueRender(handle); return; }
     void (async () => {
       try {
         const families = JSON.parse(key) as string[];

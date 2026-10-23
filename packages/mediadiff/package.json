@@ -1,0 +1,12 @@
+{
+  "name": "@glintai/mediadiff",
+  "version": "0.1.0",
+  "description": "Frame-level difference for rendered media: proves that a change touched only the frames it claimed",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": { "types": "./src/index.ts", "default": "./src/index.ts" }
+  },
+  "files": ["src"],
+  "sideEffects": false
+}

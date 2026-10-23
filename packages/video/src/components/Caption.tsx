@@ -60,7 +60,11 @@ export const Caption: React.FC<{
     return estimateWordTimings(narration.text, durationMs);
   }, [narration, durationMs]);
 
-  const nowMs = (frame / fps) * 1000;
+  // Burned captions stay scene-local, but follow the same rounded offset as narration audio.
+  const offsetMs = narration.audioOffsetMs ?? 0;
+  const captionFrame = frame - Math.round((Number.isFinite(offsetMs) ? offsetMs : 0) / 1000 * fps);
+  if (captionFrame < 0) return null;
+  const nowMs = (captionFrame / fps) * 1000;
   const visible = captionPage(words, nowMs, Math.floor((width - side * 2) / 24));
 
   return (

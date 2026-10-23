@@ -40,9 +40,11 @@ function concat(chunks: Buffer[]): Uint8Array {
  */
 export class EdgeTtsProvider {
   readonly name: string;
+  readonly cacheKey: string;
 
   constructor(private readonly config: EdgeTtsConfig = {}) {
     this.name = `edge-tts:${config.voice ?? "auto"}`;
+    this.cacheKey = `${this.name}:mp3-frames-v2`;
   }
 
   async synthesize(request: TtsRequest): Promise<TtsResult> {

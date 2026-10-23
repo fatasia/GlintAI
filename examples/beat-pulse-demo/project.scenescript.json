@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "beat-pulse-demo",
+  "title": "节拍脉冲验证",
+  "aspect": "16:9",
+  "fps": 30,
+  "knowledgeSources": [],
+  "music": { "src": "assets/beat.wav", "volume": 0.3 },
+  "scenes": [
+    {
+      "id": "pulse-scene",
+      "kind": "title",
+      "title": "节拍脉冲",
+      "subtitle": "画面随节拍呼吸",
+      "narration": { "text": "标题随节拍轻微放大再回落。", "durationMs": 4000 },
+      "beatPulse": { "beatsMs": [0, 500, 1000, 1500, 2000, 2500, 3000, 3500], "amount": 0.08, "durationMs": 300 }
+    }
+  ]
+}

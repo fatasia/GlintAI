@@ -21,7 +21,7 @@ export class MediaGatewayClient {
   async models(type: "audio" | "image" | "video", signal = AbortSignal.timeout(20000)) {
     const data = await this.json(`/v1/skills/models?type=${type}`, signal);
     if (!Array.isArray(data.models)) throw new Error("Invalid media model catalog");
-    return data.models.filter((item: any) => typeof item.name === "string" && item.available_for_this_key !== false).map((item: any) => ({ id: item.name as string, name: String(item.display_name ?? item.name), type }));
+    return data.models.filter((item: any) => typeof item.name === "string" && item.available_for_this_key !== false).map((item: any) => ({ id: item.name as string, name: String(item.display_name ?? item.name), type, description: typeof item.description === "string" ? item.description : "", inputHint: typeof item.input_hint === "string" ? item.input_hint : "", tags: Array.isArray(item.tags) ? item.tags.filter((tag: unknown) => typeof tag === "string").slice(0, 8) : [] }));
   }
   async voices(model: string, signal = AbortSignal.timeout(20000)) { return this.json(`/v1/skills/voices?model=${encodeURIComponent(model)}`, signal); }
   async submit(model: string, prompt: string, params: Record<string, unknown> = {}, signal = AbortSignal.timeout(30000)) {
@@ -64,3 +64,4 @@ export async function downloadMediaResult(task: MediaTask, signal = AbortSignal.
   } : undefined;
   return fetchPublicAsset(task.result_url, signal, 0, true, resolver);
 }
+export * from "./presets";

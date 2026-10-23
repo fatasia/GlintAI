@@ -2,7 +2,7 @@
   "name": "@glintai/knowledge",
   "version": "0.1.0",
   "description": "Knowledge source layer — markdown chunking, BM25/embedding retrieval, and refusal-first grounded QA with citations",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": {

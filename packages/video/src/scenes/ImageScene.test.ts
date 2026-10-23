@@ -7,6 +7,8 @@ vi.mock("remotion", async (original) => ({
   ...await original<typeof import("remotion")>(),
   useVideoConfig: vi.fn(),
 }));
+// Layout-only inspection calls the view directly; resolver/provider behavior is covered separately.
+vi.mock("../components/MediaAssetContext", () => ({ useMediaAssetSrc: (src: string) => src }));
 const config = vi.mocked(useVideoConfig);
 beforeEach(() => config.mockReturnValue({ width: 1920, height: 1080 } as ReturnType<typeof useVideoConfig>));
 

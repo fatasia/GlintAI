@@ -1,11 +1,12 @@
+import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const PATH_ARGS = new Set(["source", "code", "project", "out", "batch", "adapters", "persona-pack", "tts-model", "transcription-model", "reference-audio", "params"]);
-const SCRIPT_NAMES = new Set(["render", "render-worker", "preview-code", "ask", "rehearse", "reexplain", "media"]);
+const PATH_ARGS = new Set(["source", "code", "project", "export-project", "analysis", "out", "video", "audio", "plan", "src", "mask", "dir", "task-dir", "feedback", "beats-grid", "batch", "adapters", "persona-pack", "tts-model", "transcription-model", "reference-audio", "params", "store", "operations", "tests", "receipt", "before", "after", "against"]);
+const SCRIPT_NAMES = new Set(["render", "render-worker", "native-worker", "preview-code", "ask", "rehearse", "reexplain", "media"]);
 
 export function resolvePaths(args: string[], callerDir: string): string[] {
   return args.map((arg) => {
@@ -20,7 +21,7 @@ export function resolvePaths(args: string[], callerDir: string): string[] {
     }
     if(name === "catalog")return `--catalog=${path.resolve(callerDir,value!)}`;
     if(name === "preview-config")return `--preview-config=${path.resolve(callerDir,value!)}`;
-    if (PATH_ARGS.has(name!) || (name === "music" && !["auto", "off", "minimax", "gateway"].includes(value!))) {
+    if (PATH_ARGS.has(name!) || (name === "music" && !["auto", "off", "synth", "existing", "minimax", "gateway"].includes(value!))) {
       if (!value?.trim()) throw new Error(`--${name} requires a path`);
       return `--${name}=${path.resolve(callerDir, value)}`;
     }
@@ -54,7 +55,17 @@ export function renderArgs(projectPath: string, args: string[]): string[] {
 }
 
 export function createCliRuntime(entryUrl: string, callerDir = process.env.INIT_CWD || process.cwd()) {
-  const studioDir = path.resolve(path.dirname(fileURLToPath(entryUrl)), "..");
+  const entryPath = fileURLToPath(entryUrl);
+  const entryDir = path.dirname(entryPath);
+  // Packaged builds place the bundle outside the studio tree; the launcher pins the
+  // writable studio directory instead of deriving it from the bundle location. When
+  // the CLI is a built .mjs (app/cli/glint.mjs), the studio tree is its sibling.
+  const packaged = path.basename(entryPath) === "glint.mjs" || fs.existsSync(path.join(entryDir, "render.mjs"));
+  const studioDir = process.env.GLINT_STUDIO_DIR
+    ? path.resolve(process.env.GLINT_STUDIO_DIR)
+    : packaged
+      ? path.resolve(entryDir, "..", "studio")
+      : path.resolve(entryDir, "..");
   const require = createRequire(entryUrl);
   const run = (args: string[]): Promise<void> => new Promise((resolve, reject) => {
     // Never pass user-controlled arguments through a shell, including on Windows.
@@ -67,6 +78,12 @@ export function createCliRuntime(entryUrl: string, callerDir = process.env.INIT_
   });
   const scriptArgs = (name: string, args: string[]) => {
     if (!SCRIPT_NAMES.has(name)) throw new Error(`Unknown CLI script: ${name}`);
+    // Packaged builds ship each worker as a sibling .mjs entry (no tsx, no
+    // TypeScript sources). Spawn it directly; re-entering the CLI would recurse.
+    const sibling = path.join(entryDir, `${name}.mjs`);
+    if (fs.existsSync(sibling)) return [sibling, ...args];
+    const bundled = process.env.GLINT_CLI_ENTRY;
+    if (bundled) return [bundled, name, ...args];
     return ["--import", pathToFileURL(require.resolve("tsx")).href, path.join(studioDir, "scripts", `${name}.ts`), ...args];
   };
   return {

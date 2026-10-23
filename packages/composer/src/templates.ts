@@ -16,7 +16,8 @@ export const TEMPLATES: SceneTemplate[] = [
   { id: "code-walkthrough", label: "代码走读", description: "保留代码片段并说明各段结构。", requires: "至少一个代码块", requiredKind: "code" },
   { id: "recap", label: "速览总结", description: "将跨小节要点压成一张回顾卡。", requires: "至少一段正文或列表", requiredKind: "bullets", bodyKinds: ["bullets"] },
 ];
-export const THEME_IDS = ["glint-dark", "glint-light", "cream-editorial", "mint-clean", "bold-poster"] as const;
+import { THEME_NAMES } from "@glintai/design-tokens";
+export const THEME_IDS = THEME_NAMES;
 export function isTemplateId(value: string | undefined): value is TemplateId { return TEMPLATES.some((t) => t.id === value); }
 export function templateById(id: string | undefined): SceneTemplate | undefined { return TEMPLATES.find((t) => t.id === id); }
 export type { ComposerOptions };

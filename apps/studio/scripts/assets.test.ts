@@ -58,6 +58,14 @@ describe("copyProjectAssets", () => {
     project.scenes = [{ id: "title", kind: "title", title: "T", narration: { text: "T" } }];
     expect(await copyProjectAssets(source, output, project)).toEqual(project);
   });
+  it("copies and rewrites video scene assets like image assets", async () => {
+    await fs.mkdir(path.join(source, "assets/clips"));
+    await fs.writeFile(path.join(source, "assets/clips/footage.mp4"), "fake-mp4");
+    project.scenes.push(parseProject({ ...project, scenes: [{ id: "clip", kind: "video", src: "assets/clips/footage.mp4", narration: { text: "切片" } }] }).scenes.at(-1)!);
+    const prepared = await copyProjectAssets(source, output, project);
+    expect((prepared.scenes.at(-1) as { src: string }).src).toMatch(/^assets\/project-[^/]+\/clips\/footage\.mp4$/);
+    expect(await fs.readFile(path.join(output, (prepared.scenes.at(-1) as { src: string }).src))).toEqual(await fs.readFile(path.join(source, "assets/clips/footage.mp4")));
+  });
   it("fails on missing scene files and missing glTF dependencies without partial output", async () => {
     await fs.unlink(path.join(source, "assets/models/cube.bin"));
     await expect(copyProjectAssets(source, output, project)).rejects.toThrow(/resource is missing/);

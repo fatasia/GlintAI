@@ -1,12 +1,20 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { TEMPLATES, THEME_IDS } from "@glintai/composer/templates";
 import { jobRequest, parseJob, terminalJob, type IdeaJob } from "./jobs-client";
 import { readSavedProjects, removeProject, saveProject, type SavedProject } from "./project-history";
 import { type SceneScriptProject } from "@glintai/scenescript";
-import { SceneEditor } from "./SceneEditor";
+import { SessionEditor } from "./SessionEditor";
 import { parseEditorProject } from "./editor-model";
+import { CreationLibrary } from "./CreationLibrary";
+import { DeliveryCheck } from "./DeliveryCheck";
+import { HomeHero } from "./HomeHero";
+import type { QuickVideoPreset } from "./QuickVideo";
+const RecipeGallery = lazy(() => import("./RecipeGallery").then(module => ({ default: module.RecipeGallery })));
+const CreationWizard = lazy(() => import("./CreationWizard").then(module => ({ default: module.CreationWizard })));
+import { ReferenceBuilder } from "./ReferenceBuilder";
+import { ENCODING_OPTIONS, RenderSummary, TTS_ENGINES, ttsCost } from "./RenderSummary";
 const labels: Record<string, string> = { recovering: "正在查询任务状态", queued: "排队中", compose: "整理资料", rehearse: "虚拟试讲", render: "渲染视频", stopping: "正在停止", done: "已完成", failed: "失败", cancelled: "已取消", interrupted: "任务已中断" };
-const themeLabels = ["暗夜紫", "浅色", "米色编辑部", "薄荷清爽", "大字报"];
+const themeLabels = ["Glint 深色", "Glint 浅色", "奶油编辑部", "薄荷清爽", "海报大字", "手绘笔记", "复古报刊", "黑板科技", "白板马克笔", "工程蓝图"];
 const key = "glint.last-job";
 const field: CSSProperties = { width: "100%", minWidth: 0, border: "1px solid #35414e", borderRadius: 10, background: "#141b24", color: "#f2f6fa", padding: 12, font: "inherit" };
 const button: CSSProperties = { border: "1px solid #586579", borderRadius: 10, background: "#202d3d", color: "#f2f6fa", padding: "12px 18px", font: "inherit", cursor: "pointer" };
@@ -23,6 +31,22 @@ export function IdeaStudio({ cardStyle }: { cardStyle: CSSProperties }) {
   const [retry, setRetry] = useState(0);
   const [recoveryRequest, setRecoveryRequest] = useState<string | null>(null);
   const [projects, setProjects] = useState<SavedProject[]>([]);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [recipesOpen, setRecipesOpen] = useState(false);
+  const [recipePreset, setRecipePreset] = useState<QuickVideoPreset | undefined>(undefined);
+  const [sharedProjects, setSharedProjects] = useState<Array<{ projectId: string; title: string; revision: number }>>([]);
+  const [sharedMessage, setSharedMessage] = useState("");
+  const loadSharedProjects = async () => {
+    try { const response = await fetch("/api/session/list"); const value = await response.json(); if (!response.ok) throw new Error(value.error); setSharedProjects(value.projects ?? []); setSharedMessage(value.projects?.length ? "选择工程，接续 Skill / CLI 的修改" : "还没有共享工程。可从 Skill 创建，或在此生成分镜。"); }
+    catch { setSharedMessage("共享工程列表不可用，请检查本地服务。"); }
+  };
+  const openSharedProject = async (id: string) => {
+    try {
+      const response = await fetch(`/api/session/snapshot?projectId=${encodeURIComponent(id)}`); const value = await response.json(); if (!response.ok) throw new Error(value.error);
+      const next = parseEditorProject(value.snapshot.document);
+      setProject(next); setTheme(typeof next.theme === "string" ? next.theme : "glint-dark"); setAspect(next.aspect); setEditorVersion(value => value + 1); setProjectId(null); setReview(null); setEvidence(""); setError("");
+    } catch (error) { setError(error instanceof Error ? error.message : "打开共享工程失败"); }
+  };
   const [project, setProject] = useState<SceneScriptProject | null>(null);
   const [review, setReview] = useState<ReturnType<typeof import("@glintai/composer").reviewProject> | null>(null);
   const [evidence, setEvidence] = useState("");
@@ -37,6 +61,15 @@ export function IdeaStudio({ cardStyle }: { cardStyle: CSSProperties }) {
     return () => controller.abort();
   }, []);
   const [encoding, setEncoding] = useState("draft");
+  // Confirmation is bound to the exact engine, export profile and project content that
+  // produced it, so polling or unrelated state updates cannot silently keep it alive.
+  const projectSignature = useMemo(() => project ? JSON.stringify(project) : "", [project]);
+  const preflightKey = `${tts}\u0000${encoding}\u0000${projectSignature}`;
+  const [costConfirmedKey, setCostConfirmedKey] = useState("");
+  useEffect(() => { setCostConfirmedKey(""); }, [preflightKey]);
+  const cost = ttsCost(tts);
+  const costConfirmed = costConfirmedKey === preflightKey;
+  const costBlocked = cost.requiresConfirmation && !costConfirmed;
   const [music, setMusic] = useState("off");
   const [musicAssets, setMusicAssets] = useState<{ name: string }[]>([]);
   const refreshMusic = async () => {
@@ -47,7 +80,16 @@ export function IdeaStudio({ cardStyle }: { cardStyle: CSSProperties }) {
   const [restored, setRestored] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [editorVersion, setEditorVersion] = useState(0);
-  const editorProject = useMemo(() => project ? { ...project, aspect: aspect as SceneScriptProject["aspect"], theme } : null, [project, aspect, theme]);
+  const editorProject = useMemo(() => project ? { ...project, aspect: aspect as SceneScriptProject["aspect"], theme: project.theme && typeof project.theme !== "string" ? project.theme : theme } : null, [project, aspect, theme]);
+  const useRecipe = (recipe: { title: string; sample: string; sampleMode: "source" | "idea"; template: string; theme: string; aspect: string }) => {
+    setTemplate(recipe.template); setTheme(recipe.theme);
+    setAspect(recipe.aspect === "9:16" || recipe.aspect === "1:1" ? recipe.aspect : "16:9");
+    setMode(recipe.sampleMode); setText(recipe.sample); setProject(null); setReview(null); setEvidence(""); setError("");
+    setRecipePreset({ label: recipe.title, text: recipe.sample, aspect: recipe.aspect === "9:16" || recipe.aspect === "1:1" ? recipe.aspect : "16:9", template: recipe.template, theme: recipe.theme, nonce: Date.now() });
+    setStorageStatus(`已套用模板：${recipe.title}`);
+    requestAnimationFrame(() => document.querySelector('[aria-label="快速成片"]')?.scrollIntoView({ block: "center", behavior: "smooth" }));
+  };
+  const receiveSessionProject = (next: SceneScriptProject) => { setProject(next); setTheme(typeof next.theme === "string" ? next.theme : "glint-dark"); setAspect(next.aspect); setReview(null); };
   const importRef = useRef<HTMLInputElement>(null);
   const lock = useRef(false);
   const mounted = useRef(true);
@@ -76,6 +118,7 @@ export function IdeaStudio({ cardStyle }: { cardStyle: CSSProperties }) {
     setRestored(true);
     return () => { mounted.current = false; active.current?.abort(); };
   }, []);
+  useEffect(() => { if (project) setAdvancedOpen(true); }, [project?.id]);
   useEffect(() => {
     if (!restored) return;
     const timer = setTimeout(() => {
@@ -145,6 +188,7 @@ export function IdeaStudio({ cardStyle }: { cardStyle: CSSProperties }) {
   }, [job?.id, busy, paused, retry]);
   const submit = async () => {
     if (lock.current || busy || (!text.trim() && !project)) return;
+    if (costBlocked) { setError("当前配音引擎可能产生费用，请先勾选“我确认可能产生费用”。"); return; }
     lock.current = true; setSubmitting(true); setError("");
     const controller = new AbortController(); active.current = controller;
     const payload = { ...(project ? { project: { ...project, aspect, theme } } : { [mode]: text }), template, theme, aspect, tts, encoding, music };
@@ -171,18 +215,87 @@ export function IdeaStudio({ cardStyle }: { cardStyle: CSSProperties }) {
     try { await jobRequest(`/api/make/${job.id}`, { method: "DELETE" }, controller.signal); setPaused(false); setRetry((value) => value + 1); }
     catch { if (mounted.current) setError("取消请求未确认，请恢复查询后重试。"); }
   };
-  return <section aria-labelledby="make-title" style={{ ...cardStyle, padding: 26, display: "grid", gap: 22 }} onKeyDown={event => {
+  const loadProjectDocument = (value: unknown) => {
+    try {
+      const next = parseEditorProject(value);
+      if (project) {
+        try { saveProject({ id: projectId ?? crypto.randomUUID(), name: project.title, mode, text, template, theme, aspect, project, evidence }); setProjects(readSavedProjects()); }
+        catch { throw new Error("当前工程备份失败，请先导出项目 JSON，再继续编辑。"); }
+      }
+      setProject(next); setEditorVersion(version => version + 1); setAspect(next.aspect);
+      if (typeof next.theme === "string" && THEME_IDS.some(id => id === next.theme)) setTheme(next.theme);
+      setProjectId(null); setReview(null); setEvidence(""); setError("");
+      setStorageStatus("已载入新工程，可继续修改");
+    } catch (error) { setError(error instanceof Error ? error.message : "无法载入工程，请重试。"); }
+  };
+  return <section aria-label="创作首页" style={{ width: "min(94vw, 1180px)", display: "grid", gap: 36 }} onKeyDown={event => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); if (!busy && !submitting && !composing) rememberProject(); }
   }}>
-    <div><h2 id="make-title" style={{ margin: "0 0 8px", fontSize: 24 }}>把资料变成讲解</h2><p style={{ color: "#a7b4c4", margin: 0 }}>先编排分镜、修改内容，再配音导出。首次使用可载入示例，草稿自动保存在这台设备。</p></div>
+    <HomeHero projects={projects} onOpen={restoreProject} disabled={busy || submitting || composing} preset={recipePreset} onOpenReference={() => {
+      setAdvancedOpen(true);
+      setTimeout(() => {
+        const target = document.querySelector<HTMLDetailsElement>('[aria-label="从参考片重建工程"]');
+        if (target) { target.open = true; target.scrollIntoView({ block: "center", behavior: "smooth" }); }
+      }, 150);
+    }} onEditProject={value => {
+      try {
+        const next = parseEditorProject(value);
+        if (project) {
+          try { saveProject({ id: projectId ?? crypto.randomUUID(), name: project.title, mode, text, template, theme, aspect, project, evidence }); setProjects(readSavedProjects()); }
+          catch { throw new Error("当前工程备份失败，请先导出项目 JSON，再继续编辑这支视频。"); }
+        }
+        setProject(next); setEditorVersion(version => version + 1); setAspect(next.aspect);
+        if (typeof next.theme === "string" && THEME_IDS.some(id => id === next.theme)) setTheme(next.theme);
+        setProjectId(null); setReview(null); setEvidence(""); setError("");
+        setStorageStatus("已载入这支视频的工程，可继续修改");
+      } catch (error) { setError(error instanceof Error ? error.message : "无法载入工程；仍可下载 MP4 后重试。"); }
+    }} />
+    <details style={{ ...cardStyle, padding: "16px 18px", borderRadius: 14, background: "#101013", border: "1px solid #26262b" }}>
+      <summary style={{ cursor: "pointer", color: "#aecef6", fontWeight: 600, fontSize: 13 }}>创作向导 · 从目标到分镜</summary>
+      <div style={{ paddingTop: 14 }}><Suspense fallback={<p role="status" style={{ color: "#8b8b95" }}>正在加载向导…</p>}>
+        <CreationWizard disabled={busy || submitting || composing} onCompose={(source, options) => {
+          const wizardTheme = typeof options.theme === "string" ? options.theme : "glint-dark";
+          if ((THEME_IDS as readonly string[]).includes(wizardTheme)) setTheme(wizardTheme as (typeof THEME_IDS)[number]);
+          if (options.aspect === "9:16" || options.aspect === "1:1") setAspect(options.aspect); else setAspect("16:9");
+          setMode("source"); setText(source);
+          setProject(null); setReview(null); setEvidence(""); setError("");
+          setStorageStatus("已载入向导计划，可直接生成或继续编辑");
+          requestAnimationFrame(() => document.querySelector('[aria-label="快速成片"]')?.scrollIntoView({ block: "center", behavior: "smooth" }));
+        }} />
+      </Suspense></div>
+    </details>
+    <details onToggle={event => setRecipesOpen(event.currentTarget.open)} style={{ ...cardStyle, padding: "16px 18px", borderRadius: 14, background: "#101013", border: "1px solid #26262b" }}>
+      <summary style={{ cursor: "pointer", color: "#aecef6", fontWeight: 600, fontSize: 13 }}>模板库 · 100 个实用配方</summary>
+      {recipesOpen && <div style={{ paddingTop: 14 }}><Suspense fallback={<p role="status" style={{ color: "#8b8b95" }}>正在加载模板…</p>}><RecipeGallery onUse={useRecipe} /></Suspense></div>}
+    </details>
+    <details open={advancedOpen} onToggle={event => setAdvancedOpen(event.currentTarget.open)} style={{ ...cardStyle, padding: "18px 22px", borderRadius: 14, background: "#101013", border: "1px solid #26262b" }}>
+      <summary style={{ cursor: "pointer", color: "#a1a1aa", fontWeight: 600, fontSize: 13 }}>高级编辑：版式、配音与导出</summary>
+      <div style={{ display: "grid", gap: 22, marginTop: 16 }}>
+    <details><summary style={{ cursor: "pointer" }}>从模板开始 · 选一个结果</summary>
+      <CreationLibrary disabled={busy || submitting || composing} onUse={instance => {
+        if (project) {
+          try { saveProject({ id: projectId ?? crypto.randomUUID(), name: project.title, mode, text, template, theme, aspect, project, evidence }); setProjects(readSavedProjects()); }
+          catch { throw new Error("当前工程备份失败，请先导出 JSON，再切换创作包。"); }
+        }
+        const next = parseEditorProject(instance.project);
+        setProject(next); setTheme(typeof next.theme === "string" ? next.theme : "glint-dark"); setAspect(next.aspect);
+        setEditorVersion(value => value + 1); setProjectId(null); setReview(null); setEvidence(""); setError("");
+        setText(""); setStorageStatus(`已从创作包 ${instance.pack.id} v${instance.pack.version} 创建新工程`);
+      }} />
+    </details>
     <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
       <button type="button" disabled={busy || composing || submitting} style={button} onClick={() => { setMode("source"); setText("# 清晰的讲解\n\n## 从问题开始\n先说清楚要解决什么问题。\n\n## 给出例子\n展示一个可以重复的操作，再解释结果和限制。"); setProject(null); setReview(null); }}>载入入门示例</button>
       <button type="button" disabled={busy || composing || submitting} style={button} onClick={() => importRef.current?.click()}>导入项目 JSON</button>
       <input ref={importRef} type="file" accept=".json,application/json" hidden onChange={async event => { const file = event.target.files?.[0]; if (!file) return; try { if (file.size > 100000) throw new Error("项目文件超过 100 KB"); const value = parseEditorProject(JSON.parse(await file.text())); setProject(value); setEditorVersion(value => value + 1); setAspect(value.aspect); if (typeof value.theme === "string" && THEME_IDS.some(theme => theme === value.theme)) setTheme(value.theme); setReview(null); setEvidence(""); setProjectId(null); setError(""); } catch (err) { setError(err instanceof Error ? err.message : "导入失败"); } finally { if (importRef.current) importRef.current.value = ""; } }} />
       <span role="status" style={{ fontSize: 13, color: "#a7b4c4" }}>{storageStatus}</span>
     </div>
+    <details onToggle={event => { if (event.currentTarget.open) void loadSharedProjects(); }}>
+      <summary style={{ cursor: "pointer", color: "#aecef6" }}>从 Skill / CLI 继续</summary>
+      <p role="status">{sharedMessage}</p><div style={{ display: "grid", gap: 8 }}>{sharedProjects.map(item => <button type="button" key={item.projectId} style={{ ...button, textAlign: "left", overflowWrap: "anywhere" }} disabled={busy || composing || submitting} onClick={() => void openSharedProject(item.projectId)}>{item.title || item.projectId} · r{item.revision}<small style={{ display: "block" }}>{item.projectId}</small></button>)}</div>
+    </details>
+    <ReferenceBuilder onProject={loadProjectDocument} disabled={busy || submitting || composing} />
     {projects.length > 0 && <details>
-      <summary style={{ cursor: "pointer", color: "#aecef6" }}>最近项目（本机保存）</summary>
+      <summary style={{ cursor: "pointer", color: "#aecef6" }}>全部作品与删除</summary>
       <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
         {projects.slice(0, 8).map((project) => <div key={project.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <button type="button" onClick={() => restoreProject(project)} style={{ ...button, flex: 1, textAlign: "left" }}>{project.name}<small style={{ display: "block", color: "#8d9aac" }}>{new Date(project.updatedAt).toLocaleString()}</small></button>
@@ -191,7 +304,7 @@ export function IdeaStudio({ cardStyle }: { cardStyle: CSSProperties }) {
       </div>
     </details>}
     <fieldset disabled={busy || submitting || composing} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-      <legend style={{ padding: "0 0 10px", fontWeight: 600 }}>01 · 输入内容</legend>
+      <legend style={{ padding: "0 0 10px", fontWeight: 600 }}>资料与想法</legend>
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         <button type="button" aria-pressed={mode === "source"} style={button} onClick={() => { setMode("source"); setText(""); setProject(null); setReview(null); }}>已有资料</button>
         <button type="button" aria-pressed={mode === "idea"} style={button} onClick={() => { setMode("idea"); setText(""); setProject(null); setReview(null); }}>一句话想法</button>
@@ -200,32 +313,33 @@ export function IdeaStudio({ cardStyle }: { cardStyle: CSSProperties }) {
       <textarea id="make-input" maxLength={mode === "source" ? 12000 : 2000} rows={5} value={text} onChange={(event) => { setText(event.target.value); setProject(null); setReview(null); }} placeholder={mode === "source" ? "# 标题\n\n## 核心概念\n资料正文…" : "例如：用扑克牌解释熵"} style={{ ...field, marginTop: 8, resize: "vertical" }} />
     </fieldset>
     <fieldset disabled={busy || submitting || composing} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-      <legend style={{ padding: "0 0 10px", fontWeight: 600 }}>02 · 选择版式</legend>
+      <legend style={{ padding: "0 0 10px", fontWeight: 600 }}>版式与风格</legend>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 190px), 1fr))", gap: 14 }}>
-        <label>叙事模板<select value={template} onChange={(e) => { setTemplate(e.target.value); setProject(null); setReview(null); }} style={field}>{TEMPLATES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
-        <label>视觉主题<select value={theme} onChange={(e) => setTheme(e.target.value)} style={field}>{THEME_IDS.map((id, i) => <option key={id} value={id}>{themeLabels[i]}</option>)}</select></label>
-        <label>画面比例<select value={aspect} onChange={(e) => setAspect(e.target.value)} style={field}>{["16:9", "9:16", "1:1"].map((value) => <option key={value}>{value}</option>)}</select></label>
+        <label>版式<select value={template} onChange={(e) => { setTemplate(e.target.value); setProject(null); setReview(null); }} style={field}>{TEMPLATES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+        <label>风格<select aria-label="风格" value={theme} onChange={(e) => { setTheme(e.target.value); setProject(current => current ? { ...current, theme: e.target.value } : null); }} style={field}>{THEME_IDS.map((id, i) => <option key={id} value={id}>{themeLabels[i] ?? id}</option>)}</select></label>
+        <label>画幅<select value={aspect} onChange={(e) => setAspect(e.target.value)} style={field}>{["16:9", "9:16", "1:1"].map((value) => <option key={value}>{value}</option>)}</select></label>
       </div>
-      <label>编排方式<select value={engine} onChange={event => setEngine(event.target.value)} style={field}><option value="heuristic">离线编排 · 不联网</option><option value="llm">模型编排 · 需要服务端配置</option></select></label>
+      <label>生成方式<select value={engine} onChange={event => setEngine(event.target.value)} style={field}><option value="heuristic">本地生成 · 不联网</option><option value="llm">模型生成 · 需要配置</option></select></label>
       <p style={{ color: "#a7b4c4", fontSize: 13 }}>{TEMPLATES.find((item) => item.id === template)?.description} 资料要求：{TEMPLATES.find((item) => item.id === template)?.requires}。</p>
     </fieldset>
     <fieldset disabled={busy || composing || submitting} style={{ minWidth: 0, border: 0, padding: 0, margin: 0, display: "grid", gap: 14 }}>
-      <button type="button" disabled={!text.trim() || composing || busy} onClick={() => void compose()} style={button}>{composing ? "正在编排…" : project ? "重新编排（替换当前分镜）" : "编排分镜"}</button>
-      {editorProject && <SceneEditor key={`${editorProject.id}-${editorVersion}`} project={editorProject} voiceEngine={tts} onChange={value => { setProject(value); setReview(null); }} />}
+      <button type="button" disabled={!text.trim() || composing || busy} onClick={() => void compose()} style={button}>{composing ? "正在编排…" : project ? "重新生成（替换当前分镜）" : "生成分镜"}</button>
+      {editorProject && <SessionEditor key={`${editorProject.id}-${editorVersion}`} project={editorProject} voiceEngine={tts} onChange={receiveSessionProject} onFork={value => { receiveSessionProject(value); setEditorVersion(version => version + 1); }} />}
       {project && <button type="button" style={button} disabled={!evidence} onClick={() => void recheck()}>重新核对旁白依据</button>}
-      {review && <details><summary>旁白依据 · {review.flagged}/{review.sentences.length} 句需核对</summary><p style={{ color: "#a7b4c4", fontSize: 13 }}>{review.basis}</p>{review.sentences.filter((sentence) => sentence.flags.length).map((sentence, i) => <div key={i} style={{ padding: 10, borderBottom: "1px solid #304053" }}><strong>{sentence.sceneId}</strong><p>{sentence.text}</p><small>{sentence.flags.join(" / ")}</small>{sentence.candidates[0] && <blockquote>资料候选：{sentence.candidates[0].text}</blockquote>}</div>)}</details>}
+      {review && <details><summary>旁白依据核对 · {review.flagged}/{review.sentences.length} 句待看</summary><p style={{ color: "#a7b4c4", fontSize: 13 }}>{review.basis}</p>{review.sentences.filter((sentence) => sentence.flags.length).map((sentence, i) => <div key={i} style={{ padding: 10, borderBottom: "1px solid #304053" }}><strong>{sentence.sceneId}</strong><p>{sentence.text}</p><small>{sentence.flags.join(" / ")}</small>{sentence.candidates[0] && <blockquote>资料候选：{sentence.candidates[0].text}</blockquote>}</div>)}</details>}
     </fieldset>
     <div style={{ display: "grid", gap: 12 }}>
-      <strong>03 · 制作与下载</strong>
-      <p style={{ color: "#a7b4c4", fontSize: 13, margin: 0 }}>分镜优先于输入资料；改写资料或模板后请重新编排。Edge 配音联网，系统音色仅支持 Windows，本地克隆使用服务端参考音频。</p>
+      <strong>配音、配乐与导出</strong>
+      <p style={{ color: "#a7b4c4", fontSize: 13, margin: 0 }}>分镜优先于输入资料；改写资料或版式后请重新生成。Edge 配音联网，系统音色仅支持 Windows，本地克隆使用服务端参考音频。</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,210px),1fr))", gap: 12 }}>
-        <label>配音<select aria-label="配音" style={field} value={tts} onChange={event => setTts(event.target.value)} disabled={busy || submitting}>{Object.entries({ mock: "无声草稿 · 最快", sapi: "Windows 系统配音 · 离线", edge: "Edge 配音 · 联网", qwen: "Qwen 本地克隆", openai: "OpenAI 兼容配音", elevenlabs: "ElevenLabs · 音色与精准字幕", fish: "Fish Audio · 多语言配音", minimax: "MiniMax · 高品质配音", gateway: "媒体网关 · 云端配音" }).map(([id, label]) => <option key={id} value={id} disabled={!voiceEngines.includes(id)}>{label}{voiceEngines.includes(id) ? "" : " · 未配置"}</option>)}</select></label>
+        <label>配音<select aria-label="配音" style={field} value={tts} onChange={event => setTts(event.target.value)} disabled={busy || submitting}>{TTS_ENGINES.map(item => <option key={item.id} value={item.id} disabled={!voiceEngines.includes(item.id)}>{item.label}{voiceEngines.includes(item.id) ? "" : " · 未配置"}</option>)}</select></label>
         <label>背景配乐<select aria-label="背景配乐" style={field} value={music} onFocus={() => void refreshMusic()} onChange={event => setMusic(event.target.value)} disabled={busy || submitting}><option value="off">无配乐</option><option value="auto">本地氛围音 · 不联网</option>{musicAssets.map(asset => <option key={asset.name} value={asset.name}>{asset.name}</option>)}</select><small>在素材工坊生成 Suno / MiniMax 音乐后，回到这里选择；复用素材不会重新生成。</small></label>
-        <label>导出规格<select aria-label="导出规格" style={field} value={encoding} onChange={event => setEncoding(event.target.value)} disabled={busy || submitting}><option value="draft">预览 · 半尺寸 / 快速</option><option value="compact">紧凑 · 全尺寸 / CRF24</option><option value="balanced">均衡 · 全尺寸 / CRF20</option><option value="quality">母版 · 全尺寸 / CRF16</option></select></label>
+        <label>导出规格<select aria-label="导出规格" style={field} value={encoding} onChange={event => setEncoding(event.target.value)} disabled={busy || submitting}>{ENCODING_OPTIONS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
       </div>
+      <RenderSummary project={project} tts={tts} encoding={encoding} confirmed={costConfirmed} disabled={busy || submitting || composing} onConfirmationChange={checked => setCostConfirmedKey(checked ? preflightKey : "")} />
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
         <button type="button" disabled={busy || submitting || composing || (!text.trim() && !project)} onClick={rememberProject} style={button}>保存项目</button>
-        <button disabled={busy || submitting || composing || (!text.trim() && !project)} onClick={() => void submit()} style={{ ...button, background: "#aecef6", color: "#101926", opacity: busy || submitting || composing || (!text.trim() && !project) ? 0.5 : 1 }}>{submitting ? "提交中…" : busy ? "制作中…" : "生成草稿"}</button>
+        <button disabled={busy || submitting || composing || (!text.trim() && !project) || costBlocked} title={costBlocked ? "请先勾选“我确认可能产生费用”" : undefined} onClick={() => void submit()} style={{ ...button, background: "#aecef6", color: "#101926", opacity: busy || submitting || composing || (!text.trim() && !project) || costBlocked ? 0.5 : 1 }}>{submitting ? "提交中…" : busy ? "制作中…" : "生成草稿"}</button>
         {busy && job && <button style={button} disabled={job.status === "cancelling"} onClick={() => void cancel()}>取消任务</button>}
         {recoveryRequest && <button style={button} onClick={()=>{setRecoveryRequest(null);setPaused(false);setError("已停止查询；服务器任务未取消。");try{localStorage.removeItem(`${key}:request`);}catch{}}}>停止查询</button>}
         {paused && <button style={button} onClick={() => { setPaused(false); setRetry((value) => value + 1); }}>恢复查询</button>}
@@ -234,7 +348,9 @@ export function IdeaStudio({ cardStyle }: { cardStyle: CSSProperties }) {
       {error && <p role="alert" style={{ color: "#ffac98", margin: 0, overflowWrap: "anywhere" }}>{error}</p>}
       {job && <div role="status" aria-live="polite" style={{ color: "#a7b4c4" }}>{labels[job.stage ?? job.status] ?? job.status}{job.status === "failed" ? `：${job.error ?? "请检查资料结构和模型配置。"}` : ""}</div>}
       {job && job.log.length > 0 && <details><summary>任务进度</summary><ol>{job.log.map((line, i) => <li key={i}>{labels[line] ?? "处理中"}</li>)}</ol></details>}
-      {job?.status === "done" && job.video && <><video aria-label="生成的视频" src={job.video} controls preload="metadata" style={{ width: "100%", maxHeight: 600, borderRadius: 10 }} /><a style={{ color: "#aecef6" }} href={`${job.video}?download=1`} download>下载 MP4</a></>}
+      {job?.status === "done" && job.video && <><video aria-label="生成的视频" src={job.video} controls preload="metadata" style={{ width: "100%", maxHeight: 600, borderRadius: 10 }} /><a style={{ color: "#aecef6" }} href={`${job.video}?download=1`} download>下载 MP4</a><DeliveryCheck jobId={job.id} /></>}
     </div>
+      </div>
+    </details>
   </section>;
 }

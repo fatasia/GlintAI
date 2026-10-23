@@ -11,6 +11,8 @@ import { configuredVoiceEngines } from "@glintai/tts";
 
 const TERMINAL = new Set(["done", "failed", "cancelled"]);
 const ID = /^idea-[a-z0-9-]+$/;
+const LIBRARY_SOURCES = { image: /^assets\/[a-zA-Z0-9_-]{1,100}\.(?:png|jpg|webp)(?![\s\S])/, video: /^assets\/[a-zA-Z0-9_-]{1,100}\.mp4(?![\s\S])/ };
+const isLibraryScene = scene => scene.kind === "image" || scene.kind === "video";
 export function validateMakeInput(body, templates = TEMPLATES) {
   const idea = typeof body?.idea === "string" ? body.idea.trim() : "";
   const source = typeof body?.source === "string" ? body.source.trim() : "";
@@ -19,8 +21,11 @@ export function validateMakeInput(body, templates = TEMPLATES) {
     try {
       project = parseProject(body.project);
       if (project.scenes.some(scene => !scene.narration.text.trim())) throw new Error("Empty narration");
-      if (JSON.stringify(project).length > 100_000 || project.scenes.length > 30 || project.music || project.scenes.some(scene => ["html", "three"].includes(scene.kind) || scene.narration.audioRef || scene.kind === "image" && !/^assets\/[a-zA-Z0-9_-]{1,100}\.(?:png|jpg|webp)$/.test(scene.src))) throw new Error("Web projects require text, chart or library image scenes");
-    } catch { return { error: "Invalid editor project (maximum 30 scenes, 100000 characters); images must come from the media library" }; }
+      const invalidScene = scene => isLibraryScene(scene)
+        ? Boolean(scene.narration.audioRef) || !LIBRARY_SOURCES[scene.kind].test(scene.src)
+        : ["html", "three"].includes(scene.kind) || Boolean(scene.narration.audioRef);
+      if (JSON.stringify(project).length > 100_000 || project.scenes.length > 30 || project.music || project.scenes.some(invalidScene)) throw new Error("Web projects require text, chart, or library image/video scenes");
+    } catch { return { error: "Invalid editor project (maximum 30 scenes, 100000 characters); media must come from the library" }; }
   }
   if ([Boolean(idea), Boolean(source), Boolean(project)].filter(Boolean).length !== 1) return { error: "Choose exactly one idea, source or project" };
   if (idea.length > 2000 || source.length > 12000) return { error: "Input is too long" };
@@ -51,7 +56,7 @@ function validVideo(file) {
 }
 
 /** Local single-user runner. Only generated ids and whitelisted options become paths/argv. */
-export function createJobRunner({ studioDir, templates = TEMPLATES, execPath = process.execPath,
+export function createJobRunner({ studioDir, outputDir, templates = TEMPLATES, execPath = process.execPath,
   execArgs, env = process.env, maxConcurrency = 1, spawnFn = spawn, musicAsset = () => null,
   timeoutMs = 15 * 60_000, ttlMs = 7 * 24 * 60 * 60_000,
   killTree = (child) => {
@@ -63,7 +68,7 @@ export function createJobRunner({ studioDir, templates = TEMPLATES, execPath = p
   },
 } = {}) {
   if (!studioDir || !Number.isInteger(maxConcurrency) || maxConcurrency < 1) throw new Error("Invalid runner configuration");
-  const root = path.resolve(studioDir, "out");
+  const root = path.resolve(outputDir ?? path.resolve(studioDir, "out"));
   const stateDir = path.join(root, ".jobs");
   fs.mkdirSync(stateDir, { recursive: true });
   const jobs = new Map();
@@ -104,7 +109,7 @@ export function createJobRunner({ studioDir, templates = TEMPLATES, execPath = p
     running--;
     if (job.cancelled) job.status = "cancelled";
     else if (!failed && !job.timedOut && code === 0 && validVideo(videoPath(job.id))) job.status = "done";
-    else { job.status = "failed"; job.error = job.timedOut ? "Task timed out." : "Generation failed. Check local CLI configuration and source requirements."; }
+    else { job.status = "failed"; job.error = job.timedOut ? "Task timed out." : process.env.GLINT_JOB_DEBUG === "1" && job.startError ? `Start failed: ${job.startError}` : process.env.GLINT_JOB_DEBUG === "1" && job.buffer ? `Generation failed: ${job.buffer.slice(-500)}` : "Generation failed. Check local CLI configuration and source requirements."; }
     job.stage = job.status;
     job.log.push(job.status); job.log = job.log.slice(-20);
     job.finishedAt = Date.now();
@@ -117,8 +122,9 @@ export function createJobRunner({ studioDir, templates = TEMPLATES, execPath = p
     const args = execArgs ? [...execArgs] : ["--import", pathToFileURL(createRequire(path.join(studioDir, "package.json")).resolve("tsx")).href, path.join(studioDir, "scripts", "glint.ts")];
     if (job.project) {
       const directory = path.join(stateDir, job.id); fs.mkdirSync(directory, { recursive: true });
-      for (const scene of job.project.scenes) if (scene.kind === "image") {
-        const source = musicAsset(scene.src.slice(7)); if (!source) throw new Error("Image asset missing");
+      for (const scene of job.project.scenes) if (isLibraryScene(scene)) {
+        const source = musicAsset(scene.src.slice(7));
+        if (!source) throw new Error(`${scene.kind === "image" ? "Image" : "Video"} asset missing`);
         fs.mkdirSync(path.join(directory, "assets"), { recursive: true });
         fs.copyFileSync(source, path.join(directory, scene.src));
       }
@@ -159,7 +165,7 @@ export function createJobRunner({ studioDir, templates = TEMPLATES, execPath = p
         try { killTree(child); } catch { finish(job, -1, true); }
       }, timeoutMs);
       job.timer.unref?.();
-    } catch { finish(job, -1, true); }
+    } catch (error) { if (process.env.GLINT_JOB_DEBUG === "1") job.startError = error instanceof Error ? error.message : String(error); finish(job, -1, true); }
   }
   function schedule() {
     while (!disposed && running < maxConcurrency && queue.length) {
@@ -173,7 +179,8 @@ export function createJobRunner({ studioDir, templates = TEMPLATES, execPath = p
       prune();
       const validated = validateMakeInput(input, templates);
       if (validated.error) return validated;
-      if (validated.project?.scenes.some(scene => scene.kind === "image" && !musicAsset(scene.src.slice(7)))) return { error: "Image asset not found in this server's library" };
+      const missing = validated.project?.scenes.find(scene => isLibraryScene(scene) && !musicAsset(scene.src.slice(7)));
+      if (missing) return { error: `${missing.kind === "image" ? "Image" : "Video"} asset not found in this server's library` };
       if (!["off", "auto"].includes(validated.music) && !musicAsset(validated.music)) return { error: "Music asset not found; generate or import it first" };
       if (validated.tts === "sapi" && process.platform !== "win32") return { error: "System voice is available on Windows only" };
       if (validated.tts === "qwen" && (!env.GLINT_QWEN_MODEL || !env.GLINT_QWEN_REFERENCE)) return { error: "Configure local Qwen model and authorized reference on the server" };

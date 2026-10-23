@@ -2,7 +2,7 @@
   "name": "@glintai/music",
   "version": "0.1.0",
   "description": "Programmatic royalty-free background music — ffmpeg-synthesized ambient chord pads, zero bundled assets",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": {

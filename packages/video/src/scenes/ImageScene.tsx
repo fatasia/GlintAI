@@ -1,6 +1,7 @@
-import { LocalAssetPath, type ImageScene } from "@glintai/scenescript";
-import { AbsoluteFill, Img, staticFile, useVideoConfig } from "remotion";
+import { type ImageScene } from "@glintai/scenescript";
+import { AbsoluteFill, Img, useVideoConfig } from "remotion";
 import { FadeIn } from "../components/FadeIn";
+import { useMediaAssetSrc } from "../components/MediaAssetContext";
 
 const IMAGE_LAYOUT = {
   topPadding: 150,
@@ -13,6 +14,7 @@ const IMAGE_LAYOUT = {
 /** Framed local asset with separate, non-shrinking image and caption rows. */
 export const ImageSceneView: React.FC<{ scene: ImageScene }> = ({ scene }) => {
   const { width, height } = useVideoConfig();
+  const src = useMediaAssetSrc(scene.src);
   const topPadding = Math.min(IMAGE_LAYOUT.topPadding, height * 0.14);
   const bottomPadding = Math.min(IMAGE_LAYOUT.bottomPadding, height * 0.31);
   const captionSpace = scene.caption ? IMAGE_LAYOUT.captionGap + IMAGE_LAYOUT.captionReserve : 0;
@@ -34,7 +36,7 @@ export const ImageSceneView: React.FC<{ scene: ImageScene }> = ({ scene }) => {
     >
       <FadeIn style={{ width: "100%", maxWidth: 1400, height: imageHeight, flexShrink: 0 }}>
         <Img
-          src={staticFile(LocalAssetPath.parse(scene.src))}
+          src={src}
           alt={scene.caption ?? "Project image"}
           style={{
             display: "block",

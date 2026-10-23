@@ -2,7 +2,7 @@
   "name": "@glintai/tts",
   "version": "0.1.0",
   "description": "TTS provider abstraction with word-level timings — mock voice for offline rehearsal, OpenAI-compatible voice for production",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": {

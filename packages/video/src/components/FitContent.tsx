@@ -15,15 +15,15 @@ export function FitContent({ children, centered }: { children: React.ReactNode; 
       const scale = contentScale(outer.current.clientWidth, outer.current.clientHeight, inner.current.scrollWidth, inner.current.scrollHeight);
       inner.current.style.transform = `translate(-50%, -50%) scale(${scale})`;
     };
-    const observer = new ResizeObserver(fit);
-    observer.observe(outer.current!); observer.observe(inner.current!);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fit);
+    if (observer) { observer.observe(outer.current!); observer.observe(inner.current!); } else window.addEventListener("resize", fit);
     document.fonts?.addEventListener("loadingdone", fit);
     Promise.resolve(document.fonts?.ready).then(() => {
       if (!live) return;
       first = requestAnimationFrame(() => { fit(); second = requestAnimationFrame(release); });
     }).catch((error) => { if (live) cancelRender(error); });
     return () => {
-      live = false; observer.disconnect(); document.fonts?.removeEventListener("loadingdone", fit);
+      live = false; observer?.disconnect(); window.removeEventListener("resize", fit); document.fonts?.removeEventListener("loadingdone", fit);
       cancelAnimationFrame(first); cancelAnimationFrame(second); release();
     };
   }, []);

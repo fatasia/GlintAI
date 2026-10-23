@@ -2,7 +2,7 @@
   "name": "@glintai/video",
   "version": "0.1.0",
   "description": "Glint video components — one React component tree rendered by Remotion (MP4/PNG/GIF), Remotion Studio (preview) and @remotion/player (web/mobile)",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "type": "module",
   "exports": {
     "./size": "./src/size.ts",

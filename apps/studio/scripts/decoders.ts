@@ -124,7 +124,11 @@ export async function ensureDecoders(publicDir: string): Promise<DecoderCopyResu
 }
 
 /** CLI: `pnpm --filter glint-studio decoders [--public=<dir>]` — stages every decoder asset before bundling. */
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+// Bundled entrypoints (glint.mjs) must not trigger this CLI just because they imported the module.
+const isDecoderCli = Boolean(process.argv[1]) &&
+  path.basename(process.argv[1]!, path.extname(process.argv[1]!)) === "decoders" &&
+  import.meta.url === pathToFileURL(path.resolve(process.argv[1]!)).href;
+if (isDecoderCli) {
   void (async () => {
     const publicArg = process.argv.slice(2).find((arg) => arg.startsWith("--public="));
     if (process.argv.slice(2).some((arg) => !arg.startsWith("--public="))) {

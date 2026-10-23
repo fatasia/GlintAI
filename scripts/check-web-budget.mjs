@@ -8,8 +8,10 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, ".vite/manifest.json
 for (const entry of Object.values(manifest)) {
   if (!entry.file.endsWith(".js")) continue;
   const file = path.join(root, entry.file), bytes = fs.readFileSync(file);
-  assert.deepEqual(brotliDecompressSync(fs.readFileSync(`${file}.br`)), bytes, `Brotli mismatch: ${entry.file}`);
-  assert.deepEqual(gunzipSync(fs.readFileSync(`${file}.gz`)), bytes, `gzip mismatch: ${entry.file}`);
+  // The build deliberately leaves sub-1KB chunks uncompressed (compression
+  // overhead can exceed the bytes saved). Still verify every emitted sidecar.
+  if (bytes.length >= 1024 || fs.existsSync(`${file}.br`)) assert.deepEqual(brotliDecompressSync(fs.readFileSync(`${file}.br`)), bytes, `Brotli mismatch: ${entry.file}`);
+  if (bytes.length >= 1024 || fs.existsSync(`${file}.gz`)) assert.deepEqual(gunzipSync(fs.readFileSync(`${file}.gz`)), bytes, `gzip mismatch: ${entry.file}`);
 }
 const seen = new Set();
 function visit(key) {

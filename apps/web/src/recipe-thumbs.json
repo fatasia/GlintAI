@@ -1,0 +1,406 @@
+{
+  "version": 1,
+  "generatedAt": "2026-10-22T18:19:01.174Z",
+  "entries": [
+    {
+      "id": "product-launch-dark-tech",
+      "thumb": "/recipes/product-launch-dark-tech.png"
+    },
+    {
+      "id": "product-launch-clean-course",
+      "thumb": "/recipes/product-launch-clean-course.png"
+    },
+    {
+      "id": "product-launch-editorial",
+      "thumb": "/recipes/product-launch-editorial.png"
+    },
+    {
+      "id": "product-launch-vertical-social",
+      "thumb": "/recipes/product-launch-vertical-social.png"
+    },
+    {
+      "id": "product-ad-dark-tech",
+      "thumb": "/recipes/product-ad-dark-tech.png"
+    },
+    {
+      "id": "product-ad-clean-course",
+      "thumb": "/recipes/product-ad-clean-course.png"
+    },
+    {
+      "id": "product-ad-editorial",
+      "thumb": "/recipes/product-ad-editorial.png"
+    },
+    {
+      "id": "product-ad-vertical-social",
+      "thumb": "/recipes/product-ad-vertical-social.png"
+    },
+    {
+      "id": "store-opening-dark-tech",
+      "thumb": "/recipes/store-opening-dark-tech.png"
+    },
+    {
+      "id": "store-opening-clean-course",
+      "thumb": "/recipes/store-opening-clean-course.png"
+    },
+    {
+      "id": "store-opening-editorial",
+      "thumb": "/recipes/store-opening-editorial.png"
+    },
+    {
+      "id": "store-opening-vertical-social",
+      "thumb": "/recipes/store-opening-vertical-social.png"
+    },
+    {
+      "id": "ugc-recommend-dark-tech",
+      "thumb": "/recipes/ugc-recommend-dark-tech.png"
+    },
+    {
+      "id": "ugc-recommend-clean-course",
+      "thumb": "/recipes/ugc-recommend-clean-course.png"
+    },
+    {
+      "id": "ugc-recommend-editorial",
+      "thumb": "/recipes/ugc-recommend-editorial.png"
+    },
+    {
+      "id": "ugc-recommend-vertical-social",
+      "thumb": "/recipes/ugc-recommend-vertical-social.png"
+    },
+    {
+      "id": "course-lecture-dark-tech",
+      "thumb": "/recipes/course-lecture-dark-tech.png"
+    },
+    {
+      "id": "course-lecture-clean-course",
+      "thumb": "/recipes/course-lecture-clean-course.png"
+    },
+    {
+      "id": "course-lecture-editorial",
+      "thumb": "/recipes/course-lecture-editorial.png"
+    },
+    {
+      "id": "course-lecture-vertical-social",
+      "thumb": "/recipes/course-lecture-vertical-social.png"
+    },
+    {
+      "id": "science-explainer-dark-tech",
+      "thumb": "/recipes/science-explainer-dark-tech.png"
+    },
+    {
+      "id": "science-explainer-clean-course",
+      "thumb": "/recipes/science-explainer-clean-course.png"
+    },
+    {
+      "id": "science-explainer-editorial",
+      "thumb": "/recipes/science-explainer-editorial.png"
+    },
+    {
+      "id": "science-explainer-vertical-social",
+      "thumb": "/recipes/science-explainer-vertical-social.png"
+    },
+    {
+      "id": "data-brief-dark-tech",
+      "thumb": "/recipes/data-brief-dark-tech.png"
+    },
+    {
+      "id": "data-brief-clean-course",
+      "thumb": "/recipes/data-brief-clean-course.png"
+    },
+    {
+      "id": "data-brief-editorial",
+      "thumb": "/recipes/data-brief-editorial.png"
+    },
+    {
+      "id": "data-brief-vertical-social",
+      "thumb": "/recipes/data-brief-vertical-social.png"
+    },
+    {
+      "id": "paper-read-dark-tech",
+      "thumb": "/recipes/paper-read-dark-tech.png"
+    },
+    {
+      "id": "paper-read-clean-course",
+      "thumb": "/recipes/paper-read-clean-course.png"
+    },
+    {
+      "id": "paper-read-editorial",
+      "thumb": "/recipes/paper-read-editorial.png"
+    },
+    {
+      "id": "paper-read-vertical-social",
+      "thumb": "/recipes/paper-read-vertical-social.png"
+    },
+    {
+      "id": "how-to-dark-tech",
+      "thumb": "/recipes/how-to-dark-tech.png"
+    },
+    {
+      "id": "how-to-clean-course",
+      "thumb": "/recipes/how-to-clean-course.png"
+    },
+    {
+      "id": "how-to-editorial",
+      "thumb": "/recipes/how-to-editorial.png"
+    },
+    {
+      "id": "how-to-vertical-social",
+      "thumb": "/recipes/how-to-vertical-social.png"
+    },
+    {
+      "id": "timeline-dark-tech",
+      "thumb": "/recipes/timeline-dark-tech.png"
+    },
+    {
+      "id": "timeline-clean-course",
+      "thumb": "/recipes/timeline-clean-course.png"
+    },
+    {
+      "id": "timeline-editorial",
+      "thumb": "/recipes/timeline-editorial.png"
+    },
+    {
+      "id": "timeline-vertical-social",
+      "thumb": "/recipes/timeline-vertical-social.png"
+    },
+    {
+      "id": "versus-dark-tech",
+      "thumb": "/recipes/versus-dark-tech.png"
+    },
+    {
+      "id": "versus-clean-course",
+      "thumb": "/recipes/versus-clean-course.png"
+    },
+    {
+      "id": "versus-editorial",
+      "thumb": "/recipes/versus-editorial.png"
+    },
+    {
+      "id": "versus-vertical-social",
+      "thumb": "/recipes/versus-vertical-social.png"
+    },
+    {
+      "id": "myth-fact-dark-tech",
+      "thumb": "/recipes/myth-fact-dark-tech.png"
+    },
+    {
+      "id": "myth-fact-clean-course",
+      "thumb": "/recipes/myth-fact-clean-course.png"
+    },
+    {
+      "id": "myth-fact-editorial",
+      "thumb": "/recipes/myth-fact-editorial.png"
+    },
+    {
+      "id": "myth-fact-vertical-social",
+      "thumb": "/recipes/myth-fact-vertical-social.png"
+    },
+    {
+      "id": "case-study-dark-tech",
+      "thumb": "/recipes/case-study-dark-tech.png"
+    },
+    {
+      "id": "case-study-clean-course",
+      "thumb": "/recipes/case-study-clean-course.png"
+    },
+    {
+      "id": "case-study-editorial",
+      "thumb": "/recipes/case-study-editorial.png"
+    },
+    {
+      "id": "case-study-vertical-social",
+      "thumb": "/recipes/case-study-vertical-social.png"
+    },
+    {
+      "id": "problem-solution-dark-tech",
+      "thumb": "/recipes/problem-solution-dark-tech.png"
+    },
+    {
+      "id": "problem-solution-clean-course",
+      "thumb": "/recipes/problem-solution-clean-course.png"
+    },
+    {
+      "id": "problem-solution-editorial",
+      "thumb": "/recipes/problem-solution-editorial.png"
+    },
+    {
+      "id": "problem-solution-vertical-social",
+      "thumb": "/recipes/problem-solution-vertical-social.png"
+    },
+    {
+      "id": "code-walkthrough-dark-tech",
+      "thumb": "/recipes/code-walkthrough-dark-tech.png"
+    },
+    {
+      "id": "code-walkthrough-clean-course",
+      "thumb": "/recipes/code-walkthrough-clean-course.png"
+    },
+    {
+      "id": "code-walkthrough-editorial",
+      "thumb": "/recipes/code-walkthrough-editorial.png"
+    },
+    {
+      "id": "code-walkthrough-vertical-social",
+      "thumb": "/recipes/code-walkthrough-vertical-social.png"
+    },
+    {
+      "id": "recap-dark-tech",
+      "thumb": "/recipes/recap-dark-tech.png"
+    },
+    {
+      "id": "recap-clean-course",
+      "thumb": "/recipes/recap-clean-course.png"
+    },
+    {
+      "id": "recap-editorial",
+      "thumb": "/recipes/recap-editorial.png"
+    },
+    {
+      "id": "recap-vertical-social",
+      "thumb": "/recipes/recap-vertical-social.png"
+    },
+    {
+      "id": "brand-manifesto-dark-tech",
+      "thumb": "/recipes/brand-manifesto-dark-tech.png"
+    },
+    {
+      "id": "brand-manifesto-clean-course",
+      "thumb": "/recipes/brand-manifesto-clean-course.png"
+    },
+    {
+      "id": "brand-manifesto-editorial",
+      "thumb": "/recipes/brand-manifesto-editorial.png"
+    },
+    {
+      "id": "brand-manifesto-vertical-social",
+      "thumb": "/recipes/brand-manifesto-vertical-social.png"
+    },
+    {
+      "id": "company-intro-dark-tech",
+      "thumb": "/recipes/company-intro-dark-tech.png"
+    },
+    {
+      "id": "company-intro-clean-course",
+      "thumb": "/recipes/company-intro-clean-course.png"
+    },
+    {
+      "id": "company-intro-editorial",
+      "thumb": "/recipes/company-intro-editorial.png"
+    },
+    {
+      "id": "company-intro-vertical-social",
+      "thumb": "/recipes/company-intro-vertical-social.png"
+    },
+    {
+      "id": "event-promo-dark-tech",
+      "thumb": "/recipes/event-promo-dark-tech.png"
+    },
+    {
+      "id": "event-promo-clean-course",
+      "thumb": "/recipes/event-promo-clean-course.png"
+    },
+    {
+      "id": "event-promo-editorial",
+      "thumb": "/recipes/event-promo-editorial.png"
+    },
+    {
+      "id": "event-promo-vertical-social",
+      "thumb": "/recipes/event-promo-vertical-social.png"
+    },
+    {
+      "id": "social-vertical-dark-tech",
+      "thumb": "/recipes/social-vertical-dark-tech.png"
+    },
+    {
+      "id": "social-vertical-clean-course",
+      "thumb": "/recipes/social-vertical-clean-course.png"
+    },
+    {
+      "id": "social-vertical-editorial",
+      "thumb": "/recipes/social-vertical-editorial.png"
+    },
+    {
+      "id": "social-vertical-vertical-social",
+      "thumb": "/recipes/social-vertical-vertical-social.png"
+    },
+    {
+      "id": "english-explainer-dark-tech",
+      "thumb": "/recipes/english-explainer-dark-tech.png"
+    },
+    {
+      "id": "english-explainer-clean-course",
+      "thumb": "/recipes/english-explainer-clean-course.png"
+    },
+    {
+      "id": "english-explainer-editorial",
+      "thumb": "/recipes/english-explainer-editorial.png"
+    },
+    {
+      "id": "english-explainer-vertical-social",
+      "thumb": "/recipes/english-explainer-vertical-social.png"
+    },
+    {
+      "id": "interview-summary-dark-tech",
+      "thumb": "/recipes/interview-summary-dark-tech.png"
+    },
+    {
+      "id": "interview-summary-clean-course",
+      "thumb": "/recipes/interview-summary-clean-course.png"
+    },
+    {
+      "id": "interview-summary-editorial",
+      "thumb": "/recipes/interview-summary-editorial.png"
+    },
+    {
+      "id": "interview-summary-vertical-social",
+      "thumb": "/recipes/interview-summary-vertical-social.png"
+    },
+    {
+      "id": "ecommerce-detail-dark-tech",
+      "thumb": "/recipes/ecommerce-detail-dark-tech.png"
+    },
+    {
+      "id": "ecommerce-detail-clean-course",
+      "thumb": "/recipes/ecommerce-detail-clean-course.png"
+    },
+    {
+      "id": "ecommerce-detail-editorial",
+      "thumb": "/recipes/ecommerce-detail-editorial.png"
+    },
+    {
+      "id": "ecommerce-detail-vertical-social",
+      "thumb": "/recipes/ecommerce-detail-vertical-social.png"
+    },
+    {
+      "id": "knowledge-card-dark-tech",
+      "thumb": "/recipes/knowledge-card-dark-tech.png"
+    },
+    {
+      "id": "knowledge-card-clean-course",
+      "thumb": "/recipes/knowledge-card-clean-course.png"
+    },
+    {
+      "id": "knowledge-card-editorial",
+      "thumb": "/recipes/knowledge-card-editorial.png"
+    },
+    {
+      "id": "knowledge-card-vertical-social",
+      "thumb": "/recipes/knowledge-card-vertical-social.png"
+    },
+    {
+      "id": "keynote-dark-tech",
+      "thumb": "/recipes/keynote-dark-tech.png"
+    },
+    {
+      "id": "keynote-clean-course",
+      "thumb": "/recipes/keynote-clean-course.png"
+    },
+    {
+      "id": "keynote-editorial",
+      "thumb": "/recipes/keynote-editorial.png"
+    },
+    {
+      "id": "keynote-vertical-social",
+      "thumb": "/recipes/keynote-vertical-social.png"
+    }
+  ]
+}

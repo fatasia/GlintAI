@@ -23,7 +23,10 @@ export async function synthesizeBatch(provider: TtsProvider, requests: TtsReques
   const run = async (request: TtsRequest) => {
     const combined = request.signal ? AbortSignal.any([signal, request.signal]) : signal;
     combined.throwIfAborted();
-    const key = digest(JSON.stringify({ version: 1, provider: options.cacheNamespace ?? provider.cacheKey ?? provider.name, text: request.text, voice: request.voice, rate: request.speakingRate }));
+    // version 2: a provider's own cacheKey (model/voice/parser revision) is now
+    // mandatory in spirit — when it is missing we at least separate provider
+    // classes, so a different implementation can never reuse stale audio.
+    const key = digest(JSON.stringify({ version: 2, provider: options.cacheNamespace ?? provider.cacheKey ?? `${provider.constructor.name}:${provider.name}`, text: request.text, voice: request.voice, rate: request.speakingRate }));
     // Requests with independent cancellation must not share an upstream request.
     const existing = !request.signal && inflight.get(key);
     if (existing) return existing;

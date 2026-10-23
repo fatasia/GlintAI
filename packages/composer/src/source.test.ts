@@ -24,6 +24,7 @@ describe("compose source integration without keys or network", () => {
     expect(result.sourceText).toBeTruthy();
     expect(result.sourceName).toBe(`source name.${ext}`);
     expect(result.project.knowledgeSources?.[0]?.name).toBe(`source name.${ext}`);
+    expect(result.project.scenes.every(scene => scene.camera?.type === "drift" || ["html", "three"].includes(scene.kind))).toBe(true);
   });
   it("rejects multiple/blank sources before any model work", async () => {
     await expect(composeFromSource({ path: "a", idea: "b" }, undefined)).rejects.toThrow("exactly one");

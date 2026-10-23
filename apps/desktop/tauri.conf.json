@@ -1,0 +1,20 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Glint Development",
+  "version": "0.1.0",
+  "identifier": "ai.glint.desktop.dev",
+  "build": {
+    "frontendDist": "../web/dist"
+  },
+  "app": {
+    "windows": [],
+    "withGlobalTauri": false,
+    "security": {
+      "capabilities": [],
+      "freezePrototype": true
+    }
+  },
+  "bundle": {
+    "active": false
+  }
+}

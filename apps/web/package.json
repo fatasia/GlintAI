@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Glint web player — the same component tree as studio renders, playing in any browser (desktop and mobile)",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,14 +14,17 @@
   },
   "dependencies": {
     "@glintai/composer": "workspace:*",
+    "@glintai/design-tokens": "workspace:*",
     "@glintai/knowledge": "workspace:*",
     "@glintai/listener": "workspace:*",
     "@glintai/llm": "workspace:*",
-    "@glintai/scenescript": "workspace:*",
-    "@glintai/tts": "workspace:*",
     "@glintai/media": "workspace:*",
+    "@glintai/scenescript": "workspace:*",
+    "@glintai/session": "workspace:*",
+    "@glintai/tts": "workspace:*",
     "@glintai/video": "workspace:*",
     "@remotion/player": "^4.0.0",
+    "@xyflow/react": "^12.12.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tsx": "^4.19.0"

@@ -8,7 +8,7 @@ import { createJobRunner, validateMakeInput } from "./jobs.mjs";
 import { TEMPLATES } from "@glintai/composer";
 const cleanups: (() => void)[] = [];
 afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); });
-function setup() {
+function setup(overrides = {}) {
   const studioDir = fs.mkdtempSync(path.join(os.tmpdir(), "glint-jobs-test-"));
   const children: any[] = [], captures: any[] = [];
   const killTree = vi.fn((child) => child.emit("close", null));
@@ -17,7 +17,7 @@ function setup() {
       captures.push({ args, config });
       const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough(), kill: vi.fn() });
       children.push(child); return child;
-    }, env: {}, maxConcurrency: 1 };
+    }, env: {}, maxConcurrency: 1, ...overrides };
   const runner = createJobRunner(options);
   cleanups.push(() => { runner.dispose(); fs.rmSync(studioDir, { recursive: true, force: true }); });
   const success = (index = 0) => {
@@ -106,14 +106,46 @@ it("renders the edited project without composing again and validates profiles", 
   expect(validateMakeInput({ project, source: "x" }).error).toBeTruthy();
   expect(validateMakeInput({ project: { ...project, scenes: [{ id: "a", kind: "html", html: "x", narration: { text: "x" } }] } }).error).toBeTruthy();
 });
-it("stages only selected library images and rejects unknown assets", () => {
-  const { options, captures } = setup();
-  const image = path.join(options.studioDir, "fixture.png"); fs.writeFileSync(image, "image fixture");
-  const runner = createJobRunner({ ...options, musicAsset: name => name === "library.png" ? image : null });
-  cleanups.push(() => runner.dispose());
-  const project = { schemaVersion: 1, id: "images", title: "Images", aspect: "16:9", knowledgeSources: [], scenes: [{ id: "image", kind: "image", src: "assets/library.png", narration: { text: "Image explanation" } }] };
+const libraryProject = (kind: "image" | "video", src: string) => ({ schemaVersion: 1, id: "library", title: "Library", aspect: "16:9", knowledgeSources: [], scenes: [{ id: kind, kind, src, narration: { text: "Library explanation" } }] });
+it("accepts only exact kind-specific library image and video sources", () => {
+  for (const kind of ["image", "video"] as const) {
+    const extension = kind === "image" ? "png" : "mp4";
+    for (const name of ["a", "A_0-", "a".repeat(100)]) expect(validateMakeInput({ project: libraryProject(kind, `assets/${name}.${extension}`) }).error).toBeUndefined();
+    for (const src of [`assets/${"a".repeat(101)}.${extension}`, `assets/.${extension}`, `../assets/a.${extension}`, `assets/../a.${extension}`, `assets/sub/a.${extension}`, `assets\\a.${extension}`, `/assets/a.${extension}`, `https://host/a.${extension}`, `assets/%2e%2e/a.${extension}`, `assets/a.${extension}?x`, `assets/a.${extension}#x`, `assets/a.${extension}\n`, "assets/a.mp3", "assets/a.html", kind === "image" ? "assets/a.mp4" : "assets/a.png"]) {
+      expect(validateMakeInput({ project: libraryProject(kind, src) }).error, src).toBeTruthy();
+    }
+    const project = libraryProject(kind, `assets/a.${extension}`);
+    expect(validateMakeInput({ project: { ...project, music: { src: "assets/music.wav" } } }).error).toBeTruthy();
+    expect(validateMakeInput({ project: { ...project, scenes: [{ ...project.scenes[0], narration: { text: "x", audioRef: "assets/audio.wav" } }] } }).error).toBeTruthy();
+  }
+  for (const extension of ["png", "jpg", "webp"]) expect(validateMakeInput({ project: libraryProject("image", `assets/a.${extension}`) }).error).toBeUndefined();
+});
+it("stages real image and video bytes beside the unchanged relative project sources", () => {
+  const files = new Map<string, string>();
+  const { runner, options, captures } = setup({ musicAsset: (name: string) => files.get(name) ?? null });
+  const image = Buffer.from([137, 80, 78, 71, 0, 255]), video = Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from("ftypisom"), Buffer.alloc(20, 42)]);
+  for (const [name, bytes] of [["library.png", image], ["clip.mp4", video]] as const) {
+    const file = path.join(options.studioDir, name); fs.writeFileSync(file, bytes); files.set(name, file);
+  }
+  const project = { ...libraryProject("image", "assets/library.png"), scenes: [...libraryProject("image", "assets/library.png").scenes, ...libraryProject("video", "assets/clip.mp4").scenes] };
   expect(runner.submit({ project }).jobId).toBeTruthy();
-  const file = captures[0].args.find((arg: string) => arg.startsWith("--project=")).slice(10);
-  expect(fs.readFileSync(path.join(path.dirname(file), "assets", "library.png"), "utf8")).toBe("image fixture");
-  expect(runner.submit({ project: { ...project, scenes: [{ ...project.scenes[0], src: "assets/missing.png" }] } }).error).toMatch(/not found/);
+  const args = captures[0].args;
+  expect(args).toContain("render"); expect(args).not.toContain("make"); expect(captures[0].config.shell).toBe(false);
+  const file = args.find((arg: string) => arg.startsWith("--project=")).slice(10);
+  const saved = JSON.parse(fs.readFileSync(file, "utf8"));
+  expect(saved.scenes.map(scene => scene.src)).toEqual(["assets/library.png", "assets/clip.mp4"]);
+  expect(fs.readFileSync(path.join(path.dirname(file), saved.scenes[0].src))).toEqual(image);
+  expect(fs.readFileSync(path.join(path.dirname(file), saved.scenes[1].src))).toEqual(video);
+  for (const kind of ["image", "video"] as const) expect(runner.submit({ project: libraryProject(kind, `assets/missing.${kind === "image" ? "png" : "mp4"}`) }).error).toMatch(/not found/);
+  expect(captures).toHaveLength(1);
+});
+it("rechecks queued video availability before spawning a render", () => {
+  let available = true;
+  const { runner, options, captures, success } = setup({ musicAsset: () => available ? path.join(options.studioDir, "clip.mp4") : null });
+  fs.writeFileSync(path.join(options.studioDir, "clip.mp4"), "video bytes");
+  runner.submit({ idea: "block the queue" });
+  const queued = runner.submit({ project: libraryProject("video", "assets/clip.mp4") });
+  expect(runner.get(queued.jobId).status).toBe("queued");
+  available = false; success();
+  expect(runner.get(queued.jobId).status).toBe("failed"); expect(captures).toHaveLength(1);
 });

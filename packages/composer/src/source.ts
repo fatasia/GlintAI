@@ -25,6 +25,20 @@ export interface ComposedSource {
   sourceName: string;
 }
 
+/**
+ * A composed film should not open on a frozen slide. Scenes that do not ask for
+ * a specific camera get a gentle one-pass drift (ends where it starts), which
+ * raises measured frame change without moving text out of the safe area.
+ */
+function withDefaultMotion(project: SceneScriptProject): SceneScriptProject {
+  return {
+    ...project,
+    scenes: project.scenes.map(scene => scene.camera || scene.kind === "html" || scene.kind === "three"
+      ? scene
+      : { ...scene, camera: { type: "drift", intensity: 0.35 } }),
+  };
+}
+
 const IDEA_SYSTEM = [
   "你是一支讲解视频的编剧。把用户的一句话想法,扩写成一份可以直接拍摄的中文教学文档。",
   "要求:Markdown;一个 H1 标题;4-6 个 H2 小节;每小节 2-4 句;用具体例子和类比;不编造事实性数据。",
@@ -45,7 +59,7 @@ export async function composeFromSource(
   if (options.maxScenes !== undefined && (!Number.isInteger(options.maxScenes) || options.maxScenes < 1 || options.maxScenes > 100)) throw new ComposerError("maxScenes must be 1..100");
   if (input.code) {
     const survey = surveyCodeRepo(input.code, options);
-    const project = composeCodeSurvey(survey, options);
+    const project = withDefaultMotion(composeCodeSurvey(survey, options));
     return {
       project,
       sourceText: survey.markdown,
@@ -65,7 +79,7 @@ export async function composeFromSource(
       signal: sourceOptions.signal,
       messages: [{ role: "user", content: input.idea }],
     });
-    const project = await composeWithLlm(response.text, llm, options, { signal: sourceOptions.signal });
+    const project = withDefaultMotion(await composeWithLlm(response.text, llm, options, { signal: sourceOptions.signal }));
     return { project, sourceText: response.text, sourceName: "idea.md" };
   }
   if (input.path || input.url) {
@@ -74,10 +88,11 @@ export async function composeFromSource(
       throw new SourceError("Source is empty after extraction.");
     }
     const sourceName = input.url ?? (input.path ? input.path.split(/[\\/]/).pop()! : "source.md");
-    const project =
+    const project = withDefaultMotion(
       llm && options.useLlm
         ? await composeWithLlm(text, llm, { ...options, sourceName: options.sourceName ?? sourceName }, { signal: sourceOptions.signal })
-        : composeFromMarkdown(text, { ...options, sourceName: options.sourceName ?? sourceName });
+        : composeFromMarkdown(text, { ...options, sourceName: options.sourceName ?? sourceName }),
+    );
     return { project, sourceText: text, sourceName };
   }
   throw new ComposerError(

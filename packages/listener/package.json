@@ -2,7 +2,7 @@
   "name": "@glintai/listener",
   "version": "0.1.0",
   "description": "Virtual listener rehearsal — personas watch a SceneScript project before publishing and raise scene-mapped confusions; one-click re-explain rewrites the exact scene",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": {

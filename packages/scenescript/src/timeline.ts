@@ -1,5 +1,6 @@
 import type { Scene, SceneScriptProject } from "./types";
 import { estimateNarrationDurationMs } from "./timing";
+import { frameRateOf, framesForMs } from "./frame-rate";
 
 export interface TimelineEntry {
   index: number;
@@ -29,14 +30,22 @@ export function buildTimeline(project: SceneScriptProject): Timeline {
   let cursor = 0;
   project.scenes.forEach((scene, index) => {
     const durationMs = sceneDurationMs(scene);
-    entries.push({ index, scene, startMs: cursor, durationMs });
-    cursor += durationMs;
+    let startMs = cursor;
+    if (index > 0) {
+      // Cross-dissolve: this entrance overlaps the previous scene. The
+      // overlap can never consume a whole neighbor — both stay drawable.
+      const requested = scene.transition?.overlapMs ?? 0;
+      const overlap = Math.max(0, Math.min(requested, durationMs - 200, entries[index - 1]!.durationMs - 200));
+      startMs = cursor - overlap;
+    }
+    entries.push({ index, scene, startMs, durationMs });
+    cursor = startMs + durationMs;
   });
   return { entries, totalMs: cursor };
 }
 
 export function msToFrames(ms: number, fps: number): number {
-  return Math.round((ms / 1000) * fps);
+  return framesForMs(ms, frameRateOf(fps));
 }
 
 export interface FrameEntry {

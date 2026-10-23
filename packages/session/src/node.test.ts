@@ -1,0 +1,77 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createHash } from "node:crypto";
+import { afterEach, expect, it } from "vitest";
+import { FileSessionStore } from "./node";
+import type { EditTransaction } from "./index";
+const directories: string[] = [];
+afterEach(() => { for (const dir of directories.splice(0)) fs.rmSync(dir, { recursive: true, force: true }); });
+const directory = () => { const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glint-session-")); directories.push(dir); return dir; };
+const original = () => ({ id: "demo", title: "old", scenes: [{ id: "s1", text: "A" }] });
+const tx = (baseRevision = 0, id = "edit-1"): EditTransaction => ({ id, projectId: "demo", baseRevision, actor: "skill", scope: {}, operations: [{ kind: "set", path: ["title"], value: "18%" }], intent: "edit" });
+it("persists and independently reads a SHA-256-bound receipt across store restart", () => {
+  const dir = directory(), store = new FileSessionStore(dir); store.open("demo", original());
+  const result = store.apply("demo", tx());
+  expect(result.receipt.stage).toBe("verified"); expect(result.receipt.documentSha256).toMatch(/^[a-f0-9]{64}$/);
+  const restarted = new FileSessionStore(dir);
+  expect(restarted.verify("demo", "edit-1")).toEqual(result.receipt);
+  expect(restarted.snapshot("demo").snapshot.document.title).toBe("18%");
+  expect(restarted.apply("demo", tx()).look.revision).toBe(1);
+  expect(restarted.apply("demo", tx(0, "stale")).receipt.stage).toBe("refused");
+});
+it("shares history and selection with a second caller without overwriting its document on open", () => {
+  const dir = directory(), a = new FileSessionStore(dir), b = new FileSessionStore(dir);
+  a.open("demo", original()); a.select("demo", ["s1"]); a.apply("demo", tx());
+  expect(b.snapshot("demo").look.selection).toEqual(["s1"]);
+  expect(b.open("demo", original()).conflict).toBe(true);
+  b.historyEdit("demo", "undo", "undo", 1, "user");
+  expect(a.snapshot("demo").snapshot.document.title).toBe("old");
+  a.historyEdit("demo", "redo", "redo", 2, "cli"); expect(b.snapshot("demo").snapshot.document.title).toBe("18%");
+  expect(a.verify("demo", "edit-1").stage).toBe("saved");
+});
+it("recovers a committed transaction after an interruption before project-file projection", () => {
+  const dir = directory(), file = path.join(dir, "project.json"); fs.writeFileSync(file, JSON.stringify(original()));
+  const store = new FileSessionStore(dir, undefined, () => { throw new Error("simulated crash after commit"); });
+  store.open("demo", original(), file);
+  expect(() => store.apply("demo", tx())).toThrow("simulated crash");
+  expect(JSON.parse(fs.readFileSync(file, "utf8")).title).toBe("old");
+  const restarted = new FileSessionStore(dir);
+  expect(restarted.snapshot("demo").look.revision).toBe(1);
+  expect(JSON.parse(fs.readFileSync(file, "utf8")).title).toBe("18%");
+  expect(restarted.apply("demo", tx()).look.revision).toBe(1);
+});
+it("does not overwrite external edits or certify a corrupted durable state", () => {
+  const dir = directory(), file = path.join(dir, "source.json"); fs.writeFileSync(file, JSON.stringify(original()));
+  const store = new FileSessionStore(dir); store.open("demo", original(), file);
+  fs.writeFileSync(file, JSON.stringify({ ...original(), title: "external" }));
+  expect(() => store.apply("demo", tx())).toThrow("changed outside");
+  expect(JSON.parse(fs.readFileSync(file, "utf8")).title).toBe("external");
+  const stateFile = path.join(dir, `${createHash("sha256").update("demo").digest("hex")}.json`);
+  const state = JSON.parse(fs.readFileSync(stateFile, "utf8")); state.state.document.title = "corrupt"; fs.writeFileSync(stateFile, JSON.stringify(state));
+  expect(() => store.verify("demo", "edit-1")).toThrow("checksum");
+});
+it("evaluates transforms once under the writer lock and rejects stale semantic commands before evaluation", () => {
+  const dir = directory(), store = new FileSessionStore(dir); store.open("demo", original());
+  const { projectId: _, operations: __, ...request } = tx();
+  let calls = 0;
+  const transform = () => { calls++; return tx().operations; };
+  expect(store.applyTransform("demo", request, transform).receipt.stage).toBe("verified");
+  expect(store.applyTransform("demo", request, transform).look.revision).toBe(1);
+  expect(calls).toBe(1);
+  expect(store.applyTransform("demo", { ...request, id: "stale-transform" }, transform).receipt.stage).toBe("refused");
+  expect(calls).toBe(1);
+  expect(store.applyTransform("demo", { ...request, intent: "different semantic intent" }, transform).receipt.stage).toBe("refused");
+  expect(calls).toBe(1);
+  expect(() => store.applyTransform("demo", { ...request, id: "throws", baseRevision: 1 }, () => { throw new Error("Unsafe edit"); })).toThrow("Unsafe edit");
+  expect(store.snapshot("demo").look.revision).toBe(1);
+  expect(store.applyTransform("demo", { ...request, id: "next", baseRevision: 1 }, transform).receipt.stage).toBe("verified");
+});
+it("refuses a live writer lock and validates a no-op receipt after restart", () => {
+  const dir = directory(), store = new FileSessionStore(dir); store.open("demo", original());
+  const lock = path.join(dir, `${createHash("sha256").update("demo").digest("hex")}.json.lock`);
+  fs.writeFileSync(lock, JSON.stringify({ pid: process.pid }));
+  expect(() => store.apply("demo", tx())).toThrow("another process"); fs.unlinkSync(lock);
+  expect(store.apply("demo", { ...tx(), operations: [] }).receipt.changed).toBe(false);
+  expect(new FileSessionStore(dir).verify("demo", "edit-1").stage).toBe("verified");
+});

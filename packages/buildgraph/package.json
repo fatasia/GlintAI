@@ -1,0 +1,12 @@
+{
+  "name": "@glintai/buildgraph",
+  "version": "0.1.0",
+  "description": "Deterministic build graph, change budget and receipt contract for Glint media projects",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": { "types": "./src/index.ts", "default": "./src/index.ts" }
+  },
+  "files": ["src"],
+  "sideEffects": false
+}

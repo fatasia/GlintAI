@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "id": "fusion-demo",
+  "title": "Glint 融合能力演示",
+  "language": "zh",
+  "aspect": "16:9",
+  "fps": 30,
+  "knowledgeSources": [
+    { "id": "demo-source", "kind": "markdown", "name": "融合演示脚本" }
+  ],
+  "theme": "hand-note",
+  "sfx": [
+    { "sceneId": "pie-share", "word": "半壁江山", "effect": "whoosh", "gain": 0.45 },
+    { "sceneId": "combo-trend", "word": "同步", "effect": "sparkle", "gain": 0.4 },
+    { "sceneId": "closing", "effect": "impact", "gain": 0.5 }
+  ],
+  "scenes": [
+    {
+      "id": "opening",
+      "kind": "title",
+      "title": "一条演示片",
+      "subtitle": "运镜 · 转场 · 图表 · 音效",
+      "narration": { "text": "这条演示片把这一轮新增的引擎能力串在一起。", "durationMs": 3200 },
+      "camera": { "type": "drift", "intensity": 0.5 },
+      "transition": { "in": "iris", "durationMs": 520 }
+    },
+    {
+      "id": "pie-share",
+      "kind": "chart",
+      "chartType": "pie",
+      "heading": "市场份额怎么读",
+      "unit": "%",
+      "narration": { "text": "饼图先看占比,头两家拿走了大半江山。", "durationMs": 3600 },
+      "camera": { "type": "push", "intensity": 0.35 },
+      "transition": { "in": "wipe", "durationMs": 380 },
+      "data": [
+        { "label": "头部厂商", "value": 46 },
+        { "label": "追赶者", "value": 27 },
+        { "label": "长尾", "value": 17 },
+        { "label": "其他", "value": 10 }
+      ]
+    },
+    {
+      "id": "combo-trend",
+      "kind": "chart",
+      "chartType": "combo",
+      "heading": "收入与增速",
+      "unit": "亿",
+      "seriesLabel2": "同比 %",
+      "narration": { "text": "组合图把收入柱和增速线放在一起,两条信息一次讲完。", "durationMs": 4200 },
+      "camera": { "type": "pan-left", "intensity": 0.4 },
+      "transition": { "in": "slide-up", "durationMs": 360 },
+      "data": [
+        { "label": "一季度", "value": 32, "value2": 18 },
+        { "label": "二季度", "value": 41, "value2": 24 },
+        { "label": "三季度", "value": 55, "value2": 21 },
+        { "label": "四季度", "value": 68, "value2": 29 }
+      ]
+    },
+    {
+      "id": "scatter-corr",
+      "kind": "chart",
+      "chartType": "scatter",
+      "heading": "投放与转化的关系",
+      "seriesLabel2": "转化率 %",
+      "narration": { "text": "散点图看关系:投放越多,转化越高,但不是一条直线。", "durationMs": 4000 },
+      "camera": { "type": "static" },
+      "transition": { "in": "zoom-punch", "durationMs": 340 },
+      "data": [
+        { "label": "A 组", "value": 12, "value2": 3.1 },
+        { "label": "B 组", "value": 28, "value2": 5.8 },
+        { "label": "C 组", "value": 45, "value2": 7.2 },
+        { "label": "D 组", "value": 66, "value2": 8.9 },
+        { "label": "E 组", "value": 90, "value2": 9.4 }
+      ]
+    },
+    {
+      "id": "area-growth",
+      "kind": "chart",
+      "chartType": "area",
+      "heading": "近六个月的累计用户",
+      "unit": "万",
+      "narration": { "text": "面积图讲积累:曲线越陡,增长越快。", "durationMs": 3400 },
+      "camera": { "type": "pull", "intensity": 0.4 },
+      "transition": { "in": "blur", "durationMs": 420 },
+      "data": [
+        { "label": "5月", "value": 12 },
+        { "label": "6月", "value": 19 },
+        { "label": "7月", "value": 31 },
+        { "label": "8月", "value": 48 },
+        { "label": "9月", "value": 72 },
+        { "label": "10月", "value": 101 }
+      ]
+    },
+    {
+      "id": "closing",
+      "kind": "bullets",
+      "heading": "这一轮加了什么",
+      "items": ["六种图表", "运镜与十种转场", "本地配乐与音效", "剪映草稿导出"],
+      "narration": { "text": "最后小结:图表、运镜、声音和剪辑接力,都已经是引擎的一等公民。", "durationMs": 4600 },
+      "camera": { "type": "pan-right", "intensity": 0.3 },
+      "transition": { "in": "flash", "durationMs": 360 }
+    }
+  ]
+}

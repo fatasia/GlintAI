@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Glint Studio — Remotion preview and render channel driven by SceneScript",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "glint": "tsx scripts/glint.ts",
@@ -28,21 +28,28 @@
     "@glintai/knowledge": "workspace:*",
     "@glintai/listener": "workspace:*",
     "@glintai/llm": "workspace:*",
-    "@glintai/music": "workspace:*",
     "@glintai/media": "workspace:*",
+    "@glintai/music": "workspace:*",
     "@glintai/scenescript": "workspace:*",
     "@glintai/tts": "workspace:*",
     "@glintai/video": "workspace:*",
+    "@remotion/bundler": "^4.0.0",
+    "@remotion/renderer": "^4.0.0",
+    "@resvg/resvg-js": "^2.6.2",
+    "esbuild": "0.25.12",
+    "puppeteer-core": "24.37.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "remotion": "^4.0.0",
-    "@remotion/bundler": "^4.0.0",
-    "@remotion/renderer": "^4.0.0",
-    "esbuild": "0.25.12",
-    "tsx": "^4.19.0"
+    "tsx": "^4.19.0",
+    "@glintai/session": "workspace:*",
+    "@glintai/buildgraph": "workspace:*",
+    "@glintai/mediadiff": "workspace:*"
   },
   "devDependencies": {
     "@remotion/cli": "^4.0.0",
-    "@types/react": "^19.0.0"
+    "@types/react": "^19.0.0",
+    "@types/three": "0.180.0",
+    "three": "^0.180.0"
   }
 }

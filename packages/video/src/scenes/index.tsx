@@ -11,6 +11,7 @@ import type { SceneColors } from "./ThreeScene";
 import { DeferredThree } from "./DeferredThree";
 import { TitleSceneView } from "./TitleScene";
 import { ChartSceneView } from "./ChartScene";
+import { VideoSceneView } from "./VideoScene";
 
 export const SceneRouter: React.FC<{
   scene: Scene;
@@ -34,6 +35,8 @@ export const SceneRouter: React.FC<{
       return <DeferredThree scene={scene} colors={colors} />;
     case "image":
       return <ImageSceneView scene={scene} />;
+    case "video":
+      return <VideoSceneView scene={scene} />;
     case "diagram":
       return <DiagramSceneView scene={scene} />;
     case "html":

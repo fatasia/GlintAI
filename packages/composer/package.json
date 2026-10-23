@@ -2,10 +2,15 @@
   "name": "@glintai/composer",
   "version": "0.1.0",
   "description": "Turn a source document into a SceneScript project — deterministic offline composer, or LLM-directed for any OpenAI-compatible model (zh/en)",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "type": "module",
   "exports": {
     "./templates": "./src/templates.ts",
+    "./creation-packs": "./src/creation-packs.ts",
+    "./imported-packs": "./src/imported-packs.ts",
+    "./exported-packs": "./src/exported-packs.ts",
+    "./craft-lint": "./src/craft-lint.ts",
+    "./plan": "./src/plan.ts",
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
@@ -16,9 +21,11 @@
   ],
   "sideEffects": false,
   "dependencies": {
+    "@glintai/design-tokens": "workspace:*",
     "@glintai/knowledge": "workspace:*",
     "@glintai/llm": "workspace:*",
     "@glintai/scenescript": "workspace:*",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "zod": "^3.23.8"
   }
 }

@@ -1,0 +1,16 @@
+{
+  "name": "glint-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "check": "cargo check --manifest-path Cargo.toml",
+    "test": "cargo test --manifest-path Cargo.toml && node --test scripts/dev.node-tests.mjs"
+  },
+  "dependencies": {
+    "@glintai/session": "workspace:*",
+    "@glintai/scenescript": "workspace:*",
+    "esbuild": "0.25.12"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "@glintai/session",
+  "version": "0.1.0",
+  "description": "Versioned project session and edit transaction contract shared by Glint product, Skill and CLI",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": { "types": "./src/index.ts", "default": "./src/index.ts" },
+    "./node": { "types": "./src/node.ts", "default": "./src/node.ts" }
+  },
+  "files": ["src"],
+  "sideEffects": false
+}

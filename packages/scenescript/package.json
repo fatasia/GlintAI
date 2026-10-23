@@ -2,7 +2,7 @@
   "name": "@glintai/scenescript",
   "version": "0.1.0",
   "description": "SceneScript v1 — the scene intermediate representation at the heart of every Glint explainer",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": {

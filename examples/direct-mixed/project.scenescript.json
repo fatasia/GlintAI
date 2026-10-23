@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "id": "direct-mixed",
+  "title": "直驱混合素材",
+  "language": "zh-CN",
+  "aspect": "16:9",
+  "fps": 24,
+  "theme": "blueprint",
+  "knowledgeSources": [],
+  "sfx": [{ "sceneId": "web-motion", "effect": "whoosh" }, { "sceneId": "model-3d", "effect": "riser" }, { "sceneId": "footage", "effect": "impact" }],
+  "scenes": [
+    {
+      "id": "cover",
+      "kind": "image",
+      "src": "assets/cover.png",
+      "caption": "图片素材",
+      "narration": { "text": "先看一张图片素材的呈现。", "durationMs": 1500 }
+    },
+    {
+      "id": "web-motion",
+      "kind": "html",
+      "animation": "gsap",
+      "html": "<div id=\"glint-root\" style=\"font-family:sans-serif;color:#e8edf2;display:flex;height:100vh;align-items:center;justify-content:center\"><h1 id=\"t\" style=\"font-size:96px;opacity:0\">直驱 HTML</h1></div><script>window.__glintTimeline=(gsap)=>gsap.timeline({paused:true}).to('#t',{opacity:1,y:-30,duration:1.2,ease:'power2.out'},0.2)</script>",
+      "caption": "GSAP 帧寻址",
+      "narration": { "text": "网页动效按帧驱动，逐帧可复现。", "durationMs": 1800 }
+    },
+    {
+      "id": "model-3d",
+      "kind": "three",
+      "model": "torus-knot",
+      "caption": "THREE 环结",
+      "narration": { "text": "三维模型同样按帧采样渲染。", "durationMs": 1800 }
+    },
+    {
+      "id": "footage",
+      "kind": "video",
+      "src": "assets/demo.mp4",
+      "trimStartSec": 0.2,
+      "caption": "视频切片",
+      "narration": { "text": "视频素材按时间裁剪后进入时间线。", "durationMs": 2000 }
+    }
+  ]
+}

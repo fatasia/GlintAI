@@ -1,6 +1,19 @@
 import { spawn } from "node:child_process";
 export { generateMiniMaxMusic, type MiniMaxMusicConfig } from "./minimax";
 export { generateGatewayMusic } from "./gateway";
+export {
+  generateSynthMusic,
+  generateSfx,
+  masterMusicBed,
+  detectBeats,
+  synthFingerprint,
+  SFX_EFFECTS,
+  createRandom,
+  type SynthMood,
+  type SynthMusicOptions,
+  type SfxEffect,
+  type BeatGrid,
+} from "./synth";
 
 export class MusicError extends Error {
   constructor(message: string) {

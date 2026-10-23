@@ -32,7 +32,7 @@ async function rejectSymlinkComponents(directory: string): Promise<void> {
 function assetRefs(project: SceneScriptProject): string[] {
   const refs: string[] = [];
   for (const scene of project.scenes) {
-    if (scene.kind === "image" || (scene.kind === "three" && scene.model === "gltf")) refs.push(scene.src);
+    if (scene.kind === "image" || scene.kind === "video" || (scene.kind === "three" && scene.model === "gltf")) refs.push(scene.src);
     if (scene.narration.audioRef?.startsWith("assets/")) refs.push(scene.narration.audioRef);
   }
   if (project.music?.src.startsWith("assets/")) refs.push(project.music.src);
@@ -125,7 +125,7 @@ export async function copyProjectAssets(
     }
     const rewrite = (src: string) => src.startsWith("assets/") ? `${namespace}/${src.slice(7)}` : src;
     for (const scene of prepared.scenes) {
-      if (scene.kind === "image" || (scene.kind === "three" && scene.model === "gltf")) scene.src = rewrite(scene.src);
+      if (scene.kind === "image" || scene.kind === "video" || (scene.kind === "three" && scene.model === "gltf")) scene.src = rewrite(scene.src);
       if (scene.narration.audioRef) scene.narration.audioRef = rewrite(scene.narration.audioRef);
     }
     if (prepared.music) prepared.music.src = rewrite(prepared.music.src);

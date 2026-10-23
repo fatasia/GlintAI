@@ -25,7 +25,7 @@ import {
   createConfiguredTtsProvider,
   type TtsProvider,
 } from "@glintai/tts";
-import { generateAmbientMusic, generateMiniMaxMusic, generateGatewayMusic } from "@glintai/music";
+import { generateAmbientMusic, generateMiniMaxMusic, generateGatewayMusic, generateSynthMusic, generateSfx, SFX_EFFECTS, type SynthMood } from "@glintai/music";
 import { copyRuntimeDecoders, ensureDecoders } from "./decoders";
 import { pathToFileURL } from "node:url";
 import { RenderSession } from "./render-session";
@@ -62,6 +62,12 @@ interface RenderArgs {
   referenceAudio?: string;
   referenceText?: string;
   concurrency?: number;
+  /** Render only these scene ids back-to-back (partial re-render / per-scene preview). */
+  scenes?: string[];
+  /** Clean-plate export: no captions, no music, no SFX (narration stays). */
+  plate?: boolean;
+  musicSeed?: number;
+  musicMood?: SynthMood;
 }
 
 function parseArgs(argv: string[]): RenderArgs {
@@ -100,11 +106,18 @@ function parseArgs(argv: string[]): RenderArgs {
     else if (arg.startsWith("--reference-audio=")) args.referenceAudio = read("reference-audio");
     else if (arg.startsWith("--reference-text=")) args.referenceText = read("reference-text");
     else if (arg.startsWith("--concurrency=")) args.concurrency = Number(read("concurrency"));
+    else if (arg.startsWith("--scenes=")) args.scenes = read("scenes")!.split(",").map((id) => id.trim()).filter(Boolean);
+    else if (arg === "--plate") args.plate = true;
+    else if (arg.startsWith("--music-seed=")) args.musicSeed = Number(read("music-seed"));
+    else if (arg.startsWith("--music-mood=")) args.musicMood = read("music-mood") as SynthMood;
     else throw new Error(`Unknown render option: ${arg}`);
   }
   encodingOptions(args.encoding);
   if (!["mp4", "png", "gif"].includes(args.format)) throw new Error("format must be mp4, png or gif");
   if (!["auto", "edge", "sapi", "mock", "qwen", "openai", "elevenlabs", "fish", "minimax", "gateway"].includes(args.tts)) throw new Error("Unknown TTS engine");
+  if (args.musicMood !== undefined && !["calm", "warm", "bright"].includes(args.musicMood)) throw new Error("music-mood must be calm, warm or bright");
+  if (args.musicSeed !== undefined && (!Number.isInteger(args.musicSeed) || args.musicSeed < 0 || args.musicSeed > 0xffffffff)) throw new Error("music-seed must be an integer in 0..2^32-1");
+  if (args.scenes && (args.scenes.length === 0 || new Set(args.scenes).size !== args.scenes.length)) throw new Error("scenes must be a non-empty comma list without duplicates");
   if (args.tts === "qwen" && (!args.ttsModel || !args.referenceAudio)) throw new Error("qwen requires --tts-model=<local directory> and --reference-audio=<local audio>");
   if (!["heuristic", "llm"].includes(args.engine)) throw new Error("Invalid engine");
   if (args.ttsConcurrency !== undefined && (!Number.isInteger(args.ttsConcurrency) || args.ttsConcurrency < 1 || args.ttsConcurrency > 8)) throw new Error("tts-concurrency must be 1..8");
@@ -247,6 +260,13 @@ export async function renderOnce(argv: string[], session: RenderSession): Promis
   if (args.aspect) {
     project = parseProject({ ...project, aspect: args.aspect });
   }
+  if (args.scenes) {
+    const known = new Set(project.scenes.map((scene) => scene.id));
+    const unknown = args.scenes.filter((id) => !known.has(id));
+    if (unknown.length > 0) throw new Error(`Unknown scene ids: ${unknown.join(", ")}`);
+    project = parseProject({ ...project, scenes: project.scenes.filter((scene) => args.scenes!.includes(scene.id)) });
+    console.log(`[glint] scene subset: ${project.scenes.map((scene) => scene.id).join(", ")}`);
+  }
   console.log(
     `[glint] project "${project.title}" — ${project.scenes.length} scenes (${project.language ?? "unknown"}), composed id: ${project.id}`,
   );
@@ -264,10 +284,12 @@ export async function renderOnce(argv: string[], session: RenderSession): Promis
   const totalSeconds = buildTimeline(prepared).totalMs / 1000;
   console.log(`[glint] total duration ~${totalSeconds.toFixed(1)}s`);
 
-  // Background music: "auto" synthesizes a royalty-free ambient pad; a file
+  // Background music: "auto" synthesizes a royalty-free ambient pad; "synth"
+  // plays the deterministic code-composed bed (seeded, no network); a file
   // path mixes the user's own track. Rendered under narration at low volume.
+  // Plate exports strip music/SFX/captions so editors can layer their own.
   const musicArg = args.music ?? "auto";
-  if (musicArg !== "off" && args.format !== "png") {
+  if (musicArg !== "off" && args.format !== "png" && !args.plate) {
     const audioRoot = path.join(publicDir, "audio");
     fs.mkdirSync(audioRoot, { recursive: true });
     const audioDir = fs.mkdtempSync(path.join(audioRoot, `${prepared.id}-music-`));
@@ -277,6 +299,12 @@ export async function renderOnce(argv: string[], session: RenderSession): Promis
       fs.writeFileSync(path.resolve(publicDir, musicPath), bgm.audio);
       prepared.music = { src: musicPath, volume: 0.12 };
       console.log("[glint] background music: synthesized ambient pad (volume 12%)");
+    } else if (musicArg === "synth") {
+      const bgm = generateSynthMusic(totalSeconds * 1000, { seed: args.musicSeed ?? 42, mood: args.musicMood ?? "calm" });
+      const musicPath = `${path.relative(publicDir, audioDir).split(path.sep).join("/")}/bgm.wav`;
+      fs.writeFileSync(path.resolve(publicDir, musicPath), bgm.audio);
+      prepared.music = { src: musicPath, volume: 0.14 };
+      console.log(`[glint] background music: synthesized bed (mood ${args.musicMood ?? "calm"}, seed ${bgm.seed})`);
     } else if (musicArg === "gateway") {
       if (!process.env.GLINT_MEDIA_API_KEY || !process.env.GLINT_MEDIA_BASE_URL || !process.env.GLINT_MUSIC_PROMPT || !process.env.GLINT_MEDIA_MUSIC_MODEL) throw new Error("Configure media gateway, music model and prompt");
       const bgm = await generateGatewayMusic({ baseUrl: process.env.GLINT_MEDIA_BASE_URL, apiKey: process.env.GLINT_MEDIA_API_KEY, model: process.env.GLINT_MEDIA_MUSIC_MODEL, prompt: process.env.GLINT_MUSIC_PROMPT, params: process.env.GLINT_MEDIA_MUSIC_PARAMS ? JSON.parse(process.env.GLINT_MEDIA_MUSIC_PARAMS) : {}, publicDns: process.env.GLINT_MEDIA_PUBLIC_DNS === "1" });
@@ -306,6 +334,20 @@ export async function renderOnce(argv: string[], session: RenderSession): Promis
   const concurrency = args.concurrency ?? Math.max(1, Math.min(4, os.cpus().length - 1));
   record("musicMs");
 
+  // One-shot SFX: synthesize each referenced effect once into the public dir;
+  // GlintVideo pins them to narration word timings.
+  if (!args.plate && args.format === "mp4" && prepared.sfx?.length) {
+    const sfxDir = path.join(publicDir, "audio", "sfx");
+    fs.mkdirSync(sfxDir, { recursive: true });
+    const effects = [...new Set(prepared.sfx.map((cue) => cue.effect))];
+    for (const effect of effects) {
+      const target = path.join(sfxDir, `${effect}.wav`);
+      if (!fs.existsSync(target)) fs.writeFileSync(target, generateSfx(effect).audio);
+    }
+    console.log(`[glint] sfx synthesized: ${effects.join(", ")}`);
+  }
+  record("sfxMs");
+
   console.log("[glint] bundling composition...");
   await Promise.all([
     prepared.scenes.some(scene => scene.kind === "html" && scene.animation) ? copyRuntimeDecoders(publicDir) : Promise.resolve(),
@@ -313,7 +355,8 @@ export async function renderOnce(argv: string[], session: RenderSession): Promis
   ]);
   const { serveUrl, puppeteerInstance } = await session.acquire();
   record("bundleAndBrowserMs");
-  const inputProps = { project: prepared };
+  const inputProps: Record<string, unknown> = { project: prepared };
+  if (args.plate) inputProps.plate = true;
   const composition = await selectComposition({
     serveUrl,
     id: COMPOSITION_ID,
@@ -377,7 +420,7 @@ export async function renderOnce(argv: string[], session: RenderSession): Promis
   }
   console.log(`[glint] done: ${output}`);
   record("renderAndEncodeMs");
-  fs.writeFileSync(`${output}.metrics.json`, JSON.stringify({ version: 1, format: args.format, tts: args.tts, encoding: args.fast ? "draft" : args.encoding ?? "balanced", concurrency, scale: args.format === "png" ? 1 : args.format === "gif" ? 0.5 : scale, frames: composition.durationInFrames, fps: composition.fps, stages, totalMs: Math.round(performance.now() - started), bytes: fs.statSync(output).size, session: session.stats }, null, 2));
+  fs.writeFileSync(`${output}.metrics.json`, JSON.stringify({ version: 1, format: args.format, tts: args.tts, encoding: args.fast ? "draft" : args.encoding ?? "balanced", plate: args.plate ?? false, scenes: args.scenes ?? undefined, concurrency, scale: args.format === "png" ? 1 : args.format === "gif" ? 0.5 : scale, frames: composition.durationInFrames, fps: composition.fps, stages, totalMs: Math.round(performance.now() - started), bytes: fs.statSync(output).size, session: session.stats }, null, 2));
   return output;
 }
 
