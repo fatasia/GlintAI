@@ -180,7 +180,7 @@ ${[...visual, ...audio].join("\n")}
 export function buildNleEdl(project: NleProject): NleTimelineExport {
   const fps = project.fps;
   const frames = (ms: number) => Math.max(0, Math.round(ms / 1000 * fps));
-  const events: { start: number; clip: { id: string; startMs: number; durationMs: number; trimStartMs?: number }; track: string }[] = [];
+  const events: { start: number; clip: { id: string; startMs: number; durationMs: number; trimStartMs?: number; speed?: number }; track: string }[] = [];
   let textClips = 0, audioClips = 0;
   for (const track of project.tracks) {
     for (const clip of track.clips) {
