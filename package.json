@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Glint — the understanding loop for explanations: rehearse before publishing, ask while watching, measure after.",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "packageManager": "pnpm@11.18.0",
   "engines": {
     "node": ">=20"
@@ -26,6 +26,8 @@
     "reexplain": "pnpm --filter glint-studio reexplain",
     "web": "pnpm --filter glint-web dev",
     "web:serve": "pnpm --filter glint-web build && pnpm --filter glint-web serve",
+    "desktop:dev": "node apps/desktop/scripts/dev.mjs",
+    "desktop:check": "cargo check --manifest-path apps/desktop/Cargo.toml",
     "verify:batch": "pnpm --filter glint-studio verify:batch",
     "verify:media": "pnpm --filter glint-studio verify:media",
     "verify:edge": "pnpm --filter glint-studio verify:edge",
@@ -34,12 +36,31 @@
     "verify:budget": "node scripts/check-web-budget.mjs",
     "verify:source": "node scripts/check-source.mjs",
     "verify:release": "node scripts/verify-release.mjs",
-    "verify:linux": "node scripts/verify-linux.mjs"
+    "verify:linux": "node scripts/verify-linux.mjs",
+    "desktop:package": "node apps/desktop/scripts/package-portable.mjs",
+    "desktop:package:check": "node apps/desktop/scripts/package-portable.mjs --check",
+    "desktop:package:lite": "node apps/desktop/scripts/package-portable.mjs --lite",
+    "desktop:package:lite:check": "node apps/desktop/scripts/package-portable.mjs --lite --check",
+    "desktop:package:zip": "node apps/desktop/scripts/package-portable.mjs --zip",
+    "desktop:package:lite:zip": "node apps/desktop/scripts/package-portable.mjs --lite --zip",
+    "desktop:installer:check": "node apps/desktop/scripts/installer-check.mjs",
+    "desktop:installer:lite:check": "node apps/desktop/scripts/installer-check.mjs --lite",
+    "desktop:standalone:check": "node apps/desktop/scripts/standalone-check.mjs",
+    "desktop:standalone:lite:check": "node apps/desktop/scripts/standalone-check.mjs --lite"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "esbuild": "0.25.10",
     "jsdom": "^30.1.3",
     "typescript": "^5.6.3",
     "vitest": "^2.1.8"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fatasia/GlintAI.git"
+  },
+  "bugs": {
+    "url": "https://github.com/fatasia/GlintAI/issues"
+  },
+  "homepage": "https://github.com/fatasia/GlintAI#readme"
 }
