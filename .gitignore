@@ -4,9 +4,13 @@ node_modules/
 # Builds
 dist/
 build/
+apps/desktop/target/
 *.tsbuildinfo
 quality-report.json*
 __pycache__/
+
+# Local build manifests (per project, machine state)
+.glint/
 
 # Render outputs and generated runtime assets (narration audio, copied figures)
 out/
@@ -28,3 +32,14 @@ Thumbs.db
 *.log
 npm-debug.log*
 pnpm-debug.log*
+dist-portable/
+apps/studio/.media-settings.json
+
+
+# Working notes, benchmarks and local evidence artifacts (not part of the repo)
+HANDOFF.md
+outputs/
+dist-portable/
+.smoke-data/
+.tmp-*
+*.local.md
