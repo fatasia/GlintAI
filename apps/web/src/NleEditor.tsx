@@ -11,14 +11,14 @@ const SNAP_PX = 8;
 const MAX_HISTORY = 80;
 const text = { color: "#e4e4e7", background: "#151518", border: "1px solid #2b2b31", borderRadius: 7, padding: "6px 8px", font: "inherit", fontSize: 12 } as const;
 const button: CSSProperties = { border: "1px solid #3f3f46", borderRadius: 8, background: "#1c1c21", color: "#e4e4e7", padding: "7px 11px", font: "inherit", fontSize: 12, cursor: "pointer" };
-const label: CSSProperties = { display: "grid", gap: 4, color: "#a1a1aa", fontSize: 11 };
+const label: CSSProperties = { display: "grid", gap: 4, color: "#a1a1aa", fontSize: 11, minWidth: 0 };
 const DEFAULT_TRACKS: Array<{ id: string; kind: NleTrack["kind"]; name: string }> = [
   { id: "v2", kind: "overlay", name: "V2 叠加" },
   { id: "v1", kind: "video", name: "V1 主画面" },
   { id: "t1", kind: "text", name: "T1 文字" },
   { id: "a1", kind: "audio", name: "A1 音频" },
 ];
-const TRACK_ROW_H = 44;
+const TRACK_ROW_H = 38;
 const TRACK_KINDS: Array<{ kind: NleTrack["kind"]; label: string }> = [
   { kind: "video", label: "+ 视频轨" },
   { kind: "overlay", label: "+ 叠加轨" },
@@ -34,7 +34,7 @@ type ClipTransitionType = NonNullable<NleClip["transitionIn"]>["type"];
 function defaultProject(): NleProject {
   return parseNleProject({
     schemaVersion: 1, id: "nle-local", title: "未命名剪辑", fps: 30, width: 1920, height: 1080, background: "#08090b",
-    tracks: DEFAULT_TRACKS.map(track => ({ ...track, clips: track.id === "t1" ? [{ id: "title", kind: "text", text: "双击时间线开始剪辑", startMs: 0, durationMs: 3000, fontSize: 84, weight: 800, align: "center", transitionIn: { type: "fade" } }] : [] })),
+    tracks: DEFAULT_TRACKS.map(track => ({ ...track, clips: track.id === "t1" ? [{ id: "title", kind: "text", text: "双击时间线开始剪辑", startMs: 0, durationMs: 3000, fontSize: 84, weight: 800, align: "center" }] : [] })),
   });
 }
 
@@ -411,7 +411,7 @@ export function NleEditor({ onClose }: { onClose?(): void }) {
   const tickMs = pxPerMs * 1000 >= 70 ? 1000 : pxPerMs * 1000 >= 35 ? 2000 : 5000;
   const ticks = Math.ceil((duration + 2000) / tickMs);
 
-  return <section aria-label="剪辑台" tabIndex={-1} data-history={historyTick} style={{ minHeight: "100dvh", background: "#08090b", color: "#e4e4e7", display: "grid", gridTemplateRows: "auto minmax(0,1fr) auto" }}>
+  return <section aria-label="剪辑台" tabIndex={-1} data-history={historyTick} style={{ height: "100dvh", minHeight: 0, overflow: "hidden", background: "#08090b", color: "#e4e4e7", display: "grid", gridTemplateRows: "auto minmax(0,1fr) 224px" }}>
     <header style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "10px 14px", borderBottom: "1px solid #26262b" }}>
       <strong>剪辑台</strong>
       <input aria-label="剪辑标题" value={project.title} onChange={event => mutate(parseNleProject({ ...project, title: event.target.value || "未命名剪辑" }), false)} style={{ ...text, width: 170 }} />
@@ -429,8 +429,8 @@ export function NleEditor({ onClose }: { onClose?(): void }) {
       </div>
     </header>
 
-    <div style={{ display: "grid", gridTemplateColumns: "220px minmax(0,1fr) 290px", gap: 10, padding: 10, minHeight: 0 }}>
-      <aside aria-label="素材库" style={{ display: "grid", gap: 6, alignContent: "start", maxHeight: "calc(100dvh - 260px)", overflow: "auto", padding: 8, border: "1px solid #26262b", borderRadius: 10, background: "#0d0d10" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "220px minmax(0,1fr) 290px", gap: 10, padding: 10, minHeight: 0, overflow: "hidden" }}>
+      <aside aria-label="素材库" style={{ display: "grid", gap: 6, alignContent: "start", maxHeight: "100%", minHeight: 0, overflow: "auto", padding: 8, border: "1px solid #26262b", borderRadius: 10, background: "#0d0d10" }}>
         <strong style={{ fontSize: 12 }}>素材库</strong>
         <button type="button" style={button} onClick={addText}>+ 文字</button>
         {assets.map(asset => {
@@ -446,9 +446,9 @@ export function NleEditor({ onClose }: { onClose?(): void }) {
         {!assets.length && <small style={{ color: "#8b8b95", fontSize: 11, lineHeight: 1.6 }}>素材库为空。先在首页生成或导入图片/视频/音频，再回到剪辑台。</small>}
       </aside>
 
-      <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
+      <div style={{ display: "grid", gap: 8, minWidth: 0, minHeight: 0 }}>
         <div style={{ border: "1px solid #26262b", borderRadius: 10, overflow: "hidden", background: "#000" }}>
-          <div style={{ maxHeight: "52dvh", display: "grid", justifyItems: "center" }}>
+          <div style={{ maxHeight: "100%", minHeight: 0, display: "grid", justifyItems: "stretch", alignContent: "center" }}>
             <NlePreview project={project} mediaAssetBase="/api/media/assets/" tMs={playhead} playing={playing} onTimeUpdate={setPlayhead} onEnded={() => setPlaying(false)} />
           </div>
         </div>
@@ -467,7 +467,7 @@ export function NleEditor({ onClose }: { onClose?(): void }) {
         {timelineResult?.warning && <small role="status" style={{ color: "#fbbf24", fontSize: 11 }}>{timelineResult.warning}</small>}
       </div>
 
-      <aside aria-label="片段属性" style={{ display: "grid", gap: 8, alignContent: "start", maxHeight: "calc(100dvh - 260px)", overflow: "auto", padding: 10, border: "1px solid #26262b", borderRadius: 10, background: "#0d0d10" }}>
+      <aside aria-label="片段属性" style={{ display: "grid", gap: 8, alignContent: "start", maxHeight: "100%", minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: 10, border: "1px solid #26262b", borderRadius: 10, background: "#0d0d10", minWidth: 0, boxSizing: "border-box" }}>
         <strong style={{ fontSize: 12 }}>片段属性</strong>
         {!primaryClip ? <small style={{ color: "#8b8b95" }}>选一个片段开始调整。Shift+点击可多选。</small> : <>
           <small style={{ color: "#8b8b95" }}>{primaryClip.track.name} · {primaryClip.clip.kind} · {primaryClip.clip.id}{selection.length > 1 ? ` · +${selection.length - 1}` : ""}</small>
@@ -527,20 +527,25 @@ export function NleEditor({ onClose }: { onClose?(): void }) {
       </aside>
     </div>
 
-    <div aria-label="多轨时间线" style={{ borderTop: "1px solid #26262b", background: "#0d0d10", padding: 8, maxHeight: "38dvh", overflow: "auto" }}>
-      <div style={{ position: "relative", width: width + 100, minWidth: "100%" }}>
-        <div aria-label="时间标尺" style={{ marginLeft: 100, height: 20, position: "relative", borderBottom: "1px solid #26262b", cursor: "crosshair" }}
+    <div aria-label="多轨时间线" style={{ borderTop: "1px solid #26262b", background: "#0d0d10", padding: 8, overflow: "auto" }}>
+      <div style={{ position: "relative", width: width + 140, minWidth: "100%" }}>
+        <div aria-label="时间标尺" style={{ marginLeft: 140, height: 20, position: "relative", borderBottom: "1px solid #26262b", cursor: "crosshair" }}
           onPointerDown={event => { if (event.button !== 0) return; ruler.current = true; const rect = event.currentTarget.getBoundingClientRect(); seek((event.clientX - rect.left) / pxPerMs); try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* optional */ } }}
           onPointerMove={event => { if (!ruler.current) return; const rect = event.currentTarget.getBoundingClientRect(); seek((event.clientX - rect.left) / pxPerMs); }}
           onPointerUp={() => { ruler.current = false; }} onPointerCancel={() => { ruler.current = false; }}>
           {Array.from({ length: ticks }, (_, index) => <span key={index} style={{ position: "absolute", left: index * tickMs * pxPerMs, fontSize: 9, color: "#6b6b76" }}>{(index * tickMs / 1000).toFixed(tickMs >= 1000 ? 0 : 1)}s</span>)}
         </div>
+        <div style={{ display: "flex", gap: 6, padding: "2px 0 6px 140px", alignItems: "center", flexWrap: "wrap" }}>
+          {TRACK_KINDS.map(item => <button key={item.kind} type="button" style={{ ...button, padding: "3px 8px", fontSize: 10 }} onClick={() => addTrack(item.kind)}>{item.label}</button>)}
+          <small style={{ color: "#6b6b76", fontSize: 10 }}>空白处拖框可框选（最多 8 条轨道）</small>
+        </div>
         <div ref={lanesRef} style={{ position: "relative" }} onPointerDown={onLanesDown} onPointerMove={onLanesMove} onPointerUp={onLanesUp}>
-        {project.tracks.map(track => <div key={track.id} style={{ display: "grid", gridTemplateColumns: "100px minmax(0,1fr)", alignItems: "center", height: 44, borderBottom: "1px solid #1c1c21", opacity: track.muted ? 0.55 : 1 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
-            <button type="button" aria-label={`${track.name} 静音`} aria-pressed={Boolean(track.muted)} style={{ textAlign: "left", border: 0, background: "transparent", color: track.kind === "audio" ? "#5eead4" : "#a1a1aa", font: "inherit", fontSize: 11, cursor: "pointer" }} onClick={() => toggleTrack(track.id, "muted")}>{track.name}</button>
-            <button type="button" aria-label={`${track.name} 锁定`} aria-pressed={Boolean(track.locked)} title="锁定轨道" style={{ border: 0, background: "transparent", color: track.locked ? "#fbbf24" : "#4b4b55", cursor: "pointer", fontSize: 11 }} onClick={() => toggleTrack(track.id, "locked")}>{track.locked ? "锁" : "开"}</button>
-            <button type="button" aria-label={`删除 ${track.name}`} title="删除轨道（Ctrl+Z 可撤销）" style={{ border: 0, background: "transparent", color: "#6b6b76", cursor: "pointer", fontSize: 11 }} onClick={() => removeTrack(track.id)}>删</button>
+        {project.tracks.map(track => <div key={track.id} style={{ display: "grid", gridTemplateColumns: "140px minmax(0,1fr)", alignItems: "center", height: TRACK_ROW_H, borderBottom: "1px solid #1c1c21", opacity: track.muted ? 0.55 : 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: 0, paddingRight: 4 }}>
+            <span title={track.name} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: track.kind === "audio" ? "#5eead4" : "#a1a1aa", fontSize: 11 }}>{track.name}</span>
+            <button type="button" aria-label={`${track.name} 静音`} aria-pressed={Boolean(track.muted)} title={track.muted ? "取消静音" : "静音"} style={{ width: 18, height: 18, border: "1px solid #2b2b31", borderRadius: 4, background: track.muted ? "#3f3f46" : "transparent", color: track.muted ? "#f4f4f5" : "#6b6b76", cursor: "pointer", fontSize: 10, lineHeight: 1, padding: 0 }} onClick={() => toggleTrack(track.id, "muted")}>M</button>
+            <button type="button" aria-label={`${track.name} 锁定`} aria-pressed={Boolean(track.locked)} title={track.locked ? "解锁轨道" : "锁定轨道"} style={{ width: 18, height: 18, border: "1px solid #2b2b31", borderRadius: 4, background: track.locked ? "#3f3f46" : "transparent", color: track.locked ? "#fbbf24" : "#6b6b76", cursor: "pointer", fontSize: 10, lineHeight: 1, padding: 0 }} onClick={() => toggleTrack(track.id, "locked")}>L</button>
+            <button type="button" aria-label={`删除 ${track.name}`} title="删除轨道（Ctrl+Z 可撤销）" style={{ width: 18, height: 18, border: "1px solid #2b2b31", borderRadius: 4, background: "transparent", color: "#6b6b76", cursor: "pointer", fontSize: 11, lineHeight: 1, padding: 0 }} onClick={() => removeTrack(track.id)}>×</button>
           </div>
           <div style={{ position: "relative", height: 38, background: "#111116", borderRadius: 6 }} onPointerDown={event => { if (event.button !== 0) return; const rect = event.currentTarget.getBoundingClientRect(); seek((event.clientX - rect.left) / pxPerMs); }}>
             {track.clips.map(clip => {
@@ -557,12 +562,8 @@ export function NleEditor({ onClose }: { onClose?(): void }) {
           </div>
         </div>)}
         </div>
-        <div style={{ display: "flex", gap: 6, paddingTop: 6, alignItems: "center", flexWrap: "wrap" }}>
-          {TRACK_KINDS.map(item => <button key={item.kind} type="button" style={{ ...button, padding: "4px 8px", fontSize: 10 }} onClick={() => addTrack(item.kind)}>{item.label}</button>)}
-          <small style={{ color: "#6b6b76", fontSize: 10 }}>在空白处拖框可框选片段（不超过 8 条轨道）。</small>
-        </div>
-        <div style={{ position: "absolute", top: 0, bottom: 0, left: 100 + playhead * pxPerMs, width: 1, background: "#f4f4f5", pointerEvents: "none", zIndex: 3 }} />
-        {snapGuide !== null && <div aria-hidden style={{ position: "absolute", top: 0, bottom: 0, left: 100 + snapGuide * pxPerMs, width: 1, background: "#fbbf24", pointerEvents: "none", zIndex: 3 }} />}
+        <div style={{ position: "absolute", top: 0, bottom: 0, left: 140 + playhead * pxPerMs, width: 1, background: "#f4f4f5", pointerEvents: "none", zIndex: 3 }} />
+        {snapGuide !== null && <div aria-hidden style={{ position: "absolute", top: 0, bottom: 0, left: 140 + snapGuide * pxPerMs, width: 1, background: "#fbbf24", pointerEvents: "none", zIndex: 3 }} />}
       </div>
     </div>
   </section>;

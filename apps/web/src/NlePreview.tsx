@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { renderNleFrame, type NleFrameHost } from "@glintai/video/nle-dom";
 import type { NleProject } from "@glintai/scenescript";
 
@@ -17,6 +17,8 @@ export function NlePreview({ project, mediaAssetBase, tMs, playing, muted = fals
   onEnded?(): void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
   const hostRef = useRef<NleFrameHost | null>(null);
   const stateRef = useRef({ project, tMs, playing, muted, onTimeUpdate, onEnded });
   stateRef.current = { project, tMs, playing, muted, onTimeUpdate, onEnded };
@@ -27,6 +29,19 @@ export function NlePreview({ project, mediaAssetBase, tMs, playing, muted = fals
     hostRef.current ??= { root, resolveAsset: src => `${stateRef.current.project ? mediaAssetBase : ""}${src.slice("assets/".length)}` };
     hostRef.current.resolveAsset = src => `${mediaAssetBase}${src.slice("assets/".length)}`;
   }, [mediaAssetBase]);
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    const measure = () => {
+      const width = frame.clientWidth || 1;
+      setScale(width / project.width);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [project.width]);
 
   useEffect(() => {
     const host = hostRef.current, root = rootRef.current;
@@ -64,13 +79,7 @@ export function NlePreview({ project, mediaAssetBase, tMs, playing, muted = fals
     }
   }, []);
 
-  const scale = 1;
-  return <div style={{ position: "relative", width: "100%", aspectRatio: `${project.width} / ${project.height}`, background: "#000", overflow: "hidden" }}>
-    <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
-      <div style={{ position: "relative", maxWidth: "100%", maxHeight: "100%", width: project.width >= project.height ? "100%" : "auto", height: project.width >= project.height ? "auto" : "100%" }}>
-        <div ref={rootRef} style={{ position: "absolute", inset: 0, transformOrigin: "top left", containerType: "size" }} />
-      </div>
-    </div>
-    <span hidden>{scale}</span>
+  return <div ref={frameRef} style={{ position: "relative", width: "100%", aspectRatio: `${project.width} / ${project.height}`, background: "#000", overflow: "hidden" }}>
+    <div ref={rootRef} style={{ position: "absolute", top: 0, left: 0, width: project.width, height: project.height, transform: `scale(${scale})`, transformOrigin: "top left" }} />
   </div>;
 }

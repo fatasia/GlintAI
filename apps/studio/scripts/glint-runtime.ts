@@ -6,7 +6,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const PATH_ARGS = new Set(["source", "code", "project", "export-project", "analysis", "out", "video", "audio", "plan", "src", "mask", "dir", "task-dir", "feedback", "beats-grid", "batch", "adapters", "persona-pack", "tts-model", "transcription-model", "reference-audio", "params", "store", "operations", "tests", "receipt", "before", "after", "against"]);
-const SCRIPT_NAMES = new Set(["render", "render-worker", "native-worker", "preview-code", "ask", "rehearse", "reexplain", "media"]);
+const SCRIPT_NAMES = new Set(["render", "render-worker", "native-worker", "preview-code", "ask", "rehearse", "reexplain", "media", "nle-render"]);
 
 export function resolvePaths(args: string[], callerDir: string): string[] {
   return args.map((arg) => {

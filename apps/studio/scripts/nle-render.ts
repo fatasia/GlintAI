@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { build } from "esbuild";
 import { parseNleProject, type NleProject } from "@glintai/scenescript";
 import { openCaptureBrowser, startAssetServer } from "./direct-browser/host";
 import { runMediaProcess } from "./native-process";
@@ -66,11 +65,16 @@ export async function renderNle({ projectFile, assetsDir, out, encoding = "balan
       fs.copyFileSync(source, path.join(workspace, "assets", name));
     }
 
-    const bundled = await build({
-      entryPoints: [path.join(path.dirname(fileURLToPath(import.meta.url)), "nle-capture-page.ts")],
-      bundle: true, platform: "browser", format: "iife", target: "chrome120", write: false, logLevel: "silent",
-    });
-    fs.writeFileSync(path.join(workspace, "harness.js"), bundled.outputFiles[0]!.text);
+    // The portable package pre-bundles the harness (esbuild cannot be bundled):
+    // use it when present, otherwise build from source for development.
+    const prebuilt = process.env.GLINT_NLE_HARNESS;
+    const harness = prebuilt && fs.existsSync(prebuilt)
+      ? fs.readFileSync(prebuilt, "utf8")
+      : (await (await import("esbuild")).build({
+        entryPoints: [path.join(path.dirname(fileURLToPath(import.meta.url)), "nle-capture-page.ts")],
+        bundle: true, platform: "browser", format: "iife", target: "chrome120", write: false, logLevel: "silent",
+      })).outputFiles[0]!.text;
+    fs.writeFileSync(path.join(workspace, "harness.js"), harness);
     const embedded = JSON.parse(fs.readFileSync(projectFile, "utf8"));
     const inline = JSON.stringify(embedded).replace(/<\//g, "<\/");
     fs.writeFileSync(path.join(workspace, "harness.html"), '<!doctype html><meta charset="utf-8"><style>body{margin:0;font-family:"Microsoft YaHei","PingFang SC","Noto Sans CJK SC","WenQuanYi Zen Hei",sans-serif}</style><div id="root"></div><script>window.__GLINT_PROJECT=' + inline + ';</script><script src="/harness.js"></script>');
@@ -132,4 +136,17 @@ export async function renderNle({ projectFile, assetsDir, out, encoding = "balan
     await server?.close().catch(() => {});
     fs.rmSync(workspace, { recursive: true, force: true });
   }
+}
+
+/** CLI entry: `glint nle-render --project= --assets= --out= [--encoding=]`. */
+if (process.argv[1] && /nle-render\.(?:ts|mjs|js)$/.test(process.argv[1])) {
+  const arg = (name: string) => process.argv.slice(2).find(value => value.startsWith(`--${name}=`))?.slice(name.length + 3);
+  const projectFile = arg("project"), assets = arg("assets"), out = arg("out");
+  if (!projectFile || !assets || !out) {
+    console.error("[glint] nle-render requires --project=<nle.json> --assets=<dir> --out=<mp4>");
+    process.exit(1);
+  }
+  renderNle({ projectFile, assetsDir: assets, out, encoding: arg("encoding") ?? "balanced", concurrency: Number(arg("concurrency") ?? 4) })
+    .then(result => console.log(`[glint] NLE rendered: ${result.output} (${Math.round(result.bytes / 1024)} KB, ${(result.durationMs / 1000).toFixed(2)}s)`))
+    .catch(error => { console.error(`[glint] failed: ${error instanceof Error ? error.message : String(error)}`); process.exit(1); });
 }

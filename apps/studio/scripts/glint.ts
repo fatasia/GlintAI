@@ -427,14 +427,8 @@ async function main(): Promise<void> {
       console.log("  剪映打开后如提示升级草稿属正常;重导出请重跑本命令,不要读回剪映改过的草稿。");
       return;
     }
-    case "nle-render": {
-      const projectFile = readArg(rest, "project"), assets = readArg(rest, "assets"), out = readArg(rest, "out");
-      if (!projectFile || !assets || !out) throw new Error("nle-render requires --project=<nle.json> --assets=<dir> --out=<mp4>");
-      const { renderNle } = await import("./nle-render");
-      const result = await renderNle({ projectFile, assetsDir: assets, out, encoding: readArg(rest, "encoding"), concurrency: readArg(rest, "concurrency") ? Number(readArg(rest, "concurrency")) : undefined });
-      console.log(`[glint] NLE rendered: ${result.output} (${(result.bytes / 1024).toFixed(0)} KB, ${(result.durationMs / 1000).toFixed(2)}s)`);
-      return;
-    }
+    case "nle-render":
+      return runScript("nle-render", rest);
     case "nle": {
       const projectFile = readArg(rest, "project"), video = readArg(rest, "video");
       if (!projectFile || !video) throw new Error("nle requires --project=<scenescript.json> and --video=<rendered.mp4>");

@@ -54,6 +54,13 @@ await build({ entryPoints: [join(repo, "apps/studio/scripts/render.ts")], outfil
   external: ["@resvg/resvg-js", "@remotion/bundler", "@remotion/compositor-win32-x64-msvc"],
   logLevel: "warning", banner: { js: ESM_SHIM } });
 
+// NLE renderer: browser capture + ffmpeg. esbuild stays external and is only
+// reached in development; the packaged path reads the pre-bundled harness.
+await build({ entryPoints: [join(repo, "apps/studio/scripts/nle-render.ts")], outfile: join(app, "cli", "nle-render.mjs"),
+  bundle: true, platform: "node", format: "esm", target: "node22", external: ["esbuild"], logLevel: "warning", banner: { js: ESM_SHIM } });
+await build({ entryPoints: [join(repo, "apps/studio/scripts/nle-capture-page.ts")], outfile: join(app, "cli", "nle-harness.js"),
+  bundle: true, platform: "browser", format: "iife", target: "chrome120", logLevel: "warning" });
+
 // Native SVGs need resvg; copy its JS wrapper and the Windows binding.
 for (const entry of readdirSync(join(repo, "node_modules", ".pnpm")).filter(name => name.startsWith("@resvg+resvg-js"))) {
   const source = join(repo, "node_modules", ".pnpm", entry, "node_modules", "@resvg");
@@ -84,7 +91,7 @@ const env = {
   GLINT_BUILD_FILE: join(app, "build.json"), GLINT_DESKTOP_NODE: nodePath, GLINT_DESKTOP_REPO: app, GLINT_DESKTOP_SERVICE: join(app, "server", "service.mjs"),
   GLINT_WEB_DIST: join(app, "web"), GLINT_STUDIO_DIR: join(app, "studio"),
   GLINT_MAKE_ENTRY: join(app, "cli", "glint.mjs"), GLINT_MAKE_NODE: nodePath,
-  GLINT_CLI_ENTRY: join(app, "cli", "glint.mjs"), GLINT_PREBUILT_BUNDLE: prebuiltBundle, GLINT_BUILD_ID: new Date().toISOString(),
+  GLINT_CLI_ENTRY: join(app, "cli", "glint.mjs"), GLINT_PREBUILT_BUNDLE: prebuiltBundle, GLINT_NLE_HARNESS: join(app, "cli", "nle-harness.js"), GLINT_BUILD_ID: new Date().toISOString(),
 };
 const nodeLines = lite ? [
   "set \"GLINT_DESKTOP_NODE=\"",
