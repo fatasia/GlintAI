@@ -64,8 +64,10 @@ function wrapLines(context: CanvasRenderingContext2D, text: string, maxWidth: nu
 }
 
 function drawTextCanvas(canvas: HTMLCanvasElement, clip: Extract<NleClip, { kind: "text" }>, referenceHeight: number): void {
-  const targetWidth = Math.max(16, Math.round(canvas.getBoundingClientRect().width || canvas.parentElement?.clientWidth || 1920));
-  const targetHeight = Math.max(16, Math.round(canvas.getBoundingClientRect().height || canvas.parentElement?.clientHeight || 1080));
+  // clientWidth ignores CSS transforms, so the backing store stays at project
+  // resolution even when the preview root is scaled down to fit its panel.
+  const targetWidth = Math.max(16, Math.round(canvas.clientWidth || canvas.parentElement?.clientWidth || 1920));
+  const targetHeight = Math.max(16, Math.round(canvas.clientHeight || canvas.parentElement?.clientHeight || 1080));
   if (canvas.width !== targetWidth || canvas.height !== targetHeight) { canvas.width = targetWidth; canvas.height = targetHeight; }
   const context = canvas.getContext("2d");
   if (!context) return;
