@@ -115,7 +115,10 @@ it.each(["sha", "oversized", "network"])(
     const { root, cases, urls } = fixture();
     const before = new Set(fs.readdirSync(os.tmpdir()));
     const download = async () => {
-      if (fault === "network") throw new Error("private-url?token=secret");
+      if (fault === "network")
+        throw new Error(
+          'GET "https://internal.host.example/secret/path/gold.mp4?token=secret" failed: ECONNRESET D:/private/dir',
+        );
       return { bytes: Buffer.alloc(fault === "oversized" ? 1024 * 1024 + 1 : 4) };
     };
     const failure = await prepareCiGoldens(
@@ -124,7 +127,21 @@ it.each(["sha", "oversized", "network"])(
       download,
     ).catch((error: Error) => error);
     expect(failure).toBeInstanceOf(Error);
-    expect(failure.message).not.toContain("secret");
+    for (const sentinel of [
+      "secret",
+      "internal.host.example",
+      "ECONNRESET",
+      "/secret/path",
+      "D:/private/dir",
+      "https://",
+    ])
+      expect(failure.message).not.toContain(sentinel);
+    if (fault === "network") {
+      expect(failure.message).toContain("download failed");
+      expect(failure.message).toMatch(/for [a-z-]+: download failed/);
+    } else {
+      expect(failure.message).toBe("Golden bytes do not match the locked size or SHA256");
+    }
     expect(fs.existsSync(path.join(root, cases[0]!.path))).toBe(false);
     expect(
       fs
@@ -193,7 +210,19 @@ it("CLI blocks missing owner configuration with no input contents in logs", () =
   );
   expect(run.status).toBe(1);
   expect(run.stderr).toContain("CI fixture preparation blocked");
+  expect(run.stderr).toContain("Configure exactly one owner-approved golden directory or URL map");
   expect(run.stdout).toBe("");
+});
+
+it("CLI keeps controlled reasons but never leaks raw non-module errors", () => {
+  const run = spawnSync(
+    process.execPath,
+    [path.resolve("scripts/prepare-ci-fixtures.mjs"), "unexpected-stage"],
+    { env: { ...process.env }, encoding: "utf8" },
+  );
+  expect(run.status).toBe(1);
+  expect(run.stderr).toContain("CI fixture preparation blocked: Use goldens or runtime stage");
+  expect(run.stderr).not.toMatch(/at |file:\/\/|node_modules/);
 });
 
 it("loads the existing HTTPS and public-address boundary without contacting loopback", async () => {

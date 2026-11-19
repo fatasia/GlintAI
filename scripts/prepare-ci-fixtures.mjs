@@ -9,10 +9,26 @@ import { parseArgs, prepare, safePath } from "./prepare-test-fixtures.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const LIMIT = 1024 * 1024;
 
-/** Errors may quote source URLs; query strings can carry credentials, so strip them. */
-function sanitizeDetail(error) {
-  const detail = error instanceof Error ? error.message : String(error);
-  return detail.replace(/\?[^\s]*/g, "?<query>");
+// Q-06b AC2: never echo source URLs, hosts, paths or raw provider errors. Only fixed
+// reasons, controlled module messages and trusted fixture IDs leave this module.
+const CONTROLLED_MESSAGE = /^(Golden |Configure |Invalid |Local golden |Use goldens|Explicit installed|CI runtime )/;
+
+function safePrepareMessage(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return CONTROLLED_MESSAGE.test(message) ? message : "prepare-ci-fixtures failed";
+}
+
+/** Classify a download failure into a fixed short reason without quoting the error. */
+function goldenDownloadReason(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/Private, loopback or reserved/i.test(message)) return "source resolved to a non-public address";
+  if (/HTTPS is required/i.test(message)) return "source URL is not HTTPS";
+  if (/credentials/i.test(message)) return "source URL carries credentials";
+  if (/Too many source redirects/i.test(message)) return "too many redirects";
+  if (/timed? ?out|aborted|AbortError/i.test(message)) return "transfer did not complete in time";
+  if (/resolve|DNS|ENOTFOUND|getaddrinfo|EAI_AGAIN/i.test(message)) return "source host could not be resolved";
+  if (/protocol/i.test(message)) return "unsupported source protocol";
+  return "download failed";
 }
 
 export function sourceConfig(env, cases) {
@@ -104,7 +120,7 @@ export async function prepareCiGoldens(
       try {
         ({ bytes } = await fetchAsset(config.urls[item.id], AbortSignal.timeout(60_000)));
       } catch (error) {
-        throw new Error(`Golden download failed public HTTPS validation or transfer for ${item.id}: ${sanitizeDetail(error)}`);
+        throw new Error(`Golden download failed public HTTPS validation or transfer for ${item.id}: ${goldenDownloadReason(error)}`);
       }
       if (
         !Buffer.isBuffer(bytes) ||
@@ -150,8 +166,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
         : prepareCiRuntime(ROOT, process.env);
     console.log(JSON.stringify(result, null, 2));
   } catch (error) {
-    // State the actual reason: a generic block message hides which configured source or tool failed.
-    console.error(`CI fixture preparation blocked: ${sanitizeDetail(error)}`);
+    // Fixed reasons only: raw provider or filesystem errors never reach CI output.
+    console.error(`CI fixture preparation blocked: ${safePrepareMessage(error)}`);
     console.error("No tests were skipped; configure owner-approved sources and installed tools, then verify locked hashes.");
     process.exitCode = 1;
   }
