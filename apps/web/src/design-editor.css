@@ -229,6 +229,10 @@
 .design-presenting .design-toolbar { display: none; }
 .design-presenting .design-stage-toolbar,
 .design-presenting .design-titles { display: none; }
+.design-presenting .design-stage { grid-template-rows: minmax(0, 1fr) auto; }
+.design-presenting .design-transition-player,
+.design-presenting .design-preview-host { grid-row: 1; min-height: 0; }
+.design-presenting .design-presentation-controls { grid-row: 2; }
 .design-presenting .design-preview-host { display: grid; place-items: center; padding: 0; }
 .design-presenting .design-preview-caption { display: none; }
 .design-presentation-controls {
@@ -452,33 +456,31 @@
 
 /* Page transitions (S-03): rail controls, presenting player, preview dialog */
 .design-transition-panel { display: grid; gap: 6px; padding: 10px 2px 0; border-top: 1px solid var(--hair); }
-.design-transition-panel label { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--faint); font-size: 11px; }
-.design-transition-panel select { min-height: 26px; min-width: 0; flex: 1; padding: 0 6px; font-size: 11px; color: var(--paper-dim); background: var(--ink-2); border: 1px solid var(--hair-strong); border-radius: 6px; }
-.design-transition-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-.design-transition-actions button { min-height: 28px; padding: 0 4px; font-size: 11px; border-color: transparent; background: transparent; color: var(--muted); }
+.design-transition-panel label { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--faint); font-size: var(--g-fs-1); }
+.design-transition-panel select { min-height: 26px; min-width: 0; flex: 1; padding: 0 6px; font-size: var(--g-fs-1); color: var(--paper-dim); background: var(--ink-2); border: 1px solid var(--hair-strong); border-radius: 6px; }
+.design-transition-actions { display: grid; grid-template-columns: 1fr; gap: 4px; }
+.design-transition-actions button { white-space: nowrap; }
+.design-transition-actions button { min-height: 28px; padding: 0 4px; font-size: var(--g-fs-1); border-color: transparent; background: transparent; color: var(--muted); }
 .design-transition-actions button:hover:not(:disabled) { background: var(--wash-strong); color: var(--paper); }
-.design-step-reveal { align-items: flex-start !important; font-size: 10.5px; line-height: 1.5; }
+.design-transition-panel label.design-step-reveal { align-items: flex-start; font-size: var(--g-fs-1); line-height: 1.5; }
 .design-step-reveal input { flex: none; width: 14px; height: 14px; margin: 1px 0 0; }
 .design-transition-player { position: relative; display: grid; place-items: stretch; min-width: 0; min-height: 0; overflow: hidden; }
-.design-transition-frame { min-width: 0; min-height: 0; }
+.design-transition-frame { min-width: 0; min-height: 0; grid-area: 1 / 1; overflow: hidden; }
 .design-transition-frame .design-preview-host { height: 100%; }
-.design-presenting .design-transition-player { display: grid; place-items: center; }
-.design-presenting .design-transition-frame { width: 100%; height: 100%; display: grid; place-items: center; }
+.design-presenting .design-transition-player { display: grid; place-items: stretch; width: 100%; height: 100%; }
+.design-presenting .design-transition-frame { width: 100%; height: 100%; display: grid; place-items: stretch; }
 .design-transition-dialog { width: min(1040px, calc(100vw - 32px)); padding: 14px; border: 1px solid var(--hair-strong); border-radius: 12px; color: var(--paper); background: var(--ink-2); }
 .design-transition-dialog::backdrop { background: rgb(0 0 0 / .6); }
 .design-transition-dialog .design-transition-stage { position: relative; pointer-events: none; }
 .design-transition-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
-.design-transition-dialog header strong { font-size: 14px; }
+.design-transition-dialog header strong { font-size: var(--g-fs-4); }
 .design-transition-dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
-@media (prefers-reduced-motion: reduce) {
-  .design-transition-frame { animation: none !important; }
-}
 
 /* Masked local edit (S-05): paint overlay, quote/approval, candidate comparison */
 .design-mask-dialog { width: min(1060px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); padding: 14px; border: 1px solid var(--hair-strong); border-radius: 12px; color: var(--paper); background: var(--ink-2); overflow: auto; }
 .design-mask-dialog::backdrop { background: rgb(0 0 0 / .6); }
 .design-mask-dialog > header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-.design-mask-dialog > header strong { font-size: 15px; }
+.design-mask-dialog > header strong { font-size: var(--g-fs-5); }
 .design-mask-dialog > header button { margin-left: auto; }
 .design-mask-body { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(240px, 1fr); gap: 14px; }
 .design-mask-canvas-wrap { position: relative; min-width: 0; align-self: start; }
@@ -486,18 +488,18 @@
 .design-mask-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; border-radius: 8px; }
 .design-mask-controls { display: grid; gap: 10px; align-content: start; min-width: 0; }
 .design-mask-tools { display: flex; flex-wrap: wrap; gap: 4px; }
-.design-mask-tools button { min-height: 28px; padding: 0 8px; font-size: 11px; color: var(--muted); background: transparent; border-color: transparent; }
+.design-mask-tools button { min-height: 28px; padding: 0 8px; font-size: var(--g-fs-1); color: var(--muted); background: transparent; border-color: transparent; }
 .design-mask-tools button:hover:not(:disabled) { background: var(--wash-strong); color: var(--paper); }
 .design-mask-tools button[aria-pressed="true"] { background: var(--wash-strong); color: var(--paper); border-color: var(--hair-strong); }
-.design-mask-controls textarea, .design-mask-controls select { min-height: 0; width: 100%; box-sizing: border-box; padding: 8px; font: inherit; font-size: 12px; color: var(--paper); background: var(--ink-1); border: 1px solid var(--hair-strong); border-radius: 8px; }
-.design-mask-controls label { display: grid; gap: 4px; font-size: 11px; color: var(--faint); }
-.design-mask-quote { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--hair-strong); border-radius: 8px; font-size: 12px; }
+.design-mask-controls textarea, .design-mask-controls select { min-height: 0; width: 100%; box-sizing: border-box; padding: 8px; font: inherit; font-size: var(--g-fs-2); color: var(--paper); background: var(--ink-1); border: 1px solid var(--hair-strong); border-radius: 8px; }
+.design-mask-controls label { display: grid; gap: 4px; font-size: var(--g-fs-1); color: var(--faint); }
+.design-mask-quote { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--hair-strong); border-radius: 8px; font-size: var(--g-fs-2); }
 .design-mask-quote input[type="number"] { width: 100%; box-sizing: border-box; padding: 7px; color: var(--paper); background: var(--ink-1); border: 1px solid var(--hair-strong); border-radius: 6px; }
-.design-mask-confirm { display: flex !important; align-items: center; gap: 6px; flex-direction: row; }
-.design-mask-running { display: grid; gap: 6px; font-size: 12px; }
+.design-mask-controls .design-mask-confirm { display: flex; align-items: center; gap: 6px; flex-direction: row; }
+.design-mask-running { display: grid; gap: 6px; font-size: var(--g-fs-2); }
 .design-mask-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .design-mask-sides img { width: 100%; height: auto; border-radius: 6px; background: var(--ink-0); }
-.design-mask-compare { display: grid; gap: 8px; font-size: 12px; }
+.design-mask-compare { display: grid; gap: 8px; font-size: var(--g-fs-2); }
 .design-mask-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.design-mask-error { margin: 0; color: var(--warn); font-size: 12px; overflow-wrap: anywhere; }
+.design-mask-error { margin: 0; color: var(--warn); font-size: var(--g-fs-2); overflow-wrap: anywhere; }
 @media (max-width: 900px) { .design-mask-body { grid-template-columns: minmax(0, 1fr); } }

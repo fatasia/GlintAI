@@ -87,7 +87,7 @@
       "important": 5
     },
     "editor-workspace.css": {
-      "rawFontSize": 18,
+      "rawFontSize": 17,
       "rawZIndex": 3,
       "important": 6
     },
@@ -244,7 +244,7 @@
     },
     "SessionEditor.tsx": {
       "hexColor": 2,
-      "inlineStyle": 11
+      "inlineStyle": 10
     },
     "ShapeMorphPanel.tsx": {
       "inlineStyle": 6
@@ -273,8 +273,7 @@
       "inlineStyle": 10
     },
     "TimelinePanel.tsx": {
-      "hexColor": 1,
-      "inlineStyle": 11
+      "inlineStyle": 2
     },
     "ui-system.css": {
       "rawFontSize": 6,

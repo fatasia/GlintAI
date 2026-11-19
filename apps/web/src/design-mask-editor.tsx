@@ -16,10 +16,12 @@ const toRgba = (context: CanvasRenderingContext2D, width: number, height: number
 const loadImage = (src: string) => new Promise<HTMLImageElement>((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = () => reject(new Error("页面图片读取失败，请重试。")); image.src = applicationUrl(src); });
 const blobDataUrl = (blob: Blob) => new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("图片编码失败。")); reader.readAsDataURL(blob); });
 const canvasBlob = (canvas: HTMLCanvasElement) => new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error("图片编码失败。")), "image/png"));
+// 掩膜是像素协议不是主题色：白=重绘、黑=保留，与 CLI 的 ffmpeg maskedmerge 同一约定。
+const MASK_KEEP = "rgb(0, 0, 0)", MASK_EDIT = "rgb(255, 255, 255)";
 /** Cover-fit the candidate into the original frame so mask coordinates stay meaningful. */
 function drawCover(source: CanvasImageSource, sourceWidth: number, sourceHeight: number, width: number, height: number): Rgba {
   const { context } = makeCanvas(width, height);
-  context.fillStyle = "#000"; context.fillRect(0, 0, width, height);
+  context.fillStyle = MASK_KEEP; context.fillRect(0, 0, width, height);
   const scale = Math.max(width / sourceWidth, height / sourceHeight);
   const drawnWidth = sourceWidth * scale, drawnHeight = sourceHeight * scale;
   context.drawImage(source, (width - drawnWidth) / 2, (height - drawnHeight) / 2, drawnWidth, drawnHeight);
@@ -27,10 +29,10 @@ function drawCover(source: CanvasImageSource, sourceWidth: number, sourceHeight:
 }
 function paintStrokes(canvas: HTMLCanvasElement, strokes: Stroke[], size: number) {
   const context = canvas.getContext("2d")!; const { width, height } = canvas;
-  context.globalCompositeOperation = "source-over"; context.fillStyle = "#000"; context.fillRect(0, 0, width, height);
+  context.globalCompositeOperation = "source-over"; context.fillStyle = MASK_KEEP; context.fillRect(0, 0, width, height);
   for (const stroke of strokes) {
     context.globalCompositeOperation = stroke.erase ? "destination-out" : "source-over";
-    context.strokeStyle = "#fff"; context.lineWidth = size; context.lineJoin = "round"; context.lineCap = "round";
+    context.strokeStyle = MASK_EDIT; context.lineWidth = size; context.lineJoin = "round"; context.lineCap = "round";
     context.beginPath();
     stroke.points.forEach(([x, y], index) => index ? context.lineTo(x * width, y * height) : context.moveTo(x * width, y * height));
     if (stroke.points.length === 1) context.lineTo(stroke.points[0]![0] * width + 0.1, stroke.points[0]![1] * height);

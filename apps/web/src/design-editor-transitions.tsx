@@ -1,14 +1,11 @@
 import { useEffect, useRef } from "react";
-import { DESIGN_TRANSITION_MAX_MS, DESIGN_TRANSITION_MIN_MS, DESIGN_TRANSITION_TYPES, designTransitionLabels, transitionSheetCss, type DesignTransition } from "./design-transition";
+import { DESIGN_TRANSITION_MAX_MS, DESIGN_TRANSITION_MIN_MS, DESIGN_TRANSITION_TYPES, designTransitionLabels, transitionInStyle, transitionOutStyle, transitionSheetCss, type DesignTransition } from "./design-transition";
 import type { DesignPage, DesignPageTransition } from "./design-artifacts";
 import { DesignPreview } from "./design-editor-preview";
 import type { DesignBridgeMessage } from "./design-editor-bridge";
 import type { BrandTheme } from "./design-brand";
 
 const DURATIONS = [200, 300, 500, 800, 1200];
-const TRANSITION_EASE = "cubic-bezier(.45,0,.25,1)";
-const inAnimation = (transition: DesignTransition) => ({ animation: `glint-page-${transition.type}-in ${transition.durationMs}ms ${TRANSITION_EASE} both` });
-const outAnimation = (transition: DesignTransition) => transition.type === "push" ? { animation: `glint-page-push-out ${transition.durationMs}ms ${TRANSITION_EASE} both` } : {};
 
 /** Rail block for the active page; edits go through the caller so history stays uniform. */
 export function DesignTransitionControls({ page, pages, slides, onChange, onApplyAll, onPreview }: {
@@ -53,10 +50,13 @@ export function DesignTransitionPlayer({ play, interactive, onMessage, onFinishe
   brand?: BrandTheme | null;
 }) {
   const finished = useRef(false), callback = useRef(onMessage), complete = useRef(onFinished);
+  const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   callback.current = onMessage; complete.current = onFinished;
   const finish = () => { if (!finished.current) { finished.current = true; complete.current(); } };
   // Safety net in case animationend never fires (reduced motion, hidden tab).
   useEffect(() => { const timer = setTimeout(finish, play.transition.durationMs + 1500); return () => clearTimeout(timer); }, [play]);
+  // Animation strings stay imperative: dynamic keyframe/duration pairs cannot live in token classes.
+  const applyAnimation = (node: HTMLDivElement | null, css: string) => { if (node && css && !reduced) node.style.animation = css.replace(/^animation:\s*/, ""); };
   const frameProps = (page: DesignPage, live: boolean) => ({
     html: page.html, viewport: "slides" as const, interactive: live, selected: [], commentMode: false,
     annotations: page.annotations ?? [], brand, pageIds: [page.id],
@@ -65,10 +65,10 @@ export function DesignTransitionPlayer({ play, interactive, onMessage, onFinishe
   return <div className="design-transition-player" aria-label="页面转场播放">
     {/* Keyframes ship with the player: the animation names only exist while a transition plays. */}
     <style>{transitionSheetCss(play.transition.type)}</style>
-    <div className="design-transition-frame" style={{ gridArea: "1/1", overflow: "hidden", ...outAnimation(play.transition) }}>
+    <div className="design-transition-frame" ref={node => applyAnimation(node, transitionOutStyle(play.transition.type, play.transition.durationMs))}>
       <DesignPreview {...frameProps(play.from, false)} />
     </div>
-    <div className="design-transition-frame" style={{ gridArea: "1/1", overflow: "hidden", ...inAnimation(play.transition) }} onAnimationEnd={finish}>
+    <div className="design-transition-frame" ref={node => applyAnimation(node, transitionInStyle(play.transition.type, play.transition.durationMs))} onAnimationEnd={finish}>
       <DesignPreview {...frameProps(play.to, interactive)} />
     </div>
   </div>;
