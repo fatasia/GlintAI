@@ -9,6 +9,12 @@ import { parseArgs, prepare, safePath } from "./prepare-test-fixtures.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const LIMIT = 1024 * 1024;
 
+/** Errors may quote source URLs; query strings can carry credentials, so strip them. */
+function sanitizeDetail(error) {
+  const detail = error instanceof Error ? error.message : String(error);
+  return detail.replace(/\?[^\s]*/g, "?<query>");
+}
+
 export function sourceConfig(env, cases) {
   const directory = env.GLINT_CI_GOLDENS_DIR;
   const remote = env.GLINT_CI_GOLDENS_URLS;
@@ -97,8 +103,8 @@ export async function prepareCiGoldens(
       let bytes;
       try {
         ({ bytes } = await fetchAsset(config.urls[item.id], AbortSignal.timeout(60_000)));
-      } catch {
-        throw new Error("Golden download failed public HTTPS validation or transfer");
+      } catch (error) {
+        throw new Error(`Golden download failed public HTTPS validation or transfer for ${item.id}: ${sanitizeDetail(error)}`);
       }
       if (
         !Buffer.isBuffer(bytes) ||
@@ -143,10 +149,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
         ? await prepareCiGoldens(ROOT, process.env)
         : prepareCiRuntime(ROOT, process.env);
     console.log(JSON.stringify(result, null, 2));
-  } catch {
-    console.error(
-      "CI fixture preparation blocked: configure owner-approved sources and installed tools; verify locked hashes. No tests were skipped.",
-    );
+  } catch (error) {
+    // State the actual reason: a generic block message hides which configured source or tool failed.
+    console.error(`CI fixture preparation blocked: ${sanitizeDetail(error)}`);
+    console.error("No tests were skipped; configure owner-approved sources and installed tools, then verify locked hashes.");
     process.exitCode = 1;
   }
 }
