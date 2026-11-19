@@ -7,6 +7,8 @@ import { afterAll, expect, it } from "vitest";
 import { parseProject } from "@glintai/scenescript";
 import { FileSessionStore } from "@glintai/session/node";
 import { runMediaProcess } from "../../studio/scripts/native-process";
+import { captureProcess } from "../../studio/scripts/frame-diff";
+import { createHash } from "node:crypto";
 // @ts-expect-error JavaScript server exercised through real HTTP.
 import { createWebServer } from "./index.mjs";
 import { createMediaJobs } from "./media-jobs.mjs";
@@ -32,6 +34,10 @@ it.skipIf(process.env.GLINT_REFERENCE_E2E !== "1")("cuts a library video into an
     expect(response.status, JSON.stringify(body).slice(0, 300)).toBe(200);
     expect(body.inferred).toBe(true);
     expect(body.shots).toBe(2);
+    expect(body.boundaries).toHaveLength(1);
+    expect(body.limits.adaptiveCandidatesSkipped).toBe(0);
+    expect(body.boundaries[0]).toMatchObject({ sceneId: "ref-shot-002", startMs: 1000 });
+    expect(body.boundaries[0].change).toBeGreaterThan(0);
     const project = parseProject(body.project);
     expect(project.scenes).toHaveLength(2);
     for (const scene of project.scenes) {
@@ -39,6 +45,16 @@ it.skipIf(process.env.GLINT_REFERENCE_E2E !== "1")("cuts a library video into an
       expect(name).toMatch(/^ref-[a-f0-9]{8}-00[12]\.jpg$/);
       expect(fs.statSync(path.join(mediaDir, name)).size).toBeGreaterThan(100);
     }
+    expect(body.source).toEqual({ name: "ref.mp4", sha256: createHash("sha256").update(fs.readFileSync(video)).digest("hex"), durationMs: 2000 });
+    const sendFrames = (input: unknown) => fetch(`${base}/api/reference/frames`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) });
+    expect((await sendFrames({ name: "../ref.mp4", sha256: body.source.sha256, times: [750, 1500] })).status).toBe(400);
+    expect((await sendFrames({ name: "ref.mp4", sha256: "0".repeat(64), times: [750, 1500] })).status).toBe(400);
+    const refreshed = await sendFrames({ name: "ref.mp4", sha256: body.source.sha256, times: [750, 1500] });
+    const frames = await refreshed.json(); expect(refreshed.status, JSON.stringify(frames)).toBe(200);
+    expect(frames.times).toEqual([750, 1500]); expect(frames.names).toHaveLength(2);
+    const pixels = await Promise.all(frames.names.map((name: string) => captureProcess("ffmpeg", ["-v", "error", "-i", path.join(mediaDir, name), "-frames:v", "1", "-vf", "scale=1:1", "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"])));
+    expect(pixels[0]![0]).toBeGreaterThan(pixels[0]![2]! + 100);
+    expect(pixels[1]![2]).toBeGreaterThan(pixels[1]![0]! + 100);
   } finally {
     await new Promise<void>(resolve => server.close(() => resolve()));
   }

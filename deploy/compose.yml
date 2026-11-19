@@ -1,8 +1,12 @@
 services:
   glint:
-    build: ..
+    build:
+      context: ..
+      args:
+        GLINT_WEB_BASE_PATH: ${GLINT_WEB_BASE_PATH:-/}
     image: glint:local
     restart: unless-stopped
+    init: true
     env_file: .env
     ports:
       - "127.0.0.1:4180:4175"
@@ -15,6 +19,7 @@ services:
     shm_size: 256m
     security_opt:
       - no-new-privileges:true
+      - seccomp=./chromium-seccomp.json
     logging:
       driver: json-file
       options:

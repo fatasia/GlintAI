@@ -1,0 +1,156 @@
+/* Glint UI system v2 — one surface language for every page.
+   Rules: no card-in-card, hairline separators instead of boxes, one primary action per zone,
+   labels are micro-caps, numbers are tabular, motion is 160ms ease-out and never bounces. */
+
+:root {
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px; --s-7: 48px;
+  --t-micro: 10px; --t-label: 11px; --t-body: 13px; --t-sub: 15px; --t-title: 20px; --t-display: 34px;
+  --hair: color-mix(in srgb, var(--paper) 9%, transparent);
+  --hair-strong: color-mix(in srgb, var(--paper) 16%, transparent);
+  --surface: var(--ink-1);
+  --surface-raised: var(--ink-2);
+  --surface-sunken: var(--ink-0);
+  --wash: color-mix(in srgb, var(--paper) 4%, transparent);
+  --wash-strong: color-mix(in srgb, var(--paper) 7%, transparent);
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  --rail-w: 68px;
+  --bar-h: 52px;
+  --inspector-w: 320px;
+  --chat-w: 372px;
+}
+
+/* ── Typography ─────────────────────────────────────────────────────── */
+.g-label {
+  font: 500 var(--t-micro)/1.2 var(--font-mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.g-title { font-family: var(--font-display); font-size: var(--t-title); font-weight: 600; letter-spacing: -.02em; line-height: 1.2; }
+.g-display { font-family: var(--font-display); font-size: clamp(26px, 3.4vw, var(--t-display)); font-weight: 600; letter-spacing: -.035em; line-height: 1.08; }
+.g-sub { color: var(--muted); font-size: var(--t-body); line-height: 1.6; }
+.g-num { font-variant-numeric: tabular-nums; }
+
+/* ── Shell regions ──────────────────────────────────────────────────── */
+.g-region { min-width: 0; min-height: 0; }
+.g-pane { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; background: var(--surface); }
+.g-pane-head {
+  display: flex; align-items: center; gap: var(--s-2);
+  min-height: 40px; padding: 0 var(--s-3);
+  border-bottom: 1px solid var(--hair);
+}
+.g-pane-head .g-label { flex: 1; }
+.g-pane-body { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.g-scroll { overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.g-scroll::-webkit-scrollbar, .g-pane-body::-webkit-scrollbar { width: 9px; height: 9px; }
+.g-scroll::-webkit-scrollbar-thumb, .g-pane-body::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--paper) 14%, transparent);
+  border-radius: 99px; border: 2px solid transparent; background-clip: content-box;
+}
+.g-divider { height: 1px; background: var(--hair); border: 0; margin: 0; }
+.g-vrule { width: 1px; align-self: stretch; background: var(--hair); }
+
+/* ── Buttons ────────────────────────────────────────────────────────── */
+.g-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 32px; padding: 0 12px;
+  border: 1px solid var(--hair-strong); border-radius: var(--r-sm);
+  background: transparent; color: var(--paper-dim);
+  font: 500 var(--t-body)/1 var(--font-ui); white-space: nowrap; cursor: pointer;
+  transition: background 160ms var(--ease), color 160ms var(--ease), border-color 160ms var(--ease);
+}
+.g-btn:hover:not(:disabled) { background: var(--wash-strong); color: var(--paper); border-color: var(--line-3); }
+.g-btn:active:not(:disabled) { transform: translateY(.5px); }
+.g-btn:disabled { opacity: .38; cursor: not-allowed; }
+.g-btn--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.g-btn--primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-ink); }
+.g-btn--quiet { border-color: transparent; color: var(--muted); }
+.g-btn--quiet:hover:not(:disabled) { background: var(--wash-strong); border-color: transparent; color: var(--paper); }
+.g-btn--icon { width: 32px; padding: 0; }
+.g-btn--icon svg { width: 16px; height: 16px; }
+.g-btn--sm { min-height: 26px; padding: 0 9px; font-size: 12px; }
+.g-btn[aria-pressed="true"] { background: var(--wash-strong); color: var(--paper); border-color: var(--line-3); }
+
+/* ── Segmented control ──────────────────────────────────────────────── */
+.g-seg {
+  display: inline-flex; align-items: center; gap: 2px; padding: 2px;
+  border: 1px solid var(--hair); border-radius: var(--r-full); background: var(--surface-sunken);
+}
+.g-seg button {
+  min-height: 26px; padding: 0 12px; border: 0; border-radius: var(--r-full);
+  background: transparent; color: var(--muted);
+  font: 500 12px/1 var(--font-ui); cursor: pointer;
+  transition: background 160ms var(--ease), color 160ms var(--ease);
+}
+.g-seg button:hover { color: var(--paper); }
+.g-seg button[aria-pressed="true"], .g-seg button[aria-selected="true"] {
+  background: var(--wash-strong); color: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--hair-strong);
+}
+
+/* ── Fields ─────────────────────────────────────────────────────────── */
+.g-field, .g-input {
+  width: 100%; min-width: 0; min-height: 34px; padding: 7px 10px;
+  border: 1px solid var(--hair-strong); border-radius: var(--r-sm);
+  background: var(--surface-sunken); color: var(--paper);
+  font: 400 var(--t-body)/1.45 var(--font-ui);
+  transition: border-color 160ms var(--ease), background 160ms var(--ease);
+}
+.g-field:hover, .g-input:hover { border-color: var(--line-3); }
+.g-field:focus, .g-input:focus { outline: none; border-color: var(--accent); background: var(--ink-2); }
+.g-field::placeholder, .g-input::placeholder { color: var(--faint); }
+.g-form-row { display: grid; gap: 6px; }
+.g-form-row > span { color: var(--muted); font-size: 12px; }
+
+/* ── Chips & meta ───────────────────────────────────────────────────── */
+.g-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 24px; padding: 0 9px;
+  border: 1px solid var(--hair); border-radius: var(--r-full);
+  background: var(--wash); color: var(--paper-dim); font-size: 12px;
+}
+.g-chip--accent { border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); color: var(--paper); }
+.g-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex: none; }
+.g-dot--warn { background: var(--warn); }
+.g-dot--off { background: var(--faint); }
+
+/* ── Menu / popover ─────────────────────────────────────────────────── */
+.g-menu {
+  position: absolute; z-index: 40; min-width: 220px; padding: 6px;
+  border: 1px solid var(--hair-strong); border-radius: var(--r-md);
+  background: var(--ink-2); box-shadow: var(--shadow-panel);
+  display: grid; gap: 2px;
+}
+.g-menu button, .g-menu a {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  min-height: 32px; padding: 6px 9px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--paper-dim); text-align: left;
+  font: 400 var(--t-body)/1.4 var(--font-ui); text-decoration: none; cursor: pointer;
+}
+.g-menu button:hover:not(:disabled), .g-menu a:hover { background: var(--wash-strong); color: var(--paper); }
+.g-menu button:disabled { opacity: .4; cursor: not-allowed; }
+.g-menu small { color: var(--muted); font-size: 11px; line-height: 1.5; }
+
+/* ── Empty & loading ────────────────────────────────────────────────── */
+.g-empty { display: grid; place-items: center; gap: var(--s-2); padding: var(--s-6) var(--s-4); text-align: center; color: var(--muted); }
+.g-empty strong { color: var(--paper-dim); font-size: var(--t-sub); font-weight: 500; }
+.g-empty p { margin: 0; max-width: 42ch; font-size: var(--t-body); line-height: 1.65; }
+.g-loading { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; padding: var(--s-3); }
+.g-loading::before {
+  content: ""; width: 10px; height: 10px; border-radius: 50%;
+  border: 1.5px solid var(--hair-strong); border-top-color: var(--accent);
+  animation: g-spin 700ms linear infinite;
+}
+@keyframes g-spin { to { transform: rotate(360deg); } }
+
+/* ── Focus & motion ─────────────────────────────────────────────────── */
+.g-btn:focus-visible, .g-seg button:focus-visible, .g-chip:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .g-btn, .g-seg button, .g-field { transition: none; }
+  .g-loading::before { animation: none; }
+}
+
+/* Screen-reader-only label: keeps icon buttons named without painting text. */
+.g-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }

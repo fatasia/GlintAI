@@ -13,6 +13,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
         with:
           version: 11.18.0
@@ -21,9 +23,20 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Prepare owner-approved locked goldens
+        run: node scripts/prepare-ci-fixtures.mjs goldens
+        env:
+          GLINT_CI_GOLDENS_DIR: ${{ vars.GLINT_CI_GOLDENS_DIR }}
+          GLINT_CI_GOLDENS_URLS: ${{ vars.GLINT_CI_GOLDENS_URLS }}
       # ffmpeg powers the build/receipt/provenance tests; CJK fonts keep raster goldens meaningful.
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto-cjk
+      - name: Prepare ten local style samples
+        run: node scripts/prepare-ci-fixtures.mjs runtime
+        env:
+          GLINT_CHROME_PATH: /usr/bin/google-chrome
       - run: pnpm verify:source
+      - run: pnpm check:ui
+      - run: pnpm check:tests
       - run: pnpm typecheck
       - run: pnpm test
       - run: python3 scripts/test-qwen-text.py
@@ -46,7 +59,82 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Prepare owner-approved locked goldens
+        run: node scripts/prepare-ci-fixtures.mjs goldens
+        env:
+          GLINT_CI_GOLDENS_DIR: ${{ vars.GLINT_CI_GOLDENS_DIR }}
+          GLINT_CI_GOLDENS_URLS: ${{ vars.GLINT_CI_GOLDENS_URLS }}
       - run: choco install ffmpeg -y --no-progress
+      - name: Prepare explicit Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component clippy
+      - run: cargo +stable fetch --locked --manifest-path apps/desktop/secure-assets/Cargo.toml
+      - name: Prepare ten styles and both secure bridges
+        run: node scripts/prepare-ci-fixtures.mjs runtime
+        env:
+          GLINT_CHROME_PATH: C:/Program Files/Google/Chrome/Application/chrome.exe
+          RUSTUP_TOOLCHAIN: stable
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm --filter glint-web build
+      - run: cargo +stable check --locked --manifest-path apps/desktop/Cargo.toml
+      - run: cargo +stable clippy --locked --manifest-path apps/desktop/Cargo.toml --all-targets -- -D warnings
+      - run: cargo +stable test --locked --manifest-path apps/desktop/Cargo.toml
 
+  browser-core:
+    # Local fixtures only: no provider credentials, model calls or historical style videos.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GLINT_CHROME_PATH: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto-cjk
+      # Hosted Ubuntu provides Chrome; fail explicitly if that image contract changes.
+      - run: test -x "$GLINT_CHROME_PATH" && "$GLINT_CHROME_PATH" --version
+      - run: pnpm --filter glint-web build
+      - name: Run all four core browser files without skips
+        run: >-
+          node scripts/verify-browser.mjs
+          apps/web/server/creation-flow.browser.test.ts
+          apps/web/server/storyboard.browser.test.ts
+          apps/web/server/hybrid-creation.browser.test.ts
+          apps/web/server/reference-adoption.browser.test.ts
+
+  code-quality:
+    # Owner enables this only after reviewing and committing the bootstrap baseline.
+    # Once enabled, missing/deleted baselines fail; they never skip this job.
+    if: ${{ vars.GLINT_QUALITY_BOOTSTRAP_COMMIT != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      QUALITY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      QUALITY_BOOTSTRAP: ${{ vars.GLINT_QUALITY_BOOTSTRAP_COMMIT }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Validate owner-approved baseline ancestry
+        shell: bash
+        run: |
+          [[ "$QUALITY_BOOTSTRAP" =~ ^[a-f0-9]{40}$ ]] || exit 2
+          [[ "$QUALITY_BASE" =~ ^[a-f0-9]{40}$ ]] || exit 2
+          git merge-base --is-ancestor "$QUALITY_BOOTSTRAP" "$QUALITY_BASE"
+          git cat-file -e "$QUALITY_BOOTSTRAP:scripts/code-quality-baseline.json"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm format:check

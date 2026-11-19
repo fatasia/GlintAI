@@ -20,7 +20,7 @@ export const RUNTIME_DECODERS = [
     /** Subpath inside the gsap package, resolved via @glintai/video. */
     packageSubpath: "gsap/dist/gsap.min.js",
   },
-  { file: "lottie_light.min.js", packageSubpath: "lottie-web/build/player/lottie_light_canvas.min.js" },
+  { file: "lottie_light.min.js", packageSubpath: "lottie-web/build/player/lottie.min.js" },
 ] as const;
 
 export interface CopiedDecoder {
@@ -46,6 +46,17 @@ export function resolveRuntimeDecoder(subpath: string): string {
   }
 }
 
+/** Shared browser IIFE: Web and offline renderers use the same installed Three. */
+export async function buildThreeRuntime(): Promise<Uint8Array> {
+  const three = resolveRuntimeDecoder("three");
+  const compiled = await build({
+    stdin: { contents: `import * as THREE from ${JSON.stringify(three)}; window.THREE=THREE;`, resolveDir: path.dirname(three) },
+    bundle: true, format: "iife", platform: "browser", minify: true,
+    write: false, legalComments: "inline",
+  });
+  return compiled.outputFiles[0]!.contents;
+}
+
 /**
  * Copies every runtime decoder into the public root (overwrite-safe:
  * the sources are immutable per installed version). Returns what was copied.
@@ -54,6 +65,17 @@ export async function copyRuntimeDecoders(
   publicDir: string,
 ): Promise<CopiedDecoder[]> {
   await fs.mkdir(publicDir, { recursive: true });
+  const packaged = process.env.GLINT_RUNTIME_ASSETS;
+  if (packaged) {
+    const copied: CopiedDecoder[] = [];
+    for (const file of [...RUNTIME_DECODERS.map((decoder) => decoder.file), "three.runtime.js"]) {
+      const source = path.join(packaged, file);
+      const bytes = (await fs.stat(source)).size;
+      await fs.copyFile(source, path.join(publicDir, file));
+      copied.push({ file, bytes });
+    }
+    return copied;
+  }
   const copied: CopiedDecoder[] = [];
   for (const decoder of RUNTIME_DECODERS) {
     const source = resolveRuntimeDecoder(decoder.packageSubpath);
@@ -62,9 +84,7 @@ export async function copyRuntimeDecoders(
     await fs.copyFile(source, target);
     copied.push({ file: decoder.file, bytes });
   }
-  const three = resolveRuntimeDecoder("three");
-  const compiled = await build({stdin:{contents:`import * as THREE from ${JSON.stringify(three)}; window.THREE=THREE;`,resolveDir:path.dirname(three)},bundle:true,format:"iife",platform:"browser",minify:true,write:false,legalComments:"inline"});
-  const runtime=compiled.outputFiles[0]!.contents;
+  const runtime = await buildThreeRuntime();
   await fs.writeFile(path.join(publicDir,"three.runtime.js"),runtime);
   copied.push({file:"three.runtime.js",bytes:runtime.length});
   return copied;
@@ -105,10 +125,14 @@ async function sha256(file: string): Promise<string> {
 export async function ensureDecoders(publicDir: string): Promise<DecoderCopyResult[]> {
   const results: DecoderCopyResult[] = [];
   for (const { from, to } of GLTF_DECODER_FILES) {
-    const source = resolveRuntimeDecoder(from);
+    const source = process.env.GLINT_RUNTIME_ASSETS
+      ? path.join(process.env.GLINT_RUNTIME_ASSETS, ...to.split("/"))
+      : resolveRuntimeDecoder(from);
     const stat = await fs.stat(source).catch(() => null);
     if (!stat) {
-      throw new Error(`glTF decoder source is missing: ${source}. Reinstall dependencies ("pnpm install").`);
+      throw new Error(process.env.GLINT_RUNTIME_ASSETS
+        ? `Packaged glTF decoder is missing: ${source}. Re-extract or rebuild the portable package.`
+        : `glTF decoder source is missing: ${source}. Reinstall dependencies ("pnpm install").`);
     }
     const dest = path.join(publicDir, ...to.split("/"));
     const exists = await fs.stat(dest).then(() => true, () => false);

@@ -3,6 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
+import { recordProcessLedger } from "../native-process";
 
 /**
  * Capture browser candidates, best-effort and in preference order. Windows ships
@@ -36,14 +37,14 @@ export function findSystemBrowser(
 }
 
 /**
- * Identity of the browser binary itself. The old cache key ignored the browser
- * version, so a Chrome update could reuse frames rendered by the previous one.
- * Size + mtime avoids launching the browser just to ask its version.
+ * Identity of the browser executable bytes, not mutable path metadata.
  */
 export function browserIdentity(): string | undefined {
   try {
-    const file = findSystemBrowser(), stat = fs.statSync(file);
-    return createHash("sha256").update(`${file}:${stat.size}:${stat.mtimeMs}`).digest("hex");
+    const fd = fs.openSync(findSystemBrowser(), "r"), hash = createHash("sha256"), buffer = Buffer.allocUnsafe(1024 * 1024);
+    try { let count: number; while ((count = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) hash.update(buffer.subarray(0, count)); }
+    finally { fs.closeSync(fd); }
+    return hash.digest("hex");
   } catch {
     return undefined;
   }
@@ -83,6 +84,7 @@ export async function startAssetServer(root: string) {
 
 export async function openCaptureBrowser(width: number, height: number): Promise<{ browser: Browser; page: Page }> {
   const browser = await puppeteer.launch({ executablePath: findSystemBrowser(), headless: true, args: ["--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--autoplay-policy=no-user-gesture-required"], protocolTimeout: 60000 });
+  recordProcessLedger("chromium", browser.process()?.pid, ["(puppeteer capture browser)"]);
   try {
     const page = await browser.newPage(); await page.setViewport({ width, height, deviceScaleFactor: 1 });
     return { browser, page };

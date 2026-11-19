@@ -273,21 +273,33 @@ export interface BeatGrid {
  * Grid quality is beat-tracking heuristic, not librosa-grade — verify cut
  * points against the returned grid before committing a sync cut.
  */
-export async function detectBeats(audioPath: string, options: { timeoutMs?: number } = {}): Promise<BeatGrid> {
+export async function detectBeats(audioPath: string, options: { timeoutMs?: number; signal?: AbortSignal; startMs?: number; durationMs?: number; maxOutputBytes?: number; localOnly?: boolean } = {}): Promise<BeatGrid> {
+  if (options.startMs !== undefined && (!Number.isFinite(options.startMs) || options.startMs < 0 || options.startMs > 21_600_000)) throw new MusicError("Invalid beat-analysis start");
+  if (options.durationMs !== undefined && (!Number.isFinite(options.durationMs) || options.durationMs < 500 || options.durationMs > 600_000)) throw new MusicError("Invalid beat-analysis duration");
+  if (options.maxOutputBytes !== undefined && (!Number.isSafeInteger(options.maxOutputBytes) || options.maxOutputBytes < 22050 || options.maxOutputBytes > 64 * 1024 * 1024)) throw new MusicError("Invalid beat-analysis output limit");
+  options.signal?.throwIfAborted();
   const raw = await new Promise<Buffer>((resolve, reject) => {
     const child = spawn("ffmpeg", [
-      "-loglevel", "error", "-i", audioPath,
+      "-nostdin", "-loglevel", "error", ...(options.localOnly ? ["-protocol_whitelist", "file,pipe", "-format_whitelist", "wav,mp3,mov,matroska,ogg,flac,webm"] : []),
+      ...(options.startMs !== undefined ? ["-ss", String(options.startMs / 1000)] : []), "-i", audioPath,
+      ...(options.durationMs !== undefined ? ["-t", String(options.durationMs / 1000)] : []),
       "-ac", "1", "-ar", "22050", "-f", "s16le", "pipe:1",
-    ], { stdio: ["ignore", "pipe", "pipe"] });
+    ], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, shell: false });
     const chunks: Buffer[] = [];
-    let stderr = "";
-    const timer = setTimeout(() => { child.kill(); reject(new MusicError("beat detection timed out")); }, options.timeoutMs ?? 60_000);
-    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk));
-    child.on("error", (error: Error) => { clearTimeout(timer); reject(new MusicError(`ffmpeg failed to start: ${error.message}`)); });
+    let stderr = "", size = 0, failure: Error | undefined, spawnError: Error | undefined;
+    const abort = () => child.kill();
+    options.signal?.addEventListener("abort", abort, { once: true }); if (options.signal?.aborted) abort();
+    const timer = setTimeout(() => { failure = new MusicError("beat detection timed out"); child.kill(); }, options.timeoutMs ?? 60_000);
+    child.stdout.on("data", (chunk: Buffer) => { size += chunk.length; if (options.maxOutputBytes !== undefined && size > options.maxOutputBytes) { failure = new MusicError("beat analysis output exceeds limit"); child.kill(); } else chunks.push(chunk); });
+    child.stderr.on("data", (chunk: Buffer) => { stderr = (stderr + chunk).slice(-4000); });
+    child.on("error", (error: Error) => { spawnError = error; });
     child.on("close", (code) => {
-      clearTimeout(timer);
-      code === 0 ? resolve(Buffer.concat(chunks)) : reject(new MusicError(`ffmpeg exited ${code}: ${stderr.slice(0, 200)}`));
+      clearTimeout(timer); options.signal?.removeEventListener("abort", abort);
+      if (options.signal?.aborted) reject(options.signal.reason ?? new MusicError("beat analysis cancelled"));
+      else if (failure) reject(failure);
+      else if (spawnError) reject(new MusicError(`ffmpeg failed to start: ${spawnError.message}`));
+      else if (code === 0) resolve(Buffer.concat(chunks));
+      else reject(new MusicError(`ffmpeg exited ${code}: ${stderr.slice(0, 200)}`));
     });
   });
   const hop = 220; // 10 ms at 22050 Hz
@@ -311,11 +323,12 @@ export async function detectBeats(audioPath: string, options: { timeoutMs?: numb
       if (peaks.length === 0 || i - peaks[peaks.length - 1]! >= minGap) peaks.push(i);
     }
   }
-  if (peaks.length < 4) return { bpm: 0, beatsMs: peaks.map((frame) => frame * 10) };
+  const frameMs = 1000 * hop / 22050;
+  if (peaks.length < 4) return { bpm: 0, beatsMs: peaks.map((frame) => Math.round(frame * frameMs)) };
   const intervals = peaks.slice(1).map((frame, index) => frame - peaks[index]!).sort((a, b) => a - b);
-  const median = intervals[Math.floor(intervals.length / 2)]! * 10; // ms
+  const median = intervals[Math.floor(intervals.length / 2)]! * frameMs;
   let bpm = median > 0 ? 60000 / median : 0;
   while (bpm > 180) bpm /= 2;
   while (bpm > 0 && bpm < 70) bpm *= 2;
-  return { bpm: Math.round(bpm * 10) / 10, beatsMs: peaks.map((frame) => frame * 10) };
+  return { bpm: Math.round(bpm * 10) / 10, beatsMs: peaks.map((frame) => Math.round(frame * frameMs)) };
 }

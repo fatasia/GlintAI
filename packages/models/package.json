@@ -1,0 +1,21 @@
+{
+  "name": "@glintai/models",
+  "version": "0.1.0",
+  "description": "Declarative model registry, cost quotes, budget guard and auditable model selection",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./task-approval": "./src/task-approval.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "sideEffects": false,
+  "dependencies": {
+    "zod": "^3.23.8"
+  }
+}

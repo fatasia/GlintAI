@@ -50,6 +50,7 @@ describe("CLI paths and shell-free invocation", () => {
       .toEqual([`--transcription-model=${path.resolve(studio,'models')}`,`--batch=${path.resolve(studio,'batch.json')}`,`--preview-config=${path.resolve(studio,'preview.json')}`]);
   });
   it("uses absolute scripts, Studio cwd and literal argument arrays for every command", async () => {
+    vi.stubEnv("GLINT_STUDIO_DIR", studio);
     vi.mocked(spawn).mockImplementation((() => {
       const child = new EventEmitter(); queueMicrotask(() => child.emit("close", 0)); return child;
     }) as unknown as typeof spawn);

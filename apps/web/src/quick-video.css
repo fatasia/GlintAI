@@ -1,0 +1,131 @@
+/* Quick video — the hero field: one bordered writing surface, one accent action,
+   everything else recedes to micro labels, text links and hairline rows. */
+
+.qv { display: flex; flex-direction: column; min-width: 0; color: var(--paper); }
+
+/* Input type: a quiet segmented switch plus a mono status note. */
+.qv-input-type { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); padding: 0 0 var(--s-3); }
+.qv-type-toggle { display: inline-flex; gap: 2px; padding: 2px; border: 0; border-radius: var(--r-full); background: transparent; }
+.qv-type-toggle button {
+  min-height: 24px; padding: 0 10px; border: 0; border-radius: var(--r-full);
+  background: transparent; color: var(--faint); font-size: 11.5px; cursor: pointer;
+  transition: background 160ms var(--ease), color 160ms var(--ease);
+}
+.qv-type-toggle button:hover:not(:disabled) { color: var(--paper-dim); }
+.qv-type-toggle button[aria-pressed="true"] { background: var(--wash-strong); color: var(--paper); box-shadow: none; }
+.qv-mode { font: 400 10px/1.4 var(--font-mono); letter-spacing: .06em; color: var(--faint); }
+.qv-auto {
+  padding: 0; border: 0; background: transparent; color: var(--faint);
+  font-size: 11px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px;
+  transition: color 160ms var(--ease);
+}
+.qv-auto:hover:not(:disabled) { color: var(--paper-dim); }
+
+/* The field itself: the only bordered surface in the hero. */
+.qv-input-wrap {
+  display: grid; min-width: 0;
+  border: 1px solid var(--hair-strong); border-radius: 10px;
+  background: color-mix(in srgb, var(--paper) 3%, transparent);
+  transition: border-color 160ms var(--ease), background 160ms var(--ease);
+}
+.qv-input-wrap:hover { border-color: var(--line-3); }
+.qv-input-wrap:focus-within { border-color: color-mix(in srgb, var(--accent) 48%, transparent); background: var(--wash); }
+.qv-input {
+  box-sizing: border-box; width: 100%; min-width: 0; min-height: 124px;
+  padding: var(--s-4) var(--s-4) var(--s-3);
+  border: 0; border-radius: 10px 10px 0 0;
+  background: transparent; color: var(--paper);
+  font-family: var(--font-ui); font-size: 15.5px; line-height: 1.65; letter-spacing: .002em;
+  resize: none;
+}
+.qv-input::placeholder { color: var(--faint); }
+.qv-input:focus { outline: none; }
+.qv-input:disabled { opacity: .6; }
+
+.qv-input-foot {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2);
+  padding: var(--s-2) var(--s-3) var(--s-3) var(--s-4);
+  border-top: 1px solid var(--hair);
+}
+.qv-aspect { display: inline-flex; gap: 2px; padding: 0; border: 0; background: transparent; }
+.qv .qv-aspect button {
+  min-height: 22px; padding: 0 8px; border: 0; border-radius: var(--r-sm);
+  background: transparent; color: var(--faint); font-family: var(--font-mono); font-size: 10.5px; line-height: 1;
+  letter-spacing: .04em; cursor: pointer;
+  transition: background 160ms var(--ease), color 160ms var(--ease);
+}
+.qv-aspect button:hover { color: var(--paper-dim); }
+.qv-aspect button[aria-pressed="true"] { background: var(--wash-strong); color: var(--paper); }
+.qv-count { margin-left: auto; color: var(--faint); font-family: var(--font-mono); font-size: 10px; line-height: 1; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+
+/* One primary action per zone: the accent lives here and nowhere else. */
+.qv-generate {
+  min-height: 34px; padding: 0 18px;
+  border: 1px solid var(--accent); border-radius: var(--r-sm);
+  background: var(--accent); color: var(--accent-ink);
+  font-family: var(--font-ui); font-size: 12.5px; font-weight: 500; line-height: 1; letter-spacing: .01em;
+  white-space: nowrap; cursor: pointer; box-shadow: none;
+  transition: background 160ms var(--ease), border-color 160ms var(--ease), color 160ms var(--ease), transform 160ms var(--ease);
+}
+.qv-generate:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+.qv-generate:active:not(:disabled) { transform: translateY(.5px); }
+.qv-generate:disabled { background: transparent; border-color: var(--hair); color: var(--faint); }
+.qv-cancel {
+  min-height: 30px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--r-sm);
+  background: transparent; color: var(--muted); font-size: 12px; cursor: pointer;
+  transition: background 160ms var(--ease), color 160ms var(--ease);
+}
+.qv-cancel:hover { background: var(--wash-strong); color: var(--paper); }
+.qv button:focus-visible, .qv textarea:focus-visible, .qv summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* One short helper line, then real examples as text links, not chips. */
+.qv-hint { margin: 0; padding: var(--s-3) 0 0; color: var(--faint); font-size: 11.5px; line-height: 1.6; max-width: 60ch; }
+.qv-examples { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-1) var(--s-4); padding: var(--s-3) 0 0; }
+.qv-examples-label { margin-right: 2px; font: 500 10px/1.4 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
+.qv-examples button {
+  min-height: 24px; padding: 0 0 1px;
+  border: 0; border-bottom: 1px solid var(--hair-strong); border-radius: 0; background: transparent;
+  color: var(--muted); font-size: 11.5px; cursor: pointer;
+  transition: color 160ms var(--ease), border-color 160ms var(--ease);
+}
+.qv-examples button:hover:not(:disabled) { color: var(--paper); border-bottom-color: var(--line-3); }
+
+/* Quiet disclosure. */
+.qv-privacy { padding-top: var(--s-3); color: var(--faint); font-size: 11.5px; }
+.qv-privacy summary { width: fit-content; cursor: pointer; list-style: none; transition: color 160ms var(--ease); }
+.qv-privacy summary::-webkit-details-marker { display: none; }
+.qv-privacy summary::before { content: "+ "; font-family: var(--font-mono); }
+.qv-privacy[open] summary::before { content: "− "; }
+.qv-privacy summary:hover { color: var(--paper-dim); }
+.qv-privacy p { margin: var(--s-2) 0 0; max-width: 64ch; color: var(--muted); font-size: 11.5px; line-height: 1.65; }
+
+.qv-status { display: grid; gap: var(--s-2); padding-top: var(--s-3); }
+.qv-muted { color: var(--faint); font-size: 11.5px; }
+.qv-job-status { margin: 0; color: var(--paper-dim); font-size: 12px; }
+.qv-result { display: grid; gap: var(--s-2); }
+.qv-result video { width: 100%; max-height: 420px; border-radius: var(--r-sm); background: var(--ink-0); }
+.qv-result-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); color: var(--faint); font-size: 12px; }
+.qv-result-actions a { color: var(--paper-dim); text-decoration: none; border-bottom: 1px solid var(--hair-strong); }
+.qv-result-actions a:hover { color: var(--paper); }
+.qv-result-actions button {
+  min-height: 28px; padding: 0 10px; border: 1px solid var(--hair-strong); border-radius: var(--r-sm);
+  background: transparent; color: var(--paper-dim); font-size: 11.5px; cursor: pointer;
+  transition: background 160ms var(--ease), color 160ms var(--ease);
+}
+.qv-result-actions button:hover:not(:disabled) { background: var(--wash-strong); color: var(--paper); }
+.qv-error { margin: 0; color: var(--danger); font-size: 12px; overflow-wrap: anywhere; }
+
+@media (max-width: 560px) {
+  .qv-input-type { padding-bottom: var(--s-2); }
+  .qv-input { min-height: 112px; padding: var(--s-3) var(--s-3) var(--s-2); font-size: 15.5px; }
+  .qv-input-foot { padding: var(--s-2) var(--s-2) var(--s-3) var(--s-3); gap: var(--s-2); }
+  .qv-generate { order: 6; flex: 1 1 100%; width: 100%; min-height: 40px; margin-top: 2px; }
+  .qv-count { order: 3; }
+  .qv-cancel { order: 7; flex: 1 1 100%; }
+  .qv-examples { gap: 4px var(--s-3); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qv button, .qv input, .qv textarea, .qv .qv-input-wrap { transition: none; }
+  .qv button:hover:not(:disabled), .qv button:active:not(:disabled) { transform: none; }
+}

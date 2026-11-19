@@ -22,7 +22,8 @@ export const SceneShell: React.FC<{
   align?: "start" | "center";
   kicker?: string;
   fit?: boolean;
-}> = ({ children, align = "start", kicker, fit = true }) => {
+  showBrand?: boolean;
+}> = ({ children, align = "start", kicker, fit = true, showBrand = true }) => {
   const centered = align === "center";
   const { width, height } = useVideoConfig();
   const narrow = width / height < 1.3;
@@ -34,7 +35,7 @@ export const SceneShell: React.FC<{
           <span style={kickerChip}>{kicker}</span>
         </FadeIn>
       ) : null}
-      <div
+      {showBrand && <div
         style={{
           position: "absolute",
           top: 72,
@@ -58,7 +59,7 @@ export const SceneShell: React.FC<{
               "linear-gradient(135deg, var(--glint-color-accent), var(--glint-color-accent-2))",
           }}
         />
-      </div>
+      </div>}
       <div
         style={{
           display: "flex",

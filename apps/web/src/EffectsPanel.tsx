@@ -26,7 +26,7 @@ const presets: Record<string, Array<Pick<SceneEffect, "kind" | "value">>> = {
 };
 const row: CSSProperties = { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 };
 const control: CSSProperties = { background: "var(--surface-2, inherit)", color: "inherit", font: "inherit",
-  border: "1px solid #2b2b31", borderRadius: 8, padding: "8px 12px", minWidth: 0 };
+  border: "1px solid var(--line-2)", borderRadius: 8, padding: "8px 12px", minWidth: 0 };
 const buttonStyle = (disabled = false): CSSProperties => ({ ...control,
   cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1 });
 
@@ -108,7 +108,7 @@ export function EffectsPanel({ project, sceneId, onChange }: EffectsPanelProps) 
   }, "效果顺序已更新。");
 
   return <section aria-label="画面风格" style={{ display: "grid", gap: 12, minWidth: 0, padding: 12,
-    border: "1px solid #2b2b31", borderRadius: 10, fontVariantNumeric: "tabular-nums" }}>
+    border: "1px solid var(--line-2)", borderRadius: 10, fontVariantNumeric: "tabular-nums" }}>
     <strong>画面风格</strong>
     <small>效果按列表顺序作用于整个场景画面，包含字幕和文字。不支持局部蒙版或 LUT。</small>
     {!scene ? <p role="status">未找到当前场景，请重新选择场景后调整画面风格。</p> : <>

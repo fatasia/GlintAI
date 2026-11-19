@@ -13,6 +13,10 @@ import { PassThrough } from "node:stream";
 import { startDesktopService } from "./desktop-service.mjs";
 import { createJobRunner } from "./jobs.mjs";
 
+// These tests restart a service at the same origin. Each request models a fresh
+// desktop client rather than Undici's pooled socket from the previous process.
+const freshFetch: typeof fetch = (input, init) => globalThis.fetch(input, { ...init, headers: { ...Object.fromEntries(new Headers(init?.headers)), Connection: "close" } });
+
 const directories: string[] = [];
 const services: { close: () => Promise<void> }[] = [];
 const children: ChildProcessWithoutNullStreams[] = [];
@@ -26,9 +30,27 @@ function directory() {
 async function start(options = {}) {
   const service = await startDesktopService({ dataDir: directory(), ...options }); services.push(service); return service;
 }
-function post(url: string, body: unknown) { return fetch(url, { method: "POST", body: JSON.stringify(body) }); }
-function child(args: string[], cwd = directory()) {
-  const process = spawn(globalThis.process.execPath, ["--import", loader, entry, ...args], {
+function post(url: string, body: unknown) { return freshFetch(url, { method: "POST", body: JSON.stringify(body) }); }
+function child(args: string[], cwd = directory(), fixture = false) {
+  const code = `
+    const { runCli } = await import(${JSON.stringify(pathToFileURL(entry).href)});
+    process.argv = [process.execPath, ${JSON.stringify(entry)}, ...process.argv.slice(1)];
+    await runCli({ startService: async () => {
+      console.log("SECRET-TOOL-STDOUT"); console.error("SECRET-TOOL-STDERR");
+      return { url: "http://127.0.0.1:12345", close: async () => {}, agentRequest: async request => {
+        process.stdout.write("SECRET-RAW-STDOUT"); process.stderr.write("SECRET-RAW-STDERR");
+        if (request.action === "fail") throw new Error("SECRET-PROVIDER-PATH-API-KEY");
+        if (request.action === "small") return { ok: true };
+        if (request.action === "git") return { ok: true, files: [{ path: "project.json", before: "x".repeat(5 * 1024 * 1024), after: "next" }] };
+        const limit = 12 * 1024 * 1024 + 64 * 1024;
+        const overhead = Buffer.byteLength(JSON.stringify({ type: "agent-result", id: request.id, result: "" }) + "\\n");
+        if (request.action === "payload") return "x".repeat(12 * 1024 * 1024);
+        if (request.action === "escaped") return "\\u0000".repeat(3 * 1024 * 1024);
+        return "x".repeat(limit - overhead + (request.action === "oversized" ? 1 : 0));
+      } };
+    } });`;
+  const argv = fixture ? ["--input-type=module", "--eval", code, "--", ...args] : ["--import", loader, entry, ...args];
+  const process = spawn(globalThis.process.execPath, argv, {
     cwd, shell: false, windowsHide: true, stdio: "pipe",
     env: { ...globalThis.process.env, GLINT_PUBLIC_HOST: "remote.example", GLINT_HOST: "0.0.0.0", PORT: "4175", GLINT_ACCESS_TOKEN: "SECRET-HTTP-CREDENTIAL-DO-NOT-PRINT", GLINT_LLM_API_KEY: "SECRET-API-DO-NOT-PRINT" },
   });
@@ -50,6 +72,21 @@ function child(args: string[], cwd = directory()) {
   void ready.catch(() => {});
   return { process, ready, closed, output: () => ({ stdout, stderr }) };
 }
+async function receipt(run: ReturnType<typeof child>, id: number, action: string) {
+  const response = new Promise<string>((resolve, reject) => {
+    let buffer = "";
+    const timer = setTimeout(() => { run.process.stdout.off("data", data); reject(new Error("未收到协议回执")); }, 10000);
+    const data = (chunk: string) => {
+      buffer += chunk;
+      if (!buffer.endsWith("\n")) return;
+      clearTimeout(timer); run.process.stdout.off("data", data); resolve(buffer);
+    };
+    run.process.stdout.on("data", data);
+  });
+  run.process.stdin.write(JSON.stringify({ type: "agent", nonce, id, request: { action, id } }) + "\n");
+  return response;
+}
+
 beforeEach(() => {
   for (const name of ["GLINT_DATA_DIR", "GLINT_CACHE_DIR", "GLINT_SESSION_DIR"]) vi.stubEnv(name, process.env[name]);
 });
@@ -71,17 +108,17 @@ it("serves real health, static files, composition and rejects nonlocal Host/cros
   const service = await start({ distDir });
   expect(service.url).toMatch(/^http:\/\/127\.0\.0\.1:[1-9]\d*$/);
   expect(service.instanceToken).toMatch(/^[a-f0-9]{64}$/);
-  const health = await (await fetch(`${service.url}/api/health`)).json();
+  const health = await (await freshFetch(`${service.url}/api/health`)).json();
   expect(health).toMatchObject({ status: "ok", service: "glint-web" });
   expect(JSON.stringify(health)).not.toContain(service.instanceToken);
-  expect(await (await fetch(service.url)).text()).toBe("<h1>Desktop</h1>");
+  expect(await (await freshFetch(service.url)).text()).toBe("<h1>Desktop</h1>");
   const composed = await post(`${service.url}/api/compose`, { source: "# Desktop\n\n## Facts\nEvidence stays local.", template: "explainer" });
   expect(composed.status).toBe(200); expect((await composed.json()).project.scenes.length).toBeGreaterThan(1);
   const status = await new Promise((resolve, reject) => {
     const req = request(`${service.url}/api/health`, { headers: { host: "attacker.example" } }, res => { res.resume(); resolve(res.statusCode); }); req.on("error", reject); req.end();
   });
   expect(status).toBe(403);
-  expect((await fetch(`${service.url}/api/session/open`, { method: "POST", headers: { origin: "https://attacker.example" }, body: "{}" })).status).toBe(403);
+  expect((await freshFetch(`${service.url}/api/session/open`, { method: "POST", headers: { origin: "https://attacker.example" }, body: "{}" })).status).toBe(403);
 });
 
 it("isolates every persistence store and recovers checks, jobs, assets and sessions on restart", async () => {
@@ -96,17 +133,18 @@ it("isolates every persistence store and recovers checks, jobs, assets and sessi
   const answers = { attemptId: "desktop-attempt-123", answers: [{ id: "isolated", choice: 1 }, { id: "life", choice: 1 }] };
   expect((await post(`${a.url}/api/checks/entropy`, answers)).status).toBe(200);
   fs.writeFileSync(path.join(dataDir, "media", "local.png"), Buffer.from("local asset"));
-  expect(await (await fetch(`${a.url}/api/media/assets/local.png`)).text()).toBe("local asset");
-  expect((await (await fetch(`${b.url}/api/session/list`)).json()).projects).toEqual([]);
-  expect((await (await fetch(`${b.url}/api/checks/entropy/stats`)).json()).attempts).toBe(0);
-  expect((await fetch(`${b.url}/api/make/${job.id}`)).status).toBe(404);
-  expect((await (await fetch(`${b.url}/api/media/library`)).json()).assets).toEqual([]);
+  expect(await (await freshFetch(`${a.url}/api/media/assets/local.png`)).text()).toBe("local asset");
+  expect((await (await freshFetch(`${b.url}/api/session/list`)).json()).projects).toEqual([]);
+  expect((await (await freshFetch(`${b.url}/api/checks/entropy/stats`)).json()).attempts).toBe(0);
+  expect((await freshFetch(`${b.url}/api/make/${job.id}`)).status).toBe(404);
+  expect((await (await freshFetch(`${b.url}/api/media/library`)).json()).assets).toEqual([]);
   await a.close();
   const recovered = await start({ dataDir, studioDir });
-  expect((await (await fetch(`${recovered.url}/api/session/snapshot?projectId=${project.id}`)).json()).snapshot.document.title).toBe(project.title);
-  expect((await (await fetch(`${recovered.url}/api/checks/entropy/stats`)).json()).attempts).toBe(1);
-  expect((await (await fetch(`${recovered.url}/api/make/request/request-recovered`)).json()).id).toBe(job.id);
-  expect(fs.readdirSync(dataDir).sort()).toEqual(["checks", "jobs", "media", "sessions"]);
+  expect(recovered.url).toBe(a.url);
+  expect((await (await freshFetch(`${recovered.url}/api/session/snapshot?projectId=${project.id}`)).json()).snapshot.document.title).toBe(project.title);
+  expect((await (await freshFetch(`${recovered.url}/api/checks/entropy/stats`)).json()).attempts).toBe(1);
+  expect((await (await freshFetch(`${recovered.url}/api/make/request/request-recovered`)).json()).id).toBe(job.id);
+  expect(fs.readdirSync(dataDir).sort()).toEqual(["checks", "desktop-origin.json", "jobs", "logs", "media", "sessions"]);
   expect(fs.readdirSync(studioDir)).toEqual([]);
 });
 
@@ -130,7 +168,7 @@ it("roots runner argv and persisted state in outputDir without changing studio w
 it("closes active connections, disposes once and returns the same repeated-close promise", async () => {
   const dispose = vi.fn();
   const service = await start({ makeRunner: { dispose } });
-  await fetch(`${service.url}/api/health`);
+  await freshFetch(`${service.url}/api/health`);
   const socket = createConnection({ host: "127.0.0.1", port: Number(new URL(service.url).port) });
   await once(socket, "connect");
   socket.write("POST /api/session/open HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 100\r\n\r\n{");
@@ -138,13 +176,13 @@ it("closes active connections, disposes once and returns the same repeated-close
   const disconnected = new Promise<void>(resolve => socket.once("close", () => resolve()));
   const first = service.close(); expect(service.close()).toBe(first);
   await first; await disconnected; await service.close(); expect(dispose).toHaveBeenCalledTimes(1);
-  await expect(fetch(`${service.url}/api/health`)).rejects.toThrow();
+  await expect(freshFetch(`${service.url}/api/health`)).rejects.toThrow();
 });
 
 it("bounds shutdown even when runner disposal never settles", async () => {
   const service = await start({ timeoutMs: 30, makeRunner: { dispose: () => new Promise(() => {}) } });
   await expect(service.close()).rejects.toThrow("shutdown timed out");
-  await expect(fetch(`${service.url}/api/health`)).rejects.toThrow();
+  await expect(freshFetch(`${service.url}/api/health`)).rejects.toThrow();
 });
 
 it.each([{ dataDir: "" }, { host: "0.0.0.0" }, { host: "::1" }, { port: 4175 }, { timeoutMs: 0 }, { timeoutMs: Infinity }])("rejects unsafe/invalid configuration before starting: %j", async options => {
@@ -156,13 +194,13 @@ it("CLI emits exactly the agreed ready record and accepts only nonce-bound stdin
   const run = child([`--data-dir=${dataDir}`, `--nonce=${nonce}`]);
   const ready = await run.ready;
   expect(ready).toEqual({ type: "ready", url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+$/), nonce });
-  expect((await fetch(`${ready.url}/api/health`)).status).toBe(200);
+  expect((await freshFetch(`${ready.url}/api/health`)).status).toBe(200);
   expect((await post(`${ready.url}/api/session/open`, { projectId: project.id, project })).status).toBe(200);
   run.process.stdin.write(JSON.stringify({ type: "shutdown", nonce }) + "\n");
   expect((await run.closed)[0]).toBe(0);
   expect(run.output()).toEqual({ stdout: JSON.stringify(ready) + "\n", stderr: "" });
-  expect(fs.readdirSync(dataDir).sort()).toEqual(["checks", "jobs", "media", "sessions"]);
-  await expect(fetch(`${ready.url}/api/health`)).rejects.toThrow();
+  expect(fs.readdirSync(dataDir).sort()).toEqual(["checks", "desktop-origin.json", "jobs", "logs", "media", "sessions"]);
+  await expect(freshFetch(`${ready.url}/api/health`)).rejects.toThrow();
 }, 20000);
 
 it("CLI exits when parent disconnects stdin, including while startup is pending", async () => {
@@ -172,16 +210,72 @@ it("CLI exits when parent disconnects stdin, including while startup is pending"
     run.process.stdin.end();
     expect((await run.closed)[0]).toBe(0);
     expect(run.output().stderr).toBe("");
-    if (ready) await expect(fetch(`${ready.url}/api/health`)).rejects.toThrow();
+    if (ready) await expect(freshFetch(`${ready.url}/api/health`)).rejects.toThrow();
   }
 }, 20000);
 
-it.each(["not JSON\n", JSON.stringify({ type: "shutdown", nonce: "wrong" }) + "\n", JSON.stringify({ type: "execute", nonce }) + "\n", JSON.stringify({ type: "shutdown", nonce, command: "echo SECRET" }) + "\n", "x".repeat(4097)])("CLI rejects unexpected stdin without evaluating it", async control => {
+it.each(["not JSON\n", JSON.stringify({ type: "shutdown", nonce: "wrong" }) + "\n", JSON.stringify({ type: "execute", nonce }) + "\n", JSON.stringify({ type: "shutdown", nonce, command: "echo SECRET" }) + "\n", "x".repeat(4 * 1024 * 1024 + 1)])("CLI rejects unexpected stdin without evaluating it", async control => {
   const run = child([`--data-dir=${directory()}`, `--nonce=${nonce}`]);
   const ready = await run.ready;
   run.process.stdin.write(control);
   expect((await run.closed)[0]).toBe(1);
   expect(run.output()).toEqual({ stdout: JSON.stringify(ready) + "\n", stderr: "Desktop control message rejected\n" });
+}, 20000);
+
+it("CLI 限制完整响应 envelope，保留大 Git-like 回执且超限后继续服务并隔离日志", async () => {
+  const run = child([`--data-dir=${directory()}`, `--nonce=${nonce}`], directory(), true);
+  const ready = await run.ready;
+  const limit = 12 * 1024 * 1024 + 64 * 1024;
+  const git = await receipt(run, 1, "git");
+  expect(Buffer.byteLength(git)).toBeGreaterThan(4 * 1024 * 1024);
+  expect(JSON.parse(git).result.files[0].before).toHaveLength(5 * 1024 * 1024);
+  const payload = await receipt(run, 2, "payload");
+  expect(JSON.parse(payload).result).toHaveLength(12 * 1024 * 1024);
+  const exact = await receipt(run, 3, "exact");
+  expect(Buffer.byteLength(exact)).toBe(limit);
+  for (const [id, action] of [[4, "oversized"], [5, "escaped"]] as const) {
+    const line = await receipt(run, id, action);
+    expect(Buffer.byteLength(line)).toBeLessThan(256);
+    expect(JSON.parse(line)).toEqual({ type: "agent-result", id, error: "桌面服务响应过大，请缩小查询范围后重试。" });
+  }
+  expect(JSON.parse(await receipt(run, 6, "small"))).toEqual({ type: "agent-result", id: 6, result: { ok: true } });
+  expect(JSON.parse(await receipt(run, 7, "fail"))).toEqual({ type: "agent-result", id: 7, error: "本地智能体操作未完成，请重试。" });
+  run.process.stdin.write(JSON.stringify({ type: "shutdown", nonce }) + "\n");
+  expect((await run.closed)[0]).toBe(0);
+  const { stdout, stderr } = run.output();
+  expect(stderr).toBe(""); expect(stdout).not.toContain("SECRET");
+  expect(stdout.split("\n").filter(Boolean).map(line => JSON.parse(line).type)).toEqual(["ready", ...Array(7).fill("agent-result")]);
+  expect(stdout.startsWith(JSON.stringify(ready) + "\n")).toBe(true);
+}, 30000);
+
+it("CLI 请求完整行仍限制 4MiB，且批量合法行不会合并计数", async () => {
+  const run = child([`--data-dir=${directory()}`, `--nonce=${nonce}`], directory(), true);
+  await run.ready;
+  const prefix = { type: "agent", nonce, id: 1, request: { action: "small", padding: "" } };
+  const overhead = Buffer.byteLength(JSON.stringify(prefix) + "\n");
+  prefix.request.padding = "x".repeat(4 * 1024 * 1024 - overhead);
+  const exact = JSON.stringify(prefix) + "\n";
+  const response = new Promise<string>((resolve, reject) => {
+    let buffer = "";
+    const timer = setTimeout(() => { run.process.stdout.off("data", data); reject(new Error("未收到批量回执")); }, 10000);
+    const data = (chunk: string) => {
+      buffer += chunk;
+      if (buffer.split("\n").length !== 3) return;
+      clearTimeout(timer); run.process.stdout.off("data", data); resolve(buffer);
+    };
+    run.process.stdout.on("data", data);
+  });
+  const small = JSON.stringify({ type: "agent", nonce, id: 2, request: { action: "small" } }) + "\n";
+  run.process.stdin.write(exact + small);
+  expect((await response).trim().split("\n").map(line => JSON.parse(line))).toEqual([
+    { type: "agent-result", id: 1, result: { ok: true } },
+    { type: "agent-result", id: 2, result: { ok: true } },
+  ]);
+  prefix.request.padding += "x";
+  run.process.stdin.write(JSON.stringify(prefix) + "\n");
+  expect((await run.closed)[0]).toBe(1);
+  expect(run.output().stderr).toBe("Desktop control message rejected\n");
+  expect(run.output().stdout).not.toContain("SECRET");
 }, 20000);
 
 it("CLI rejects truncated control input on EOF", async () => {
@@ -205,3 +299,29 @@ it("CLI reports startup failure without a ready line, local path or credential",
   expect(run.output().stdout).toBe("");
   expect(run.output().stderr).not.toMatch(/SECRET|apiKey|Error:|at /);
 }, 20000);
+
+it("refuses an occupied origin rather than hiding documents at a new port", async () => {
+  const dataDir = directory();
+  const first = await start({ dataDir });
+  const record = fs.readFileSync(path.join(dataDir, "desktop-origin.json"), "utf8");
+  await expect(start({ dataDir })).rejects.toThrow();
+  expect(fs.readFileSync(path.join(dataDir, "desktop-origin.json"), "utf8")).toBe(record);
+  expect((await freshFetch(`${first.url}/api/health`)).status).toBe(200);
+});
+it("preserves malformed origin records without opening a replacement origin", async () => {
+  const dataDir = directory(), file = path.join(dataDir, "desktop-origin.json");
+  fs.writeFileSync(file, "{broken");
+  await expect(start({ dataDir })).rejects.toThrow("origin record");
+  expect(fs.readFileSync(file, "utf8")).toBe("{broken");
+});
+it("retains the same origin across independent service processes", async () => {
+  const dataDir = directory();
+  const first = child([`--data-dir=${dataDir}`, `--nonce=${nonce}`]);
+  const ready = await first.ready;
+  first.process.stdin.write(JSON.stringify({ type: "shutdown", nonce }) + "\n");
+  await first.closed;
+  const second = child([`--data-dir=${dataDir}`, `--nonce=${nonce}`]);
+  expect((await second.ready).url).toBe(ready.url);
+  second.process.stdin.write(JSON.stringify({ type: "shutdown", nonce }) + "\n");
+  await second.closed;
+}, 30000);

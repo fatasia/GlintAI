@@ -5,3 +5,7 @@ packages:
 allowBuilds:
   esbuild: true
   msedge-tts: true
+
+minimumReleaseAgeExclude:
+  - '@agentclientprotocol/claude-agent-acp@0.99.1'
+  - '@agentclientprotocol/codex-acp@2.5.0'

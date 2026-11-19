@@ -4,6 +4,9 @@ import { PassThrough } from "node:stream";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { createJobRunner, validateMakeInput } from "./jobs.mjs";
 import { TEMPLATES } from "@glintai/composer";
 const cleanups: (() => void)[] = [];
@@ -27,6 +30,30 @@ function setup(overrides = {}) {
   };
   return { runner, options, children, captures, killTree, success };
 }
+describe("web server initialization", () => {
+  it("does not open the default job store on import or when a runner is injected", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "glint-lazy-jobs-"));
+    try {
+      const dataDir = path.join(root, "data");
+      const loader = pathToFileURL(createRequire(import.meta.url).resolve("tsx")).href;
+      const serverModule = new URL("./index.mjs", import.meta.url).href;
+      const source = `import { createWebServer } from ${JSON.stringify(serverModule)};
+        import fs from 'node:fs'; import path from 'node:path';
+        const jobs = path.join(process.env.GLINT_DATA_DIR, 'jobs');
+        if (fs.existsSync(jobs)) throw Error('import initialized jobs');
+        createWebServer({ makeRunner: {} });
+        if (fs.existsSync(jobs)) throw Error('injected runner initialized jobs');
+        createWebServer();
+        if (!fs.existsSync(path.join(jobs, '.jobs'))) throw Error('default runner not initialized');`;
+      const result = spawnSync(process.execPath, ["--import", loader, "--input-type=module", "-e", source], {
+        env: { ...process.env, GLINT_DATA_DIR: dataDir, GLINT_SESSION_DIR: path.join(root, "sessions"), GLINT_CACHE_DIR: path.join(root, "cache"), TEMP: root, TMP: root, TMPDIR: root },
+        encoding: "utf8", timeout: 30000, windowsHide: true,
+      });
+      expect(result.error).toBeUndefined();
+      expect(result.status, result.stderr).toBe(0);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  }, 40000);
+});
 describe("make input", () => {
   it("rejects filesystem paths and URLs as background music", () => {
     for (const music of ["../../private.wav", "https://test/audio.mp3", "C:/private.wav"]) expect(validateMakeInput({ idea: "test", music }).error).toBeTruthy();
@@ -44,6 +71,7 @@ describe("job lifecycle", () => {
     const { jobId } = runner.submit({ idea: "hello; dangerous command", theme: "mint-clean" });
     expect(captures[0].args).toContain("--idea=hello; dangerous command");
     expect(captures[0].config.shell).toBe(false);
+    expect(captures[0].config.env.GLINT_WEB_MAKE_POLICY).toBe("1");
     children[0].stdout.write("SECRET api-key provider-body\n[glint] 4/4 rendering...\n");
     expect(JSON.stringify(runner.get(jobId))).not.toContain("SECRET");
     expect(runner.get(jobId).stage).toBe("render");
@@ -61,7 +89,7 @@ describe("job lifecycle", () => {
     expect(runner.get(second.jobId).status).toBe("failed");
   });
   it("queues, cancels whole process trees and deduplicates requests", () => {
-    const { runner, children, killTree } = setup();
+    const { runner, children, captures, killTree } = setup();
     const first = runner.submit({ idea: "one", requestId: "request-1234" });
     expect(runner.findRequest("request-1234").id).toBe(first.jobId);
     expect(runner.findRequest("request-missing")).toBeNull();
@@ -70,10 +98,14 @@ describe("job lifecycle", () => {
     expect(runner.get(queued.jobId).status).toBe("queued");
     expect(runner.cancel(queued.jobId)).toBe(true);
     expect(runner.get(queued.jobId).status).toBe("cancelled");
+    // GEN-01: a queued cancellation never spawns a process, and the freed slot
+    // does not start anything new once the running job settles.
+    expect(captures).toHaveLength(1);
     runner.cancel(first.jobId);
     expect(killTree).toHaveBeenCalledWith(children[0]);
     expect(runner.get(first.jobId).status).toBe("cancelled");
     expect(runner._tests.pending).toBe(0);
+    expect(captures).toHaveLength(1);
   });
   it("recovers completed jobs and marks interrupted work failed on restart", () => {
     const { runner, options, success } = setup();
@@ -148,4 +180,13 @@ it("rechecks queued video availability before spawning a render", () => {
   expect(runner.get(queued.jobId).status).toBe("queued");
   available = false; success();
   expect(runner.get(queued.jobId).status).toBe("failed"); expect(captures).toHaveLength(1);
+});
+it("captures the rendered duration so the UI can surface TTS drift", () => {
+  const { runner, children, success } = setup();
+  const submitted = runner.submit({ idea: "drift check" });
+  children[0].stdout.write("[glint] total duration ~16.9s\n");
+  success();
+  const job = runner.get(submitted.jobId);
+  expect(job.status).toBe("done");
+  expect(job.duration).toBeCloseTo(16.9, 1);
 });

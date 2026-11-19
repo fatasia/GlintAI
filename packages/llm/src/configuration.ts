@@ -2,6 +2,8 @@ import type { ChatRequest, ChatResponse, LlmProvider } from "./types";
 import { OpenAICompatibleProvider, LlmHttpError, parseReasoningEffort } from "./openai-compatible";
 import { AnthropicProvider, AnthropicHttpError } from "./anthropic";
 import { requestLifetime } from "./request";
+import { messageParts, wireMessages } from "./message-images";
+import { outputBudget } from "./output-budget";
 export type LlmProtocol = "auto" | "openai" | "responses" | "anthropic" | "gemini";
 export interface LlmConnection { baseUrl: string; apiKey: string; model: string; protocol?: LlmProtocol; reasoningEffort?: "low" | "high" | "max" }
 export function normalizeLlmBase(value: string) {
@@ -15,13 +17,14 @@ class JsonProtocolProvider implements LlmProvider {
   readonly name: string;
   constructor(private config: LlmConnection, private protocol: "responses" | "gemini") { this.name = `${protocol}:${config.model}`; }
   async chat(request: ChatRequest): Promise<ChatResponse> {
+    const budget = outputBudget(request.maxOutputTokens);
     const lifetime = requestLifetime(request.signal, request.timeoutMs ?? 60000, this.name);
     const root = normalizeLlmBase(this.config.baseUrl);
     const endpoint = this.protocol === "responses" ? `${openaiBase(root)}/responses` : `${root.replace(/\/(?:v1|v1beta)$/, "")}/v1beta/models/${encodeURIComponent(this.config.model.replace(/^models\//, ""))}:generateContent`;
     const body = this.protocol === "responses" ? {
-      model: this.config.model, input: request.messages, ...(request.system ? { instructions: request.system } : {}), ...(request.json ? { text: { format: { type: "json_object" } } } : {}), ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+      model: this.config.model, ...(budget !== undefined ? { max_output_tokens: budget } : {}), input: wireMessages(request.messages,"responses"), ...(request.system ? { instructions: request.system } : {}), ...(request.json ? { text: { format: { type: "json_object" } } } : {}), ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
     } : {
-      contents: request.messages.map(message => ({ role: message.role === "assistant" ? "model" : "user", parts: [{ text: message.content }] })), ...(request.system ? { systemInstruction: { parts: [{ text: request.system }] } } : {}), generationConfig: { ...(request.json ? { responseMimeType: "application/json" } : {}), ...(request.temperature !== undefined ? { temperature: request.temperature } : {}) },
+      contents: request.messages.map(message => ({ role: message.role === "assistant" ? "model" : "user", parts: messageParts(message,"gemini") })), ...(request.system ? { systemInstruction: { parts: [{ text: request.system }] } } : {}), generationConfig: { ...(budget !== undefined ? { maxOutputTokens: budget } : {}), ...(request.json ? { responseMimeType: "application/json" } : {}), ...(request.temperature !== undefined ? { temperature: request.temperature } : {}) },
     };
     try {
       const response = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json", ...(this.protocol === "gemini" ? { "x-goog-api-key": this.config.apiKey } : { authorization: `Bearer ${this.config.apiKey}` }) }, body: JSON.stringify(body), signal: lifetime.signal, redirect: "error" });

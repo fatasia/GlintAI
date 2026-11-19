@@ -61,15 +61,22 @@ export function chartScenesFromTable(text: string, options: { title?: string; ki
     ? ([1, 2, 3].find(column => column < width && numericIn(column) === 0 && seriesAfter(column)) ?? 0)
     : 0;
   const seriesColumns = [0, 1, 2, 3, 4, 5].map(i => labelColumn + 1 + i).filter(i => i < width && dataRows.some(row => isNumber(row[i]!)));
+  const ignoredColumns = Array.from({ length: width }, (_, column) => column).filter(column => column !== labelColumn && !seriesColumns.includes(column) && dataRows.some(row => row[column]));
+  if (ignoredColumns.length) warnings.push(`${ignoredColumns.length} 列未用于图表（仅使用标签及其后前 6 列中的数值列），请编辑表格调整列顺序`);
   if (seriesColumns.length === 0) throw new Error("没有找到数值列:第一列作标签,其后每行至少要有一个可解析的数字(数字列含无法解析的内容时同样报此错)");
   const temporal = dataRows.every(row => tableDate(row[labelColumn]!) !== undefined);
   if (temporal) {
     dataRows = [...dataRows].sort((a, b) => tableDate(a[labelColumn]!)! - tableDate(b[labelColumn]!)!);
     warnings.push("已识别日期列,按时间升序排列;缺失日期不插值");
   }
-  for (const row of dataRows) for (const column of seriesColumns) if (!isNumber(row[column]!)) throw new Error(`数值列「${header?.[column] ?? column + 1}」包含空值或无法解析的数字`);
+  for (const row of dataRows) for (const column of seriesColumns) {
+    if (!isNumber(row[column]!)) throw new Error(`数值列「${header?.[column] ?? column + 1}」包含空值或无法解析的数字`);
+    if (Math.abs(Number(row[column])) > 1e12) throw new Error(`数值列「${header?.[column] ?? column + 1}」超出图表范围（-1万亿至1万亿），请调整单位或修改数据`);
+  }
   const truncation = dataRows.length - 24;
   if (truncation > 0) { dataRows = dataRows.slice(0, 24); warnings.push(`数据行超过 24,已截断 ${truncation} 行(图表单页上限)`); }
+  if (dataRows.some(row => row[labelColumn]!.length > 24)) warnings.push("部分图表标签超过 24 字符，已截断；完整内容保留在原始表格中");
+  if (seriesColumns.some(column => (header?.[column]?.length ?? 0) > 16)) warnings.push("部分系列名称超过 16 字符，已截断；完整内容保留在原始表格中");
   const labels = dataRows.map(row => row[labelColumn]!.slice(0, 24) || `第${rows.indexOf(row) + 1}行`);
   const seriesName = (column: number, index: number) => header?.[column]?.slice(0, 16) || `系列${index + 1}`;
   const idBase = options.id ?? "chart";

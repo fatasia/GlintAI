@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "title": "试讲→修复→渲染→质检 全链(含虚拟听众)",
+  "steps": [
+    {
+      "id": "lint",
+      "tool": "lint",
+      "args": [
+        "--project=project.scenescript.json",
+        "--out=rehearsal.lint.json"
+      ],
+      "dependsOn": [],
+      "outputs": [
+        "rehearsal.lint.json"
+      ]
+    },
+    {
+      "id": "rehearse",
+      "tool": "rehearse",
+      "args": [
+        "--project=project.scenescript.json",
+        "--out=rehearsal.json"
+      ],
+      "dependsOn": [
+        "lint"
+      ],
+      "outputs": [
+        "rehearsal.json"
+      ]
+    },
+    {
+      "id": "render",
+      "tool": "render-native",
+      "args": [
+        "--project=project.scenescript.json",
+        "--out=independent-final.mp4",
+        "--tts=edge",
+        "--music=synth"
+      ],
+      "dependsOn": [
+        "rehearse"
+      ],
+      "outputs": [
+        "independent-final.mp4"
+      ]
+    },
+    {
+      "id": "qa",
+      "tool": "qa",
+      "args": [
+        "--video=independent-final.mp4",
+        "--out=independent-final.qa.json"
+      ],
+      "dependsOn": [
+        "render"
+      ],
+      "outputs": [
+        "independent-final.qa.json"
+      ]
+    }
+  ]
+}

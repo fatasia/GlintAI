@@ -1,12 +1,18 @@
+import { threeRuntime } from "./build/three-runtime";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import { brotliCompressSync, gzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
+// @ts-expect-error build-time JavaScript plugin
+import { frozenPrototypeCompatibility } from "./build/frozen-prototype.mjs";
 
+const base = process.env.GLINT_WEB_BASE_PATH ?? "/";
+if (!/^\/(?:[a-zA-Z0-9_-]+\/)*$/.test(base)) throw new Error("GLINT_WEB_BASE_PATH must be / or an absolute path ending in /");
 export default defineConfig({
-  plugins: [react(), {
+  base,
+  plugins: [threeRuntime(), frozenPrototypeCompatibility(), react(), {
     name: "glint-offline-shell",
     enforce: "post",
     generateBundle(_options, output) {
@@ -19,21 +25,24 @@ export default defineConfig({
         if (chunk?.type === "chunk") for (const imported of chunk.imports) visit(imported);
       }
       for (const chunk of Object.values(output)) if (chunk.type === "chunk" && chunk.isEntry) visit(chunk.fileName);
-      const files = [...shell];
-      const available = ["/assets/geometry.webp", ...Object.keys(output).filter((name) => /\.(js|css|woff2?)$/.test(name)).map((name) => `/${name}`)];
+      const mounted = (url: string) => `${base}${url.slice(1)}`;
+      const files = [...shell].map(mounted);
+      const available = ["/assets/geometry.webp", ...Object.keys(output).filter((name) => /\.(js|css|woff2?)$/.test(name)).map((name) => `/${name}`)].map(mounted);
       const version = createHash("sha256").update(Object.values(output).map(item => item.type === "chunk" ? item.code : String(item.source)).join("|")).digest("hex").slice(0, 16);
       this.emitFile({ type: "asset", fileName: "sw.js", source: `
 const FILES = ${JSON.stringify(files)};
 const AVAILABLE = ${JSON.stringify(available)};
-const CACHE = 'glint-' + ${JSON.stringify(version)};
+const PREFIX = ${JSON.stringify(`glint-${encodeURIComponent(base)}-`)};
+const BASE = ${JSON.stringify(base)};
+const CACHE = PREFIX + ${JSON.stringify(version)};
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(FILES))));
 self.addEventListener('message', event => { if (event.data === 'activate') self.skipWaiting(); });
-self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith('glint-') && key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())));
+self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith(PREFIX) && key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
-  if (event.request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/') || (!FILES.includes(url.pathname) && !AVAILABLE.includes(url.pathname)) || url.search) return;
+  if (event.request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith(BASE + 'api/') || (!FILES.includes(url.pathname) && !AVAILABLE.includes(url.pathname)) || url.search) return;
   event.respondWith(caches.match(url.pathname).then(hit => {
-    if (hit && url.pathname.startsWith('/assets/') && url.pathname !== '/assets/geometry.webp') return hit;
+    if (hit && url.pathname.startsWith(BASE + 'assets/') && url.pathname !== BASE + 'assets/geometry.webp') return hit;
     return fetch(event.request).then(response => {
       if (response.ok) { const copy = response.clone(); event.waitUntil(caches.open(CACHE).then(cache => cache.put(url.pathname, copy))); }
       return response;
@@ -42,8 +51,8 @@ self.addEventListener('fetch', event => {
 });
 ` });
     },
-    writeBundle() {
-      const root = fileURLToPath(new URL("./dist/", import.meta.url));
+    writeBundle(options) {
+      const root = options.dir ?? fileURLToPath(new URL("./dist/", import.meta.url));
       for (const name of fs.readdirSync(root, { recursive: true }) as string[]) {
         if (!/\.(js|css|html|json)$/.test(name)) continue;
         const file = `${root}/${name}`;

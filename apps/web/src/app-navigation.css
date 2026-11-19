@@ -1,0 +1,189 @@
+/* Application shell — a narrow rail and one work area that fills the viewport.
+   Project and edit areas are full-bleed: panes float on the darker board and the
+   page itself never scrolls. Tool and settings areas scroll inside their column. */
+
+.app-shell.app-navigation {
+  display: grid;
+  grid-template-columns: var(--g-rail-w) minmax(0, 1fr);
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--g-bg-0);
+}
+.app-navigation[hidden], .app-navigation [hidden] { display: none !important; } /* ui-allow: [hidden] must beat explicit display on keep-mounted panes */
+.app-navigation button { font: inherit; }
+
+/* ── Rail ───────────────────────────────────────────────────────────── */
+.app-rail {
+  z-index: var(--g-z-sticky);
+  display: flex; flex-direction: column; align-items: center; gap: var(--g-sp-5);
+  min-height: 0; padding: var(--g-sp-5) 0;
+  background: var(--g-bg-0);
+}
+.rail-brand {
+  display: grid; place-items: center;
+  width: 36px; height: 36px; margin-bottom: var(--g-sp-3);
+  border: 0; border-radius: 10px;
+  background: var(--g-bg-2); color: var(--g-accent);
+  box-shadow: var(--g-shadow-1);
+  cursor: pointer;
+  transition: transform var(--g-dur-2) var(--g-ease), background var(--g-dur-2) var(--g-ease);
+}
+.rail-brand svg { width: 20px; height: 20px; fill: currentColor; }
+.rail-brand:hover { background: var(--g-bg-3); transform: rotate(-8deg); }
+.rail-group { display: flex; flex-direction: column; align-items: center; gap: var(--g-sp-2); width: 100%; }
+.rail-group--tools { padding-top: var(--g-sp-5); border-top: 1px solid var(--g-line-1); width: 40px; }
+.rail-group--end { margin-top: auto; }
+.rail-button {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  width: 52px; min-height: 48px; padding: var(--g-sp-3) 0;
+  border: 0; border-radius: var(--g-r-2);
+  background: transparent; color: var(--g-fg-3);
+  cursor: pointer;
+  transition: color var(--g-dur-1) var(--g-ease), background var(--g-dur-1) var(--g-ease);
+}
+.rail-button > span { font-size: var(--g-fs-1); line-height: 1; letter-spacing: .01em; white-space: nowrap; }
+.rail-button:hover { color: var(--g-fg-1); background: var(--g-bg-2); }
+.rail-button[aria-current="page"] { color: var(--g-fg-1); background: var(--g-bg-2); }
+.rail-button[aria-current="page"] svg { color: var(--g-accent); }
+.rail-button[aria-current="page"]::before {
+  content: ""; position: absolute; left: -6px; top: 50%;
+  width: 3px; height: 20px; border-radius: 0 3px 3px 0;
+  background: var(--g-accent); transform: translateY(-50%);
+}
+.rail-button[data-state="open"] { color: var(--g-fg-1); background: var(--g-bg-2); }
+
+/* Hover hint: supplementary detail, shown after a short delay; never the only label. */
+.rail-button[data-hint]::after {
+  content: attr(data-hint);
+  position: absolute; left: calc(100% + 10px); top: 50%;
+  z-index: var(--g-z-toast);
+  padding: var(--g-sp-3) var(--g-sp-5);
+  border: 1px solid var(--g-line-2); border-radius: var(--g-r-2);
+  background: var(--g-bg-2); color: var(--g-fg-2); box-shadow: var(--g-shadow-2);
+  font-size: var(--g-fs-2); line-height: 1.3; white-space: nowrap;
+  opacity: 0; pointer-events: none;
+  transform: translate(-4px, -50%);
+  transition: opacity var(--g-dur-1) var(--g-ease), transform var(--g-dur-1) var(--g-ease);
+}
+.rail-button[data-hint]:hover::after { opacity: 1; transform: translate(0, -50%); transition-delay: 450ms; }
+.rail-button[data-state="open"]::after { display: none; }
+
+.rail-help { display: grid; gap: var(--g-sp-3); }
+.rail-help-links { display: grid; }
+.rail-help-links a {
+  display: flex; align-items: center; gap: var(--g-sp-5);
+  height: 34px; padding: 0 var(--g-sp-4);
+  border-radius: var(--g-r-1);
+  color: var(--g-fg-2); text-decoration: none; font-size: var(--g-fs-3);
+}
+.rail-help-links a:hover, .rail-help-links a:focus-visible { background: var(--g-bg-3); color: var(--g-fg-1); outline: none; }
+.rail-help-links svg { color: var(--g-fg-3); }
+.rail-help-theme {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--g-sp-5);
+  padding: var(--g-sp-4) var(--g-sp-4) var(--g-sp-2);
+  border-top: 1px solid var(--g-line-1);
+  font-size: var(--g-fs-3); color: var(--g-fg-3);
+}
+
+/* ── Body ───────────────────────────────────────────────────────────── */
+.workspace-body {
+  display: flex; flex-direction: column;
+  min-width: 0; min-height: 0;
+  /* The board: panes sit inset from the rail so a seam of the backdrop shows. */
+  padding: var(--g-sp-3) var(--g-sp-3) var(--g-sp-3) 0;
+}
+.workspace-body > :where(.workspace-bar, .workspace-main, .workspace-nle) {
+  background: var(--g-bg-1);
+}
+.workspace-bar {
+  display: flex; align-items: center; gap: var(--g-sp-8);
+  min-height: var(--g-bar-h); padding: 0 var(--g-sp-8);
+  border-radius: var(--g-r-3) var(--g-r-3) 0 0;
+  border-bottom: 1px solid var(--g-line-1);
+}
+.workspace-bar-title {
+  margin: 0;
+  font-size: var(--g-fs-4); font-weight: var(--g-fw-semibold); letter-spacing: -.005em;
+  color: var(--g-fg-1);
+}
+.workspace-main {
+  flex: 1; min-width: 0; min-height: 0;
+  overflow: auto; overscroll-behavior: contain;
+  padding: var(--g-sp-8);
+  border-radius: 0 0 var(--g-r-3) var(--g-r-3);
+}
+.workspace-main:focus-visible { outline: none; }
+.workspace-main[data-bleed="true"] {
+  padding: 0; overflow: hidden; border-radius: var(--g-r-3);
+  background: transparent;
+}
+.workspace-main > .workspace-page { width: 100%; min-width: 0; }
+.workspace-main > .workspace-page--tools,
+.workspace-main > .workspace-page--settings { max-width: var(--g-page-max); margin: 0 auto; }
+/* The studio page is its own pane: it scrolls inside, so sticky bars stick to its top. */
+.workspace-main > .workspace-page--studio {
+  height: 100%; overflow: auto; overscroll-behavior: contain;
+  border-radius: var(--g-r-3); background: var(--g-bg-1);
+}
+.settings-legacy { display: grid; justify-items: start; gap: var(--g-sp-4); margin-top: var(--g-sp-9); }
+
+/* Tool tabs live in the bar, not as a second header. */
+.workspace-tabs {
+  display: flex; align-items: center; gap: var(--g-sp-2);
+  height: 100%; overflow-x: auto; scrollbar-width: none;
+}
+.workspace-tabs::-webkit-scrollbar { display: none; }
+.workspace-tabs .tool-tab {
+  position: relative;
+  height: var(--g-bar-h); padding: 0 var(--g-sp-5);
+  border: 0; border-radius: 0; background: transparent;
+  color: var(--g-fg-3); font-size: var(--g-fs-3); font-weight: var(--g-fw-medium);
+  cursor: pointer; white-space: nowrap;
+  transition: color var(--g-dur-1) var(--g-ease);
+}
+.workspace-tabs .tool-tab:hover { color: var(--g-fg-1); background: transparent; border-color: transparent; }
+.workspace-tabs .tool-tab[aria-selected="true"] { color: var(--g-fg-1); background: transparent; border-color: transparent; font-weight: var(--g-fw-medium); }
+.workspace-tabs .tool-tab[aria-selected="true"]::after {
+  content: ""; position: absolute; left: var(--g-sp-5); right: var(--g-sp-5); bottom: -1px;
+  height: 2px; border-radius: 2px; background: var(--g-accent);
+}
+.workspace-tool-panel { min-width: 0; }
+.workspace-tool-panel:focus-visible { outline: none; }
+.workspace-examples { display: grid; gap: var(--g-sp-8); }
+.workspace-loading, .workspace-error {
+  margin: 0; padding: var(--g-sp-8);
+  color: var(--g-fg-3); font-size: var(--g-fs-3);
+}
+.workspace-error { color: var(--g-danger); display: flex; align-items: center; gap: var(--g-sp-5); flex-wrap: wrap; }
+.workspace-error button { color: var(--g-fg-1); }
+.workspace-nle { flex: 1; min-width: 0; min-height: 0; overflow: auto; border-radius: var(--g-r-3); }
+.app-navigation .qa-submit:disabled { opacity: .5; cursor: not-allowed; }
+.app-navigation .qa-cite { overflow-wrap: anywhere; }
+
+/* ── Narrow screens: rail becomes a bottom bar, content keeps the full width ── */
+@media (max-width: 820px) {
+  .app-shell.app-navigation { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .app-rail {
+    grid-row: 2; flex-direction: row; justify-content: space-around; gap: 0;
+    padding: var(--g-sp-2) var(--g-sp-4) calc(var(--g-sp-2) + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--g-line-1);
+  }
+  .rail-brand { display: none; }
+  .rail-group, .rail-group--end { flex-direction: row; width: auto; margin: 0; gap: 0; }
+  .rail-group--tools { padding: 0; border: 0; width: auto; }
+  .rail-button { width: 56px; min-height: 48px; }
+  .rail-button[aria-current="page"]::before { left: 50%; top: -4px; width: 20px; height: 3px; border-radius: 0 0 3px 3px; transform: translateX(-50%); }
+  /* Seven buttons must always fit: share the row instead of fixed 56px slots. */
+  .app-rail { justify-content: stretch; }
+  .rail-search { flex: 1 1 0; width: auto; min-width: 0; }
+  .rail-group { flex: 3 1 0; min-width: 0; }
+  .rail-group--tools { flex: 1 1 0; }
+  .rail-group--end { flex: 2 1 0; }
+  .rail-group > .rail-button { flex: 1 1 0; width: auto; min-width: 0; }
+  .workspace-body { grid-row: 1; padding: var(--g-sp-3); }
+  .workspace-bar { padding: 0 var(--g-sp-6); gap: var(--g-sp-5); }
+  .workspace-main { padding: var(--g-sp-6); }
+  /* Toasts (install / update / offline) must never cover the navigation they would block. */
+  .app-navigation .glint-toast-stack { bottom: calc(var(--g-rail-bar-h) + var(--g-sp-5) + env(safe-area-inset-bottom)); }
+}

@@ -13,6 +13,12 @@ const TERMINAL = new Set(["done", "failed", "cancelled"]);
 const ID = /^idea-[a-z0-9-]+$/;
 const LIBRARY_SOURCES = { image: /^assets\/[a-zA-Z0-9_-]{1,100}\.(?:png|jpg|webp)(?![\s\S])/, video: /^assets\/[a-zA-Z0-9_-]{1,100}\.mp4(?![\s\S])/ };
 const isLibraryScene = scene => scene.kind === "image" || scene.kind === "video";
+/** ADR-014: executable scenes cannot render in the shared Web process. */
+export function webRenderSceneError(project) {
+  return project.scenes.some(scene => scene.kind === "html" || scene.kind === "three")
+    ? "Web 不支持渲染 HTML 或 3D 场景；请导出工程后使用本机 glint render。"
+    : null;
+}
 export function validateMakeInput(body, templates = TEMPLATES) {
   const idea = typeof body?.idea === "string" ? body.idea.trim() : "";
   const source = typeof body?.source === "string" ? body.source.trim() : "";
@@ -20,16 +26,19 @@ export function validateMakeInput(body, templates = TEMPLATES) {
   if (body?.project !== undefined) {
     try {
       project = parseProject(body.project);
+      const boundary = webRenderSceneError(project);
+      if (boundary) return { error: boundary };
       if (project.scenes.some(scene => !scene.narration.text.trim())) throw new Error("Empty narration");
       const invalidScene = scene => isLibraryScene(scene)
         ? Boolean(scene.narration.audioRef) || !LIBRARY_SOURCES[scene.kind].test(scene.src)
-        : ["html", "three"].includes(scene.kind) || Boolean(scene.narration.audioRef);
-      if (JSON.stringify(project).length > 100_000 || project.scenes.length > 30 || project.music || project.scenes.some(invalidScene)) throw new Error("Web projects require text, chart, or library image/video scenes");
+        : Boolean(scene.narration.audioRef);
+      if (JSON.stringify(project).length > 100_000 || project.scenes.length > 30 || project.music || project.scenes.some(invalidScene)) throw new Error("Web projects accept text, chart and library image/video scenes only; HTML and 3D scenes render through the desktop CLI (glint render) — remove them or export the project and render locally");
     } catch { return { error: "Invalid editor project (maximum 30 scenes, 100000 characters); media must come from the library" }; }
   }
   if ([Boolean(idea), Boolean(source), Boolean(project)].filter(Boolean).length !== 1) return { error: "Choose exactly one idea, source or project" };
   if (idea.length > 2000 || source.length > 12000) return { error: "Input is too long" };
-  const template = body.template;
+  // "auto" means: no template contract. The composer picks the narrative from the intent.
+  const template = body.template === "auto" ? undefined : body.template;
   if (template !== undefined && !templates.some((entry) => entry.id === template)) return { error: "Unknown template" };
   const theme = body.theme;
   if (theme !== undefined && !THEME_IDS.includes(theme)) return { error: "Invalid theme" };
@@ -55,8 +64,16 @@ function validVideo(file) {
   } catch { return false; } finally { if (fd !== undefined) fs.closeSync(fd); }
 }
 
+/** Packaged and embedded hosts may not run on `process.execPath`; allow an explicit binary. */
+function resolveExecPath() {
+  const configured = process.env.GLINT_NODE_BINARY;
+  if (configured && configured.trim()) return configured.trim();
+  try { if (fs.existsSync(process.execPath)) return process.execPath; } catch { /* fall through */ }
+  return "node";
+}
+
 /** Local single-user runner. Only generated ids and whitelisted options become paths/argv. */
-export function createJobRunner({ studioDir, outputDir, templates = TEMPLATES, execPath = process.execPath,
+export function createJobRunner({ studioDir, outputDir, templates = TEMPLATES, execPath = resolveExecPath(),
   execArgs, env = process.env, maxConcurrency = 1, spawnFn = spawn, musicAsset = () => null,
   timeoutMs = 15 * 60_000, ttlMs = 7 * 24 * 60 * 60_000,
   killTree = (child) => {
@@ -146,7 +163,7 @@ export function createJobRunner({ studioDir, outputDir, templates = TEMPLATES, e
     if (!job.project && job.template) args.push(`--template=${job.template}`);
     if (!job.project && job.theme) args.push(`--theme=${job.theme}`);
     persist(job);
-      const child = spawnFn(execPath, args, { cwd: studioDir, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true, shell: false, detached: process.platform !== "win32" });
+      const child = spawnFn(execPath, args, { cwd: studioDir, env: { ...env, GLINT_WEB_MAKE_POLICY: "1" }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true, shell: false, detached: process.platform !== "win32" });
       job.control = child;
       // Never expose child output: it may contain provider bodies, credentials or source text.
       const onOutput = (chunk) => {
@@ -155,10 +172,14 @@ export function createJobRunner({ studioDir, outputDir, templates = TEMPLATES, e
         for (const line of lines) {
           const stage = /^\[glint\] 1\/4 composing/.test(line) ? "compose" : /^\[glint\] 2\/4 rehearsal/.test(line) ? "rehearse" : /^\[glint\] 4\/4 rendering/.test(line) ? "render" : null;
           if (stage && stage !== job.stage) { job.stage = stage; job.log.push(stage); job.log = job.log.slice(-20); persist(job); }
+          // The rendered length can drift from the approved storyboard (TTS
+          // audio replaces durationMs); capture it so the UI can surface the conflict.
+          const duration = /^\[glint\] total duration ~([\d.]+)s/.exec(line);
+          if (duration) { job.actualSeconds = Number(duration[1]); persist(job); }
         }
       };
       child.stdout?.on("data", onOutput); child.stderr?.on("data", onOutput);
-      child.once("error", () => finish(job, -1, true));
+      child.once("error", (error) => { job.startError = `${error instanceof Error ? error.message : String(error)} (exec=${execPath}, cwd=${studioDir})`; finish(job, -1, true); });
       child.once("close", (code) => finish(job, code));
       job.timer = setTimeout(() => {
         job.timedOut = true; job.stage = "stopping"; job.log.push("timed out"); persist(job);
@@ -203,7 +224,7 @@ export function createJobRunner({ studioDir, outputDir, templates = TEMPLATES, e
     get(id) {
       prune(); const job = jobs.get(id);
       if (!job) return null;
-      return { id, status: job.status, stage: job.stage, log: [...job.log], video: job.status === "done" ? `/api/video/${id}` : undefined, error: job.status === "failed" ? job.error : undefined };
+      return { id, status: job.status, stage: job.stage, log: [...job.log], video: job.status === "done" ? `/api/video/${id}` : undefined, duration: job.status === "done" && Number.isFinite(job.actualSeconds) ? job.actualSeconds : undefined, error: job.status === "failed" ? job.error : undefined };
     },
     findRequest(requestId) {
       prune();

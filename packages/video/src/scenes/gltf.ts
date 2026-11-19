@@ -277,10 +277,34 @@ export function fittedCameraDistance(aspect: number, fov = 40): number {
   return (Math.sqrt(3) * 1.4) / Math.sin(limitingHalfFov) * 1.12;
 }
 
-export function createGltfMixer(gltf: Pick<GLTF, "scene" | "animations">): THREE.AnimationMixer {
+export function createGltfMixer(gltf: Pick<GLTF, "scene" | "animations">, animationClip?: string): THREE.AnimationMixer {
   const mixer = new THREE.AnimationMixer(gltf.scene);
-  for (const clip of gltf.animations) mixer.clipAction(clip).play();
+  const clips = animationClip === undefined ? gltf.animations : gltf.animations.filter(clip => clip.name === animationClip);
+  if (animationClip !== undefined && clips.length !== 1) throw new Error(`glTF animation must match exactly one clip: ${animationClip}`);
+  for (const clip of clips) mixer.clipAction(clip).play();
   return mixer;
+}
+
+/** Reset original morph values before every absolute seek, then overlay explicit values. */
+export function captureGltfMorphs(root: THREE.Object3D) {
+  const meshes: Array<{ influences: number[]; initial: number[]; dictionary: Record<string, number> }> = [];
+  root.traverse(node => {
+    const mesh = node as THREE.Mesh;
+    if (mesh.morphTargetInfluences && mesh.morphTargetDictionary) meshes.push({ influences: mesh.morphTargetInfluences, initial: [...mesh.morphTargetInfluences], dictionary: mesh.morphTargetDictionary });
+  });
+  return {
+    reset() { for (const mesh of meshes) mesh.initial.forEach((value, index) => { mesh.influences[index] = value; }); },
+    apply(values: Record<string, number> = {}) {
+      for (const [name, value] of Object.entries(values)) {
+        let matched = false;
+        for (const mesh of meshes) if (Object.prototype.hasOwnProperty.call(mesh.dictionary, name)) {
+          const index = mesh.dictionary[name]!;
+          if (Number.isInteger(index) && index >= 0 && index < mesh.influences.length) { mesh.influences[index] = value; matched = true; }
+        }
+        if (!matched) throw new Error(`glTF morph target not found: ${name}`);
+      }
+    },
+  };
 }
 
 export function seekGltfAnimation(mixer: THREE.AnimationMixer, frame: number, fps: number): void {

@@ -1,0 +1,147 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { expect, it } from "vitest";
+import { parseProject } from "@glintai/scenescript";
+import { FileSessionStore } from "@glintai/session/node";
+import { findSystemBrowser, openCaptureBrowser } from "../../studio/scripts/direct-browser/host";
+// @ts-expect-error JavaScript server exercised through a real browser.
+import { createWebServer } from "./index.mjs";
+import { createMediaJobs } from "./media-jobs.mjs";
+
+const dist = process.env.GLINT_TEST_WEB_DIST ?? fileURLToPath(new URL("../dist", import.meta.url));
+let browserAvailable = false;
+try { findSystemBrowser(); browserAvailable = true; } catch { /* No implicit downloads. */ }
+
+import { createRequire } from "node:module";
+import { startDesktopService } from "./desktop-service.mjs";
+const puppeteer = createRequire(new URL("../../studio/package.json", import.meta.url))("puppeteer-core");
+it.skipIf(process.env.GLINT_BROWSER_UI_TEST !== "1" || !browserAvailable)("keeps browser drafts and attachments after service and browser restart", async () => {
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),"glint-origin-browser-"));
+ const screenshots=process.env.GLINT_UI_SCREENSHOT_DIR ?? root;fs.mkdirSync(screenshots,{recursive:true});
+ let service: Awaited<ReturnType<typeof startDesktopService>> | undefined, browser: any;
+ const launch=()=>puppeteer.launch({executablePath:findSystemBrowser(),headless:true,userDataDir:path.join(root,"profile")});
+ try {
+  service=await startDesktopService({dataDir:path.join(root,"data"),distDir:dist});
+  const origin=service.url;
+  browser=await launch(); let page=await browser.newPage();
+  await page.goto(origin,{waitUntil:"networkidle0"});
+  await page.locator('[aria-label="视频创作起点"] button::-p-text(动态图形)').click();
+  await page.locator('textarea[aria-label="快速成片资料"]').fill("# 跨重启恢复\n\n## 第一段\n这是用来验证重启后工程仍然存在的测试资料。\n\n## 第二段\n保存工程，再关闭浏览器和服务，重新启动后检查作品。");
+  await page.select('[aria-label="输入类型"]',"source");
+  await page.locator('.pc-submit').click();
+  await page.waitForSelector('.glint-editor');
+  await page.locator('button::-p-text(保存项目)').click();
+  const saved=await page.evaluate(()=>localStorage.getItem("glint.projects"));
+  expect(saved).toBeTruthy();
+  const id=JSON.parse(saved)[0].id;
+  const asset=await page.evaluate(async()=>{
+    const canvas=document.createElement("canvas");canvas.width=128;canvas.height=128;const context=canvas.getContext("2d")!;context.fillStyle="#e0533d";context.fillRect(0,0,128,128);
+    const blob=await new Promise<Blob>(resolve=>canvas.toBlob(value=>resolve(value!),"image/png"));
+    const response=await fetch("/api/media/import-image",{method:"POST",headers:{"content-type":"image/png"},body:blob});
+    if(!response.ok)throw Error("Fixture image import failed");const value=await response.json();return {name:value.name,url:`/api/media/assets/${value.name}`,bytes:blob.size};
+  });
+  // Fixture payloads deliberately distinct: restoration must not mix storage families.
+  const fixtures={ [`glint.project-designs.v1:${id}`]:JSON.stringify({version:1,projectId:id,activeId:"d",documents:[{id:"d",title:"重启设计",kind:"slides",activePageId:"p1",updatedAt:1,pages:[{id:"p1",title:"第一页",html:"<h1>第一页</h1>"},{id:"p2",title:"第二页",html:"<h1>第二页</h1>"}]}]}), [`glint.project-documents.v1:${id}`]:JSON.stringify({version:1,projectId:id,activeId:"s",documents:[{id:"s",title:"重启脚本",kind:"script",content:"保留正文",updatedAt:1}]}), [`glint:project-board:v1:${id}`]:JSON.stringify({"script:s":{x:800,y:300}}) };
+  await page.evaluate((values:Record<string,string>)=>{for(const [key,value] of Object.entries(values))localStorage.setItem(key,value);},fixtures);
+  await page.evaluate(({key,asset}:any)=>localStorage.setItem(key,JSON.stringify([asset])),{key:`glint:project-assets.v1:${id}`,asset});
+  await browser.close();browser=undefined;await service.close();service=undefined;
+  service=await startDesktopService({dataDir:path.join(root,"data"),distDir:dist});expect(service.url).toBe(origin);
+  browser=await launch();page=await browser.newPage();await page.goto(service.url,{waitUntil:"networkidle0"});
+  expect(await page.evaluate(()=>localStorage.getItem("glint.projects"))).toBe(saved);
+  expect(await page.evaluate((keys:string[])=>Object.fromEntries(keys.map(key=>[key,localStorage.getItem(key)])),Object.keys(fixtures))).toEqual(fixtures);
+  await page.waitForSelector('.home-project');await page.locator('.home-project').click();await page.waitForSelector('.glint-editor');
+  await page.locator('.glint-editor button::-p-text(创意)').click();await page.waitForSelector('[aria-label="项目画布"]');
+  expect(await page.$eval('[aria-label="项目画布"]',(node:Element)=>node.textContent)).toContain("重启脚本");
+  await page.setViewport({width:1440,height:1000});
+  await page.locator(`[aria-label="项目画布"] [data-id="asset:${asset.name}"] button`).click();
+  await page.waitForSelector('dialog[aria-label="项目素材预览"]',{visible:true});
+  await page.waitForFunction(()=>document.querySelector<HTMLImageElement>('dialog[aria-label="项目素材预览"] img')?.naturalWidth===128);
+  await page.locator('dialog button::-p-text(添加为新镜头)').click();
+  await page.waitForFunction(()=>document.querySelectorAll('[aria-label="项目画布"] [data-id^="scene:"]').length===4);
+  await page.locator('.glint-editor button[aria-label="撤销"]').click();
+  await page.waitForFunction(()=>document.querySelectorAll('[aria-label="项目画布"] [data-id^="scene:"]').length===3);
+  await page.locator('[aria-label="项目画布"] button::-p-text(整理)').click();
+  const cards=await page.$$('[aria-label="项目画布"] .react-flow__node h4');
+  expect(cards.length).toBeGreaterThan(2);
+  await cards[0].click();await page.keyboard.down("Shift");await cards[1].click();await page.keyboard.up("Shift");
+  await page.waitForFunction(()=>document.querySelector('[aria-label="画布排列"]')?.textContent?.includes("已选 2 项"));
+  await page.locator('[aria-label="画布排列"] button::-p-text(左对齐)').click();
+  const arranged=await page.evaluate((key:string)=>JSON.parse(localStorage.getItem(key)!),`glint:project-board:v1:${id}`);
+  const selected=await page.$$eval('[aria-label="项目画布"] .react-flow__node.selected',(nodes:Element[])=>nodes.map(node=>node.getAttribute("data-id")!));
+  expect(selected).toHaveLength(2);expect(arranged[selected[0]].x).toBe(arranged[selected[1]].x);
+  await page.locator('[aria-label="项目画布"] button::-p-text(撤销布局)').click();
+  expect(await page.evaluate((key:string)=>localStorage.getItem(key),`glint:project-board:v1:${id}`)).toBe("{}");
+  await page.locator('[aria-label="项目画布"] button::-p-text(重做布局)').click();
+  expect(await page.evaluate((key:string)=>JSON.parse(localStorage.getItem(key)!),`glint:project-board:v1:${id}`)).toEqual(arranged);
+  // Reset before route checks so overlapping aligned cards don't intercept clicks.
+  await page.locator('[aria-label="项目画布"] button::-p-text(整理)').click();
+  // Real mixed-document mutations use the full project transaction, including undo/redo.
+  await page.locator('[aria-label="项目画布"] [data-id="script:s"] h4').click();
+  await page.keyboard.down("Shift");await page.locator('[aria-label="项目画布"] [data-id="design:d:p1"] h4').click();await page.keyboard.up("Shift");
+  await page.waitForFunction(()=>document.querySelector('[aria-label="画布排列"]')?.textContent?.includes("已选 2 项"));
+  await page.locator('button::-p-text(复制所选)').click();
+  await page.waitForFunction((id:string)=>JSON.parse(localStorage.getItem(`glint.project-documents.v1:${id}`)!).documents.length===2,{},id);
+  expect(await page.evaluate((id:string)=>JSON.parse(localStorage.getItem(`glint.project-designs.v1:${id}`)!).documents[0].pages.length,id)).toBe(3);
+  await page.locator('button::-p-text(撤销内容)').click();
+  await page.waitForFunction((id:string)=>JSON.parse(localStorage.getItem(`glint.project-documents.v1:${id}`)!).documents.length===1,{},id);
+  expect(await page.evaluate((id:string)=>JSON.parse(localStorage.getItem(`glint.project-designs.v1:${id}`)!).documents[0].pages.length,id)).toBe(2);
+  await page.locator('button::-p-text(重做内容)').click();
+  await page.waitForFunction((id:string)=>JSON.parse(localStorage.getItem(`glint.project-documents.v1:${id}`)!).documents.length===2,{},id);
+  await page.locator('button::-p-text(撤销内容)').click();
+  await page.waitForFunction((id:string)=>JSON.parse(localStorage.getItem(`glint.project-documents.v1:${id}`)!).documents.length===1,{},id);
+  await page.locator('[aria-label="项目画布"] [data-id="script:s"] h4').click();
+  await page.locator('button::-p-text(删除所选)').click();
+  await page.waitForSelector('[aria-label="确认删除画布内容"]');
+  await page.locator('button::-p-text(取消删除)').click();
+  expect(await page.evaluate((id:string)=>JSON.parse(localStorage.getItem(`glint.project-documents.v1:${id}`)!).documents.length,id)).toBe(1);
+  await page.locator('button::-p-text(删除所选)').click();await page.locator('button::-p-text(确认删除内容)').click();
+  await page.waitForFunction((id:string)=>JSON.parse(localStorage.getItem(`glint.project-documents.v1:${id}`)!).documents.length===0,{},id);
+  await page.locator('button::-p-text(撤销内容)').click();
+  await page.waitForFunction((id:string)=>JSON.parse(localStorage.getItem(`glint.project-documents.v1:${id}`)!).documents.length===1,{},id);
+  await page.locator('[aria-label="项目画布"] [data-id="script:s"] h4').click();
+  await page.keyboard.down("Shift");await page.locator('[aria-label="项目画布"] [data-id="design:d:p1"] h4').click();await page.keyboard.up("Shift");
+  await page.locator('[aria-label="画布内容操作"] button::-p-text(编组)').filter((button:HTMLButtonElement)=>button.textContent==='编组').click();
+  await page.waitForFunction((id:string)=>JSON.parse(localStorage.getItem(`glint:project-board:groups:v1:${id}`)!).length===1,{},id);
+  const coordinates=()=>page.$$eval('[aria-label="项目画布"] .react-flow__node',(nodes:HTMLElement[])=>Object.fromEntries(nodes.map(node=>[node.getAttribute('data-id'),node.style.transform.match(/translate\(([-.\d]+)px,\s*([-.\d]+)px\)/)?.slice(1).map(Number)])));
+  const pointsBefore=await coordinates(),card=await page.$('[aria-label="项目画布"] [data-id="script:s"] h4'),box=(await card!.boundingBox())!;
+  await page.mouse.move(box.x+15,box.y+12);await page.mouse.down();await page.mouse.move(box.x+65,box.y+42,{steps:8});await page.mouse.up();
+  await page.waitForFunction((id:string)=>Boolean(JSON.parse(localStorage.getItem(`glint:project-board:v1:${id}`)!)['design:d:p1']),{},id);
+  const movedGroup=await page.evaluate((id:string)=>JSON.parse(localStorage.getItem(`glint:project-board:v1:${id}`)!),id);
+  expect(movedGroup['script:s'].x-pointsBefore['script:s'][0]).toBeCloseTo(movedGroup['design:d:p1'].x-pointsBefore['design:d:p1'][0]);
+  expect(movedGroup['script:s'].y-pointsBefore['script:s'][1]).toBeCloseTo(movedGroup['design:d:p1'].y-pointsBefore['design:d:p1'][1]);
+  await page.locator('button::-p-text(撤销布局)').click();await page.locator('button::-p-text(撤销内容)').click();
+  await page.waitForFunction((id:string)=>!JSON.parse(localStorage.getItem(`glint:project-board:groups:v1:${id}`)??'[]').length,{},id);
+  await page.locator('button::-p-text(重做内容)').click();
+  await page.waitForFunction((id:string)=>JSON.parse(localStorage.getItem(`glint:project-board:groups:v1:${id}`)!).length===1,{},id);
+  await page.locator('[aria-label="项目画布"] [data-id="script:s"] h4').click();await page.locator('button::-p-text(取消编组)').click();
+  await page.waitForFunction((id:string)=>!JSON.parse(localStorage.getItem(`glint:project-board:groups:v1:${id}`)??'[]').length,{},id);
+  await page.screenshot({path:path.join(screenshots,"project-board-click.png"),fullPage:true});
+  expect(await page.$eval('.glint-editor-rail',(node:Element)=>getComputedStyle(node).display)).toBe("none");
+  expect(await page.$eval('[aria-label="项目画布"]',(node:Element)=>node.getBoundingClientRect().width)).toBeGreaterThan(1100);
+  await page.setViewport({width:390,height:844});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(391);
+  await page.screenshot({path:path.join(screenshots,"project-board-mobile.png"),fullPage:true});
+  await page.setViewport({width:1440,height:1000});
+  await page.locator('[aria-label="项目画布"] [data-id="script:s"] button').click();
+  await page.waitForSelector('[aria-label="脚本文档正文"]',{visible:true,timeout:5000});
+  expect(await page.$eval('[aria-label="脚本文档正文"]',(node:HTMLTextAreaElement)=>node.value)).toBe("保留正文");
+  expect(await page.evaluate(()=>document.querySelector('.glint-editor')?.textContent)).toContain("重启脚本");
+  await page.locator('.glint-editor button::-p-text(创意)').click();
+  await page.locator('[aria-label="项目画布"] [data-id="design:d:p2"] button').click();
+  await page.waitForSelector('[aria-label="页面标题"]',{visible:true});
+  expect(await page.$eval('[aria-label="页面标题"]',(node:HTMLInputElement)=>node.value)).toBe("第二页");
+  await page.locator('.glint-editor button::-p-text(创意)').click();
+  await page.locator('button::-p-text(进入项目剪辑)').click();
+  await page.waitForSelector('[aria-label="剪辑工作区"]:not([hidden]) [aria-label="多轨时间线"]').catch(async(error:Error)=>{console.log("Project NLE route failure:",await page.evaluate(()=>document.body.innerText.slice(-6000)));if(process.env.GLINT_PROJECT_LINK_EVIDENCE)await page.screenshot({path:process.env.GLINT_PROJECT_LINK_EVIDENCE,fullPage:true});throw error;});
+  await page.waitForFunction(()=>Boolean(JSON.parse(localStorage.getItem('glint.nle.project.v2')!).tracks.flatMap((track:any)=>track.clips).length));
+  const linked=await page.evaluate(()=>{const nle=JSON.parse(localStorage.getItem('glint.nle.project.v2')!);return JSON.parse(localStorage.getItem('glint.nle.record.v1:'+encodeURIComponent(nle.id))!).bridge;});
+  expect(linked.sourceId).toBe(id);expect(linked.links.length).toBe(3);
+  expect(await page.$('[aria-label="剪辑台"] .nle-alert')).toBeNull();
+
+
+ } finally {await browser?.close();await service?.close();fs.rmSync(root,{recursive:true,force:true});}
+},90000);

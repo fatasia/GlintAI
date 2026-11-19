@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { LocalAssetPath } from "./assets";
 import { SceneEffect } from "./effects";
+import { nleLocalTimeAtSourceMs, nleSourceTimeMs, nleSpeedRampWindow } from "./nle-speed";
+export { nleLocalTimeAtSourceMs, nleSpeedAt, nleSourceElapsedMs, nleSourceTimeMs } from "./nle-speed";
 
 /**
  * A desktop multi-track timeline, separate from SceneScript.
@@ -63,15 +65,19 @@ const clipBase = {
   id,
   startMs: timeMs,
   durationMs,
-  /** Source in-point before speed is applied. */
-  trimStartMs: timeMs.optional(),
+  /** Source time retains fractional milliseconds after a nonlinear cut. */
+  trimStartMs: z.number().finite().nonnegative().max(6 * 60 * 60 * 1000).optional(),
   speed: z.number().min(0.25).max(4).optional(),
+  /** Speed ramp over clip time: linear (constant speed), in (slow→fast), out (fast→slow), bell (slow-fast-slow). */
+  speedCurve: z.enum(["linear", "in", "out", "bell"]).optional(),
+  /** Original curve domain retained across split/trim; offsets may extend past either end. */
+  speedRamp: z.object({ durationMs, offsetMs: z.number().finite().min(-6 * 60 * 60 * 1000).max(6 * 60 * 60 * 1000) }).strict().optional(),
   opacity: z.number().min(0).max(1).optional(),
   transform: NleTransform.optional(),
   transitionIn: NleTransition.optional(),
   transitionOut: NleTransition.optional(),
-  /** 2..32 ascending clip-local keyframes; animated fields override the static ones. */
-  keyframes: z.array(NleKeyframe).min(2).max(32).optional(),
+  /** 1..32 ascending clip-local keyframes; animated fields override the static ones. A single keyframe pins the property from that time on. */
+  keyframes: z.array(NleKeyframe).min(1).max(32).optional(),
   blend: NleBlend.optional(),
   mask: NleMask.optional(),
   effects: z.array(SceneEffect).max(8).optional(),
@@ -89,6 +95,9 @@ export const NleClip = z.discriminatedUnion("kind", [
     color: z.string().regex(/^#[0-9a-f]{6}$/i).optional(),
     weight: z.union([z.literal(400), z.literal(600), z.literal(700), z.literal(800)]).optional(),
     align: z.enum(["left", "center", "right"]).optional(),
+    /** AUDIO-05/07 karaoke captions: chars light up by character-ratio progress
+     * across the clip (declared approximation, not acoustic word timing). */
+    karaoke: z.boolean().optional(),
   }).strict(),
 ]);
 export type NleClip = z.infer<typeof NleClip>;
@@ -99,6 +108,8 @@ export const NleTrack = z.object({
   name: z.string().min(1).max(80),
   muted: z.boolean().optional(),
   locked: z.boolean().optional(),
+  /** Audition isolation: when any track carries solo, every non-solo track is silent. */
+  solo: z.boolean().optional(),
   clips: z.array(NleClip).max(200),
 }).strict();
 export type NleTrack = z.infer<typeof NleTrack>;
@@ -136,6 +147,14 @@ export const NleProject = z.object({
 });
 export type NleProject = z.infer<typeof NleProject>;
 
+/** Alpha export only supports text overlays: image/video pixels may be opaque. */
+export function nleAlphaIssues(project: NleProject): Array<{ trackId: string; clipId: string; reason: string }> {
+  return project.tracks.flatMap(track => track.clips.flatMap(clip =>
+    clip.kind === "image" || clip.kind === "video"
+      ? [{ trackId: track.id, clipId: clip.id, reason: `${clip.kind} 画面不支持透明导出；请移除该片段。` }]
+      : []));
+}
+
 export function parseNleProject(value: unknown): NleProject {
   return NleProject.parse(value);
 }
@@ -150,14 +169,15 @@ export interface NleMotion { x: number; y: number; scale: number; rotate: number
 
 /**
  * Motion sample at a clip-local time. Without keyframes this is the static
- * transform; with keyframes each animated field is interpolated independently
- * between its own surrounding keyframes (stepping outside the first/last
- * sample), while fields never keyframed keep their static value.
+ * transform; a single keyframe pins each animated field to its value (from
+ * that time on, stepping outside the first/last sample); with two or more,
+ * each animated field is interpolated independently between its own
+ * surrounding keyframes, while fields never keyframed keep their static value.
  */
 export function nleSampleMotion(clip: Pick<NleClip, "transform" | "opacity" | "keyframes">, localMs: number): NleMotion {
   const base: NleMotion = { x: clip.transform?.x ?? 0, y: clip.transform?.y ?? 0, scale: clip.transform?.scale ?? 1, rotate: clip.transform?.rotate ?? 0, opacity: clip.opacity ?? 1 };
   const keyframes = clip.keyframes;
-  if (!keyframes || keyframes.length < 2) return base;
+  if (!keyframes?.length) return base;
   const sample = (field: "x" | "y" | "scale" | "rotate" | "opacity"): number => {
     const frames = keyframes.filter(frame => frame[field] !== undefined) as Array<NleKeyframe & { [K in typeof field]: number }>;
     if (!frames.length) return base[field];
@@ -211,8 +231,8 @@ export function nleClipEndMs(clip: Pick<NleClip, "startMs" | "durationMs">): num
   return clip.startMs + clip.durationMs;
 }
 
-export function nleClipSourceEndMs(clip: Pick<NleClip, "trimStartMs" | "durationMs" | "speed">): number {
-  return (clip.trimStartMs ?? 0) + clip.durationMs * (clip.speed ?? 1);
+export function nleClipSourceEndMs(clip: Pick<NleClip, "trimStartMs" | "durationMs" | "speed" | "speedCurve" | "speedRamp">): number {
+  return nleSourceTimeMs(clip, clip.durationMs);
 }
 
 export function nleDurationMs(project: Pick<NleProject, "tracks">): number {
@@ -222,6 +242,7 @@ export function nleDurationMs(project: Pick<NleProject, "tracks">): number {
 }
 
 function mapClip(project: NleProject, trackId: string, clipId: string, update: (clip: NleClip) => NleClip | null): NleProject {
+  if (project.tracks.find(track => track.id === trackId)?.locked) return project;
   return parseNleProject({
     ...project,
     tracks: project.tracks.map(track => track.id !== trackId ? track : {
@@ -243,26 +264,65 @@ export function nleMoveClip(project: NleProject, trackId: string, clipId: string
 export function nleTrimClip(project: NleProject, trackId: string, clipId: string, edge: "start" | "end", deltaMs: number): NleProject {
   return mapClip(project, trackId, clipId, clip => {
     const delta = Math.round(deltaMs);
-    if (edge === "end") return { ...clip, durationMs: Math.max(100, clip.durationMs + delta) } as NleClip;
+    if (edge === "end") return { ...clip, durationMs: Math.max(100, clip.durationMs + delta), speedRamp: nleSpeedRampWindow(clip) } as NleClip;
     const nextStart = clip.startMs + delta;
     const nextDuration = clip.durationMs - delta;
-    const nextTrim = (clip.trimStartMs ?? 0) + delta * (clip.speed ?? 1);
+    const nextTrim = nleSourceTimeMs(clip, delta);
     if (nextStart < 0 || nextDuration < 100 || nextTrim < 0) return clip;
-    return { ...clip, startMs: nextStart, durationMs: nextDuration, trimStartMs: nextTrim } as NleClip;
+    return { ...clip, startMs: nextStart, durationMs: nextDuration, trimStartMs: nextTrim, speedRamp: nleSpeedRampWindow(clip, delta) } as NleClip;
   });
+}
+
+/**
+ * Roll edit: move the shared boundary between a clip and its adjacent right
+ * neighbour (same track, right.startMs === left end). The left clip's length
+ * changes by delta while the right clip keeps the timeline seam sealed and its
+ * source in-point follows, so total track length is unchanged. Clamps so both
+ * sides stay >= 100ms; without an adjacent neighbour or a non-zero delta the
+ * project is returned unchanged.
+ */
+export function nleRollEdit(project: NleProject, trackId: string, clipId: string, deltaMs: number): NleProject {
+  const track = project.tracks.find(item => item.id === trackId);
+  const left = track?.clips.find(item => item.id === clipId);
+  if (!track || track.locked || !left) return project;
+  const boundary = left.startMs + left.durationMs;
+  const right = track.clips.find(item => item.startMs === boundary && item.id !== clipId);
+  if (!right) return project;
+  // Source time is monotone even outside a ramp; binary search retains the last valid millisecond.
+  let lower = -(left.durationMs - 100);
+  if (nleSourceTimeMs(right, lower) < 0) {
+    let high = 0;
+    while (high - lower > 1) {
+      const middle = Math.floor((lower + high) / 2);
+      if (nleSourceTimeMs(right, middle) < 0) lower = middle;
+      else high = middle;
+    }
+    lower = high;
+  }
+  const upper = right.durationMs - 100;
+  const clamped = Math.max(lower, Math.min(upper, Math.round(deltaMs)));
+  if (clamped === 0 || (deltaMs > 0 && clamped < 0) || (deltaMs < 0 && clamped > 0)) return project;
+  return parseNleProject({ ...project, tracks: project.tracks.map(item => item.id !== trackId ? item : {
+    ...item,
+    clips: item.clips.map(clip => {
+      if (clip.id === left.id) return { ...clip, durationMs: clip.durationMs + clamped, speedRamp: nleSpeedRampWindow(clip) } as NleClip;
+      if (clip.id === right.id) return { ...clip, startMs: clip.startMs + clamped, durationMs: clip.durationMs - clamped, trimStartMs: nleSourceTimeMs(clip, clamped), speedRamp: nleSpeedRampWindow(clip, clamped) } as NleClip;
+      return clip;
+    }),
+  }) });
 }
 
 /** Split at an absolute timeline position; the right half keeps the source offset. */
 export function nleSplitClip(project: NleProject, trackId: string, clipId: string, atMs: number): NleProject {
   const track = project.tracks.find(item => item.id === trackId);
   const clip = track?.clips.find(item => item.id === clipId);
-  if (!clip) return project;
+  if (!clip || track?.locked) return project;
   const at = Math.round(atMs), left = at - clip.startMs, right = clip.durationMs - left;
   if (left < 100 || right < 100) return project;
   const rightId = `${clip.id.slice(0, 55)}-b`;
   if (project.tracks.some(item => item.clips.some(candidate => candidate.id === rightId))) throw new Error("Split id already exists; rename the clip first");
-  const first = { ...clip, durationMs: left } as NleClip;
-  const second = { ...clip, id: rightId, startMs: at, durationMs: right, trimStartMs: (clip.trimStartMs ?? 0) + left * (clip.speed ?? 1) } as NleClip;
+  const first = { ...clip, durationMs: left, speedRamp: nleSpeedRampWindow(clip) } as NleClip;
+  const second = { ...clip, id: rightId, startMs: at, durationMs: right, trimStartMs: nleSourceTimeMs(clip, left), speedRamp: nleSpeedRampWindow(clip, left) } as NleClip;
   return parseNleProject({ ...project, tracks: project.tracks.map(item => item.id !== trackId ? item : { ...item, clips: item.clips.flatMap(candidate => candidate.id === clipId ? [first, second] : [candidate]) }) });
 }
 
@@ -289,4 +349,25 @@ export function nleAddTrack(project: NleProject, kind: NleTrack["kind"], name?: 
 export function nleRemoveTrack(project: NleProject, trackId: string): NleProject {
   if (!project.tracks.some(track => track.id === trackId)) return project;
   return parseNleProject({ ...project, tracks: project.tracks.filter(track => track.id !== trackId) });
+}
+
+/**
+ * Magnetic main track: close every gap on the track by laying its clips out
+ * head-to-tail starting at the earliest clip's original start. Order comes from
+ * the current start times, so a moved clip changes sequence before the join.
+ */
+export function nleMagnetizeTrack(project: NleProject, trackId: string): NleProject {
+  const track = project.tracks.find(item => item.id === trackId);
+  if (!track || track.clips.length < 2) return project;
+  const ordered = [...track.clips].sort((a, b) => a.startMs - b.startMs || a.id.localeCompare(b.id));
+  const base = ordered[0]!.startMs;
+  let cursor = base;
+  const clips = ordered.map(clip => {
+    const next = { ...clip, startMs: cursor };
+    cursor += clip.durationMs;
+    return next as NleClip;
+  });
+  const before = new Map(track.clips.map(clip => [clip.id, clip.startMs]));
+  if (clips.every(clip => before.get(clip.id) === clip.startMs)) return project;
+  return parseNleProject({ ...project, tracks: project.tracks.map(item => item.id !== trackId ? item : { ...item, clips }) });
 }

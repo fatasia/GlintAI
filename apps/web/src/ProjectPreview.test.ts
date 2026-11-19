@@ -184,6 +184,20 @@ describe("persistent project preview playhead", () => {
     expect(player.seekTo).not.toHaveBeenCalled();
   });
 
+  it("seeks scene-local keyframe requests once, clamps the end, and ignores stale scenes", async () => {
+    const project = fixture(), handled = vi.fn();
+    const { player, render } = await mount({ project, selectedSceneId: "two", onSeekHandled: handled });
+    await render({ project, selectedSceneId: "two", seekRequest: { sceneId: "two", timeMs: 500, sequence: 1 }, onSeekHandled: handled });
+    expect(player.frame).toBe(45); expect(handled).toHaveBeenCalledWith(1);
+    await emit(player, 50);
+    await render({ project: { ...project, title: "Changed" }, selectedSceneId: "two", seekRequest: { sceneId: "two", timeMs: 500, sequence: 1 }, onSeekHandled: handled });
+    expect(player.frame).toBe(50);
+    await render({ project, selectedSceneId: "two", seekRequest: { sceneId: "one", timeMs: 100, sequence: 2 }, onSeekHandled: handled });
+    expect(player.frame).toBe(50);
+    await render({ project, selectedSceneId: "two", seekRequest: { sceneId: "two", timeMs: 2000, sequence: 3 }, onSeekHandled: handled });
+    expect(player.frame).toBe(89); expect(handled).toHaveBeenCalledWith(3);
+  });
+
   it("does not rewind when the parent echoes playback scene changes, but honors later user selections", async () => {
     const node = document.createElement("div"); document.body.appendChild(node);
     const root = createRoot(node); dispose = () => act(() => root.unmount());

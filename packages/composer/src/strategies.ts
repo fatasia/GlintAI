@@ -1,9 +1,9 @@
 import type { Scene } from "@glintai/scenescript";
 import type { Section } from "./parsing";
-import { content, narration, slugify } from "./parsing";
+import { content, excerpt, narration, slugify } from "./parsing";
 import type { TemplateId } from "./templates";
 import { ComposerError } from "./errors";
-const points = (s: Section) => (s.listItems.length ? s.listItems : content(s)).slice(0, 4).map((s) => s.slice(0, 90));
+const points = (s: Section) => (s.listItems.length ? s.listItems : content(s)).slice(0, 4).map((s) => excerpt(s, 90));
 const voice = (s: Section) => narration(content(s)) || s.heading;
 function definition(s: Section): Scene { return { id: "section", kind: "definition", term: s.heading, definition: narration(content(s), 180) || s.heading, narration: { text: voice(s) } }; }
 function bullets(s: Section): Scene { return { id: "section", kind: "bullets", heading: s.heading, items: points(s).length ? points(s) : [s.heading], narration: { text: voice(s) } }; }

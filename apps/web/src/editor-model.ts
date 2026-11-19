@@ -1,5 +1,13 @@
 import { buildTimeline, editTimeline, parseProject, type SceneScriptProject } from "@glintai/scenescript";
 
+export function sceneDisplayTitle(scene: SceneScriptProject["scenes"][number]): string {
+  for (const key of ["title", "heading", "term", "caption"]) {
+    const value = (scene as unknown as Record<string, unknown>)[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return scene.narration.text.slice(0, 24) || "未命名镜头";
+}
+
 export function parseEditorProject(value: unknown): SceneScriptProject {
   const project = parseProject(value);
   if (project.scenes.some(scene => !scene.narration.text.trim())) throw new Error("每个分镜需要非空旁白。");

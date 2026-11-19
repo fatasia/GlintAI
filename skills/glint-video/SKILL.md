@@ -12,9 +12,11 @@ description: 用当前 Agent 的模型把资料/想法/口播/参考片做成 Gl
 
 ## 先确认工作区与输入
 
-在 Glint 仓库内工作；只用仓库已安装的依赖，不全局安装、不改用户全局配置。仓库 `skills/glint-video/` 是本 skill 正本；`~/.agents/skills/glint-video/` 是已安装副本。
+本 Skill 可复制或安装到其他 Agent 的 skills 目录，不需要启动 Glint 桌面端或网页。仓库 `skills/glint-video/` 是正本，安装时连同 `scripts/` 和 `references/` 一起复制；运行时可用已安装依赖的源码仓库或 Glint 便携包，不全局安装、不改用户全局配置。
 
-输入：资料（文档/网页/代码库）、口播音频、想法（一句话）、已有 SceneScript/成片、参考视频、素材图片。Agent 用当前会话模型直接写 JSON，不调 Glint 的 LLM composer，因此不需要 `GLINT_LLM_API_KEY`（用户显式要求 API composer 时除外）。先读 `packages/scenescript/src/types.ts`（合同）与一个相邻例子；已读且未变化的合同不重复读。
+在仓库外调用：`node <skill目录>/scripts/glint.mjs --root=<运行时根目录> --runtime-check` 检查运行时；也可用 `GLINT_ROOT` 指定。随后以同一启动器加 `<命令> ...` 代替下文的 `pnpm glint`。源码根含 `package.json`；便携根含 `app/build.json`，不是 `app` 子目录。包内 Skill 可自动找到相邻运行时。输入输出相对当前 Agent 的工作目录，含空格的参数整体引用；不要求切换目录。便携版需 Node.js 22+；完整包可用 `<便携根>/node.exe` 替代 `node`，轻量包使用系统 Node。运行时检查只核验布局与入口，不代表所有渲染依赖已就绪或包已签名。
+
+输入：资料（文档/网页/代码库）、口播音频、想法（一句话）、已有 SceneScript/成片、参考视频、素材图片。Agent 用当前会话模型直接写 JSON，不调 Glint 的 LLM composer，因此不需要 `GLINT_LLM_API_KEY`（用户显式要求 API composer 时除外）。源码模式先读 `packages/scenescript/src/types.ts`（合同）与一个相邻例子；已读且未变化的合同不重复读。便携包不含源码合同，优先检查已有工程并运行 lint；需要未涵盖的字段时取得同版本合同，不凭空猜字段。
 
 ## 直接成片（默认）
 
@@ -23,7 +25,7 @@ description: 用当前 Agent 的模型把资料/想法/口播/参考片做成 Gl
 1. **理解意图**：从内容、用途、受众、时长、画幅、语气推断；只有会明显改变结果/费用/隐私时，才问不超过 3 个问题（例如“要真人出镜还是纯图文”“预算上限多少”）。
 2. **定方案**：需要风格时看 `pnpm glint styles`（10 个风格包，含字体/构图/动效/节奏/声音）或创作包；替用户选一个最合适的，说明一句理由即可。用户点名风格/参考片则直接照做。字体只做引用（可嵌入版本均为 OFL-1.1），不打包字体字节。
 3. **写分镜**：直接写 SceneScript（合同见下）。写完跑 `pnpm glint lint --project=...`：红灯必须改；黄灯写明理由才能过。
-4. **补素材**：用户素材优先；缺口走媒体网关（图/短视频/音乐），没有网关就用代码图表/三维/HTML 场景补，不虚构素材、不伪造事实。
+4. **补素材与混合合成**：每镜由用户意图选择 MG 动态图形或 AIGC 生成画面，两者对等且可混排。MG 用代码渲染；AIGC 使用真实生成/导入素材。没有媒体服务时保留待生成项并说明缺项，只有用户选择切换方式才改为 MG，不偷偷回退。视频上用独立 `elements` 与 `tracks` 叠加文字动画，改字不重生成背景；不虚构素材、数据或生成结果。
 5. **渲染**：`pnpm glint render --project=... --tts=... --music=synth|mood|auto|off|文件`。改单镜用 `--scenes=<id>` 子集重渲。
 6. **本地效果**：调色/滤镜/黑白/复古等只走本地 `effects` 字段，不重新生成视频；预设强度 0–1，0 表示不改。
 7. **QA 与交付**：`pnpm glint qa --video=成片 [--strict]` 跑门禁；`pnpm glint delivery-check --video=成片 --audio=optional` 检查最终文件解码/音轨/响度。交付成片 + project JSON + SRT，并列出实测项与未验证项。
@@ -36,7 +38,9 @@ description: 用当前 Agent 的模型把资料/想法/口播/参考片做成 Gl
 
 Glint 产品和本 Skill 是平等入口。产品内 Agent、外部 Agent、CLI 和 Studio 都通过同一工程合同工作：`ProjectDocument`、`EditTransaction`、`TaskPlan`、`CapabilityManifest`。
 
-开始任何操作前先判断工程状态：新建、已有工程、任务恢复、冲突待处理。已有工程的明确局部修改直接进入对应 route，不重复做意图访谈；新建才记录 `IntentRecord` 并只路由一次。产品已打开时，写入必须经过 session bridge；未打开时用本地 journal，产品稍后可恢复。
+上述为产品规格中的概念名称，不代表同名 CLI 命令均已实现。文件合同包括 SceneScript、NleProject 和组合式作品容器；容器的 CLI/MCP 通过同一服务共享版本和撤销。其他 Agent 可用当前会话模型编排，无需第二份文本模型密钥；产品内也保留本地 CLI 检测与独立 API Key LLM 配置，两者不互相替代。
+
+开始任何操作前先判断工程状态：新建、已有工程、任务恢复、冲突待处理。已有工程的明确局部修改直接进入对应 route，不重复做意图访谈；新建才记录目标意图。统一作品通过 `container` 命令连接正在运行的服务，不要求打开产品界面；服务断开时保留草稿，不退回旧 `session` 或另建本地副本继续写。
 
 最短接续路径固定为：
 
@@ -50,6 +54,7 @@ inspect → route → plan → apply transaction → frame readback → lint/che
 
 - 列包 / 搜索：`pnpm glint packs [--query=商品]`
 - 用内置包生成可编辑工程：`pnpm glint packs --use=product-launch --out=new.json [--params=inputs.json]`
+- 节拍展示片：`pnpm glint packs --use=beat-showcase --out=showcase.json`；六镜、84 BPM、可编辑字卡与代码，保时长导出见 [beat-showcase.md](references/beat-showcase.md)。
 - 用第三方数据包：`pnpm glint packs --source=pack.json --out=new.json`
 - 把已有工程存成可复用包：`pnpm glint packs --export-project=project.json --out=pack.json --author=你 --license=你的许可 --confirm-rights`
 - 数据包只含可编辑场景，不含素材/脚本/外部引用；许可由作者声明，不代替平台认证。私有备注在导出时移除，旁白与画面文字保留，导出前自行检查隐私。
@@ -108,9 +113,15 @@ v1 之外新增的每镜字段（全部可选，向后兼容）：
 | `pnpm glint plan --project=p.json --set='scenes[1].title=X'` | 变更预算：预测重算节点/费用/耗时 |
 | `pnpm glint packs …` | 创作包：列/搜索、内置包、第三方数据包、工程导出 |
 | `pnpm glint reference --video=ref.mp4 --out=new-dir` | 参考片切镜与缩略图（推断，非还原） |
+| `pnpm glint look --video=x.mp4 --out=new-dir [--at=8.5 --start=5 --end=8]` | 成片联系表、单帧、区间与黑场/静音/采样峰值疑点；人工审帧见 `qa-gates.md` |
 | `pnpm glint reference-project --analysis=dir/analysis.json --out=dir/project.json` | 参考切点→可审阅工程（参考帧+占位旁白，交付前替换） |
 | `pnpm glint delivery-check --video=out.mp4 --audio=optional` | 最终文件解码/音轨/响度技术检查（不代表画面审美通过） |
-| `pnpm glint mcp` | MCP stdio：glint_plan/glint_apply/glint_build/glint_prove/glint_verify |
+| `pnpm glint container list [--limit=20 --cursor=work]` | 分页查找同一服务的已有统一作品，只读元数据 |
+| `pnpm glint container snapshot --id=work [--endpoint=http://127.0.0.1:4175]` | 读取统一作品、当前文档版本和共享 revision |
+| `pnpm glint container append --request=transaction.json` | 向同一服务提交现有文档新版本；配置、CAS 与撤销见 `entry-and-bridge.md` |
+| `pnpm glint comfyui submit --endpoint=... --workflow=... --confirm-execute` | 执行用户确认的本地 API 工作流；单次提交，立即保存 promptId |
+| `pnpm glint comfyui status\|cancel\|download --endpoint=... --id=...` | 恢复查询、删除指定排队项；下载须 `--output-index=0 --out=新文件`，不覆盖 |
+| `pnpm glint mcp` | MCP stdio：既有渲染工具及 glint_container_list/snapshot/open/append/undo/redo |
 | `pnpm glint qa --video=out.mp4 [--strict] [--out=r.json]` | 成片门禁（丰富度/静止/蓝紫/空画面/首帧/规格） |
 | `pnpm glint nle --project=p.json --video=out.mp4 --format=fcpxml\|edl` | 剪辑时间线（实验：单母版按镜头切点；未在 FCP/Premiere/Resolve 真机验证） |
 | `pnpm glint srt --project=p.json [--out=x.srt]` | 字幕（词级时间戳→句级 SRT） |
@@ -130,3 +141,18 @@ v1 之外新增的每镜字段（全部可选，向后兼容）：
 3. 「把这段参考片的节奏套到我的商品上」→ `pnpm glint reference` 切镜取帧 → 依据分析重写分镜与素材 → 渲染，并说明哪些是推断。
 
 交付时简述改动、实测命令与结果、未验证项；不用「最高审美/全端实测/全面超越」类断言。失败、跳过、未验证的部分用与成功同样的字号说出来。
+
+
+### 几何预演控制图
+
+使用 `previz-controls` 从已有 PrevizDoc 的 stage/primitive 导出 RGB、8 位深度和视空间法线；actor/model 不支持。参数与限制见 [预演控制图](references/previz-controls.md)。
+
+### 接续已有任务
+
+用 `tasks list` 找到任务，再用 `tasks status --family=media --id=...` 查询；取消必须先获用户确认并加 `--confirm`。不重新提交；未知费用保持 null。CLI/MCP 使用现有服务环境配置，详见 [任务接续](references/task-handoff.md)。
+
+用 `recipe plan/approve/run/status/resume` 执行带输入摘要审批的资料讲解配方；复用同一任务与构建回执。当前本地默认输出无旁白，AIGC 付费执行未接入且不会自动替换成 MG。用法见[资料讲解配方](references/recipes.md)。
+
+### 本地 ComfyUI 执行
+
+`comfyui` 复用产品运行时适配器；endpoint 必须显式为 `127.0.0.1` 或 `[::1]`。先确认用户同意执行自己的 API-format 工作流，再带 `--confirm-execute` 提交；不因网络错误重投。status/cancel/download 只接已有 promptId，取消不保证终止运行任务，下载只接受成功历史中的输出序号。工作流和可选 inputs 文件各限 2 MiB；输出为 JSON，失败退出非 0。独立调用用本 Skill 的 `scripts/glint.mjs --root=<运行时> comfyui ...`，相对路径保持调用者工作目录。当前工作台素材面板也支持本地连接、节点检查、显式提交与结果导入；实机节点兼容性未验收。完整参数见源码运行时 `docs/models/comfyui.md`。

@@ -1,0 +1,4 @@
+.hybrid-tools { display: grid; gap: var(--g-sp-3); padding-block: var(--g-sp-4); }
+.hybrid-tools > div { display: flex; flex-wrap: wrap; gap: var(--g-sp-3); }
+.hybrid-tools small { color: var(--g-fg-2); font-size: var(--g-fs-2); line-height: var(--g-lh-body); }
+.hybrid-tools [role="alert"] { color: var(--g-danger); margin: 0; }

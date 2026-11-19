@@ -11,10 +11,27 @@
     "./exported-packs": "./src/exported-packs.ts",
     "./craft-lint": "./src/craft-lint.ts",
     "./plan": "./src/plan.ts",
+    "./creative-brief": "./src/creative-brief.ts",
+    "./visual-plan": "./src/visual-plan.ts",
+    "./drama": "./src/drama.ts",
+    "./shot-cards": "./src/shot-cards.ts",
+    "./asr": "./src/asr.ts",
+    "./batch": "./src/batch.ts",
+    "./chart-table": "./src/chart-table.ts",
+    "./blind": "./src/blind.ts",
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
-    }
+    },
+    "./drama-pipeline": "./src/drama-pipeline.ts",
+    "./drama-series": "./src/drama-series.ts",
+    "./drama-previz": "./src/drama-previz.ts",
+    "./multilang": "./src/multilang.ts",
+    "./publish-presets": "./src/publish-presets.ts",
+    "./recipe-runtime": "./src/recipe-runtime.ts",
+    "./recipe-inputs": "./src/recipe-inputs.ts",
+    "./recipe-sdk": "./src/recipe-sdk.ts",
+    "./recipe-v2": "./src/recipe-v2.ts"
   },
   "files": [
     "src"
@@ -24,6 +41,8 @@
     "@glintai/design-tokens": "workspace:*",
     "@glintai/knowledge": "workspace:*",
     "@glintai/llm": "workspace:*",
+    "@glintai/models": "workspace:*",
+    "@glintai/previz": "workspace:*",
     "@glintai/scenescript": "workspace:*",
     "typescript": "5.9.3",
     "zod": "^3.23.8"

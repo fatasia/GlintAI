@@ -139,7 +139,7 @@ describe.skipIf(!hasFfmpeg)("container cache", () => {
     const projectPath = path.join(root, "project.json");
     const unique = randomUUID().slice(0, 8);
     fs.writeFileSync(projectPath, JSON.stringify({ schemaVersion: 1, id: `container-${unique}`, title: `Container ${unique}`, aspect: "16:9", fps: 30, knowledgeSources: [], scenes: [{ id: "one", kind: "title", title: `One ${unique}`, narration: { text: `x ${unique}`, durationMs: 200 } }] }, null, 2));
-    const cacheDir = path.resolve(".cache", "native-container");
+    const cacheDir = path.resolve(process.env.GLINT_CACHE_DIR ?? ".cache", "native-container");
     // Other test workers publish into this shared cache concurrently; count only
     // artifacts byte-identical to our UUID-specific cut, not global directory growth.
     const output = path.join(root, "out.mp4");
@@ -236,7 +236,7 @@ describe.skipIf(!hasFfmpeg)("audio cache", () => {
     const unique = randomUUID().slice(0, 8);
     const projectPath = path.join(root, "project.json");
     fs.writeFileSync(projectPath, JSON.stringify({ schemaVersion: 1, id: `audio-cache-${unique}`, title: `Audio ${unique}`, aspect: "16:9", fps: 30, knowledgeSources: [], scenes: [{ id: "one", kind: "title", title: `One ${unique}`, narration: { text: `a ${unique}`, durationMs: 400 } }] }, null, 2));
-    const cacheDir = path.resolve(".cache", "native-audio");
+      const cacheDir = path.resolve(process.env.GLINT_CACHE_DIR ?? ".cache", "native-audio");
     await buildProject({ projectPath, output: path.join(root, "a.mp4"), tts: "mock", music: "synth", fast: true });
     const afterFirst = fs.readdirSync(cacheDir).filter(file => file.endsWith(".wav")).length;
     await buildProject({ projectPath, output: path.join(root, "b.mp4"), tts: "mock", music: "synth", fast: true });

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { GltfAssetPath, LocalAssetPath } from "./assets";
 import { SceneEffect } from "./effects";
+import { compatibleMorphPaths, isStrokePath } from "./stroke-path";
 
 export const SCENESCRIPT_VERSION = 1;
 
@@ -59,6 +60,7 @@ export const TransitionSpec = z.object({
     "flip",
     "flash",
     "magic-move",
+    "shape-morph",
   ]),
   durationMs: z.number().int().min(120).max(1200).optional(),
   /**
@@ -89,6 +91,28 @@ export const AssetIdentity = z.object({
   version: z.string().min(1).max(40),
   /** Local asset files that define this identity (relative to the project). */
   refs: z.array(LocalAssetPath).max(50).optional(),
+  /** Character appearance and voice ID are authored by the user, not inferred. */
+  description: z.string().min(1).max(2000).optional(),
+  voice: z.string().min(1).max(128).optional(),
+  /** A new identity ID preserves the previously approved version and scene bindings. */
+  derivedFrom: z.object({ assetId: kebabId, version: z.string().min(1).max(40) }).strict().optional(),
+  /** Snapshot keeps approved identity content aligned with its version. */
+  approval: z.object({
+    version: z.string().min(1).max(40), name: z.string().min(1).max(120),
+    description: z.string().min(1).max(2000).refine(value => Boolean(value.trim()), "description must not be blank"),
+    voice: z.string().min(1).max(128).refine(value => Boolean(value.trim()), "voice must not be blank").optional(),
+    refs: z.array(LocalAssetPath.refine(value => /\.(png|jpg|jpeg|webp)$/i.test(value), "approved reference must be an image")).min(1).max(50),
+    refSha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  }).strict().optional(),
+}).superRefine((asset, ctx) => {
+  if (!asset.approval) return;
+  const snapshot = asset.approval;
+  if (snapshot.refSha256 && (snapshot.refs.length !== 1 || !new RegExp(`^assets/approved-${snapshot.refSha256}\\.(png|jpg|webp)$`).test(snapshot.refs[0]!))) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["approval", "refSha256"], message: "reference digest and content-addressed file do not match" });
+  }
+  if (!["character", "product"].includes(asset.kind) || (asset.kind === "character" && !snapshot.voice) || snapshot.version !== asset.version || snapshot.name !== asset.name || snapshot.description !== asset.description || snapshot.voice !== asset.voice || JSON.stringify(snapshot.refs) !== JSON.stringify(asset.refs)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["approval"], message: "approved asset identity does not match its frozen snapshot" });
+  }
 });
 export type AssetIdentity = z.infer<typeof AssetIdentity>;
 
@@ -140,7 +164,20 @@ export const SceneElement = z.discriminatedUnion("kind", [
     w: z.number().min(0.001).max(1),
     h: z.number().min(0.001).max(1),
     fill: z.string().regex(/^#[0-9a-f]{6}$/i),
+    appearance: z.enum(["solid", "brush"]).optional(),
     radius: z.number().min(0).max(64).optional(),
+  }),
+  z.object({
+    id: kebabId,
+    kind: z.literal("path"),
+    x: z.number().min(0).max(1), y: z.number().min(0).max(1),
+    w: z.number().min(0.001).max(1), h: z.number().min(0.001).max(1),
+    d: z.string().min(1).max(8192).refine(isStrokePath, "Use supported SVG path commands (M/L/H/V/Q/C/S/T/A/Z, absolute or relative)"),
+    viewBox: z.tuple([z.number().min(1).max(4096), z.number().min(1).max(4096)]),
+    stroke: z.string().regex(/^#[0-9a-f]{6}$/i),
+    strokeWidth: z.number().min(0.5).max(100),
+    drawStartMs: z.number().int().nonnegative().max(86_400_000).optional(),
+    drawDurationMs: z.number().int().min(1).max(86_400_000).optional(),
   }),
 ]);
 export type SceneElement = z.infer<typeof SceneElement>;
@@ -245,6 +282,10 @@ export const ThreeScene = z.discriminatedUnion("model", [
     model: z.literal("gltf"),
     src: GltfAssetPath,
     caption: z.string().optional(),
+    /** Exact glTF animation name; absent preserves the historical all-clips behavior. */
+    animationClip: z.string().min(1).max(128).optional(),
+    /** Static morph overrides, applied after the selected animation is sampled. */
+    morphTargets: z.record(z.string().min(1).max(128), z.number().finite().min(0).max(1)).refine(value => Object.keys(value).length <= 32, "at most 32 morph targets").optional(),
   }),
 ]);
 
@@ -265,6 +306,8 @@ export const ImageScene = z.object({
   /** Declared source of the pixels; feeds L3 provenance in the receipt. */
   provenance: SceneProvenance.optional(),
   caption: z.string().optional(),
+  /** Optional product hero framing. Absent on existing projects. */
+  presentation: z.enum(["showcase", "slide"]).optional(),
 });
 
 /**
@@ -311,6 +354,8 @@ export const HtmlScene = z.object({
    * wall-clock animation is not frame-deterministic.
    */
   html: z.string().min(1).max(1024 * 1024),
+  /** Slide snapshots keep the design editor's 1280x720 viewport, fitted to the video frame. */
+  presentation: z.enum(["card", "slide"]).optional(),
   /**
    * "gsap" opts the fragment into the frame-addressed GSAP runtime
    * (packages/video/src/scenes/html-runtime.ts): scripts run inside a
@@ -443,6 +488,8 @@ export const SceneScriptProject = z
       .optional(),
     /** Character/product/brand identities shared across scenes (C13). */
     assets: z.array(AssetIdentity).max(200).optional(),
+    /** Approval freeze (TEAM-09): the session layer refuses every actor except an owner unfreeze. */
+    frozen: z.boolean().optional(),
     scenes: z.array(Scene).min(1, "a project needs at least one scene"),
   })
   .superRefine((project, ctx) => {
@@ -470,6 +517,9 @@ export const SceneScriptProject = z
     }
     for (const [sceneIndex, scene] of project.scenes.entries()) {
       const elementIds = new Set<string>();
+      const brushSupported = ["title", "bullets", "definition", "quote", "comparison", "diagram", "chart", "code"].includes(scene.kind);
+      if (!brushSupported && scene.elements?.some(element => element.kind === "rect" && element.appearance === "brush")) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["scenes", sceneIndex, "elements"], message: "brush appearance requires a built-in scene" });
+      if (!brushSupported && scene.elements?.some(element => element.kind === "path")) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["scenes", sceneIndex, "elements"], message: "stroke paths require a built-in scene" });
       for (const [elementIndex, element] of (scene.elements ?? []).entries()) {
         if (elementIds.has(element.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["scenes", sceneIndex, "elements", elementIndex, "id"], message: `duplicate element id "${element.id}"` });
         elementIds.add(element.id);
@@ -482,6 +532,30 @@ export const SceneScriptProject = z
           seen.add(key.atMs);
         }
       }
+    }
+    for (const [index, scene] of project.scenes.entries()) {
+      if (scene.transition?.in !== "shape-morph") continue;
+      const previous = project.scenes[index - 1];
+      const reject = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["scenes", index, "transition"], message: `shape-morph: ${message}` });
+      if (!previous) { reject("requires a previous scene"); continue; }
+      const supported = new Set(["title", "bullets", "definition", "quote", "comparison", "diagram", "chart", "code"]);
+      if (!supported.has(previous.kind) || !supported.has(scene.kind)) reject("requires two built-in scenes");
+      if (scene.transition.overlapMs) reject("does not support overlap");
+      if (previous.transition) reject("the previous scene must not have an entrance transition");
+      if ([previous, scene].some(item => (item.camera && item.camera.type !== "static") || item.beatPulse || item.effects?.length)) reject("requires static cameras and no beat pulse or effects");
+      const sources = new Map((previous.elements ?? []).map(item => [item.id, item]));
+      const matches = (scene.elements ?? []).filter(item => (item.kind === "rect" || item.kind === "path") && sources.get(item.id)?.kind === item.kind);
+      if (!matches.length) reject("requires at least one rectangle or path with the same id in both scenes");
+      for (const to of matches) {
+        const from = sources.get(to.id);
+        if (from?.kind === "rect" && to.kind === "rect" && (from.appearance ?? "solid") !== (to.appearance ?? "solid")) reject("matched rectangles must have the same appearance");
+        if (from?.kind === "path" && to.kind === "path") {
+          if (!compatibleMorphPaths(from.d, to.d)) reject(`path ${to.id}: use identical explicit absolute M/L/Q/C/Z commands`);
+          if (from.viewBox.some((value, i) => value !== to.viewBox[i])) reject(`path ${to.id}: viewBox must match`);
+          if (from.drawDurationMs !== undefined || to.drawDurationMs !== undefined) reject(`path ${to.id}: disable draw-on animation in both scenes`);
+        }
+      }
+      if ([previous, scene].some(item => item.tracks?.some(track => matches.some(match => match.id === track.elementId)))) reject("matched elements must not have animation tracks");
     }
     const assets = new Map((project.assets ?? []).map(asset => [asset.id, asset]));
     for (const [index, asset] of (project.assets ?? []).entries()) {

@@ -1,3 +1,4 @@
+import { applicationUrl } from "./app-url";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { downloadJson } from "./editor-model";
 
@@ -39,11 +40,11 @@ export function VoiceReview({ cardStyle }: { cardStyle: CSSProperties }) {
     <details><summary>开始听评</summary>
       <div style={{ display: "grid", gap: 16, marginTop: 16 }}>
         <label>参考录音<input style={{ display: "block", maxWidth: "100%" }} aria-label="参考录音" type="file" accept="audio/*" onChange={event => choose(event.target.files, true)} /></label>
-        {reference && <audio aria-label="参考录音播放" src={reference.url} controls preload="metadata" style={{ width: "100%" }} />}
+        {reference && <audio aria-label="参考录音播放" src={applicationUrl(reference.url)} controls preload="metadata" style={{ width: "100%" }} />}
         <label>候选配音（1–2 段）<input style={{ display: "block", maxWidth: "100%" }} aria-label="候选配音" type="file" accept="audio/*" multiple onChange={event => choose(event.target.files, false)} /></label>
         {samples.map((sample, index) => <div key={sample.url} style={{ border: "1px solid #304053", padding: 14, borderRadius: 10, display: "grid", gap: 12 }}>
           <strong>候选 {String.fromCharCode(65 + index)}{revealed ? ` · ${sample.name}` : ""}</strong>
-          <audio aria-label={`候选 ${index + 1} 播放`} src={sample.url} controls preload="metadata" style={{ width: "100%" }} />
+          <audio aria-label={`候选 ${index + 1} 播放`} src={applicationUrl(sample.url)} controls preload="metadata" style={{ width: "100%" }} />
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,160px),1fr))", gap: 8 }}>
             {criteria.map((label, column) => <label key={label}>{label}<select aria-label={`候选 ${index + 1} ${label}`} style={{ ...control, width: "100%" }} value={scores[index]?.[column] ?? 0} onChange={event => { setRevealed(false); setScores(rows => rows.map((row, i) => i === index ? row.map((score, j) => j === column ? Number(event.target.value) : score) : row)); }}><option value={0}>未评分</option>{[1, 2, 3, 4, 5].map(value => <option key={value}>{value}</option>)}</select></label>)}
           </div>

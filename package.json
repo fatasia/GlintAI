@@ -35,8 +35,12 @@
     "eval:quality": "pnpm --filter glint-studio exec tsx ../../scripts/evaluate-quality.mjs",
     "verify:budget": "node scripts/check-web-budget.mjs",
     "verify:source": "node scripts/check-source.mjs",
+    "check:ui": "node scripts/check-ui.mjs",
+    "check:tests": "node scripts/check-tests.mjs",
+    "test:scripts": "vitest run --config scripts/vitest.scripts.config.ts",
     "verify:release": "node scripts/verify-release.mjs",
     "verify:linux": "node scripts/verify-linux.mjs",
+    "verify:browser": "node scripts/verify-browser.mjs",
     "desktop:package": "node apps/desktop/scripts/package-portable.mjs",
     "desktop:package:check": "node apps/desktop/scripts/package-portable.mjs --check",
     "desktop:package:lite": "node apps/desktop/scripts/package-portable.mjs --lite",
@@ -46,14 +50,22 @@
     "desktop:installer:check": "node apps/desktop/scripts/installer-check.mjs",
     "desktop:installer:lite:check": "node apps/desktop/scripts/installer-check.mjs --lite",
     "desktop:standalone:check": "node apps/desktop/scripts/standalone-check.mjs",
-    "desktop:standalone:lite:check": "node apps/desktop/scripts/standalone-check.mjs --lite"
+    "desktop:standalone:lite:check": "node apps/desktop/scripts/standalone-check.mjs --lite",
+    "prepare:test-fixtures": "node scripts/prepare-test-fixtures.mjs",
+    "lint": "node scripts/check-code-quality.mjs --mode=lint",
+    "format:check": "node scripts/check-code-quality.mjs --mode=format",
+    "quality:baseline:reduce": "node scripts/check-code-quality.mjs --reduce"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "esbuild": "0.25.10",
     "jsdom": "^30.1.3",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "eslint": "9.39.1",
+    "@eslint/js": "9.39.1",
+    "typescript-eslint": "8.46.4",
+    "prettier": "3.6.2"
   },
   "repository": {
     "type": "git",

@@ -44,6 +44,7 @@ async function grabFrame(video: string, atSec: number, size: string, signal?: Ab
  */
 export async function analyzeReferenceStyle(video: string, signal?: AbortSignal): Promise<ReferenceStyle> {
   const frames = await Promise.all([0.5, Math.max(2, 0.5), 4, 8].map(at => grabFrame(video, at, "160x90", signal).catch(() => null)));
+  signal?.throwIfAborted();
   const merged = new Map<string, { r: number; g: number; b: number; count: number }>();
   for (const frame of frames) {
     if (!frame) continue;
@@ -62,10 +63,11 @@ export async function analyzeReferenceStyle(video: string, signal?: AbortSignal)
   if (!palette.length) throw new Error("无法读取参考片画面；请确认文件可解码。");
   let medianShotMs: number | undefined;
   try {
-    const { stdout } = await run("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "format=duration", "-of", "csv=p=0", video], { encoding: "utf8" });
+    const { stdout } = await run("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "format=duration", "-of", "csv=p=0", video], { encoding: "utf8", signal, timeout: 30_000 });
     const duration = Number(stdout.trim());
     if (Number.isFinite(duration) && duration > 0) medianShotMs = Math.round(duration * 1000 / 4);
   } catch { /* Rhythm stays a suggestion only. */ }
+  signal?.throwIfAborted();
   return { format: "glint-reference-style", version: 1, source: path.basename(video), palette, medianShotMs, scope: "palette-and-rhythm" };
 }
 

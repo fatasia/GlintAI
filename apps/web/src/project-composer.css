@@ -1,0 +1,27 @@
+.project-composer { min-width: 0; }
+.pc-box { border: 1px solid var(--line-2); border-radius: 18px; background: var(--ink-2); transition: border-color 140ms ease; overflow: hidden; }
+.pc-box:focus-within { border-color: var(--line-3); }
+.pc-box textarea { display: block; width: 100%; min-height: 140px; padding: 22px 24px 14px; border: 0; outline: none; resize: vertical; background: transparent; color: var(--paper); font: 400 16px/1.7 var(--font-ui); }
+.pc-box textarea:focus-visible { outline: none; }
+.pc-box textarea::placeholder { color: var(--faint); }
+.pc-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 14px 14px; }
+.pc-controls :is(select, .pc-attach) { height: 34px; max-width: 100%; border: 1px solid var(--hair); border-radius: 9px; background: var(--wash); color: var(--paper-dim); padding: 0 10px; font: 400 12px var(--font-ui); cursor: pointer; }
+.pc-controls label { min-width: 0; }
+.pc-controls select { appearance: auto; }
+.pc-controls .pc-submit { display: inline-flex; align-items: center; justify-content: center; gap: 18px; min-height: 40px; padding: 0 17px; border: 0; border-radius: 11px; background: var(--paper); color: var(--ink-0); font: 600 13px var(--font-ui); cursor: pointer; }
+.pc-controls .pc-submit:hover:not(:disabled) { opacity: .88; }
+.pc-controls .pc-submit span { font-size: 18px; }
+.pc-count { flex: 1; min-width: 0; color: var(--faint); text-align: right; padding-right: 5px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.pc-hint { display: flex; gap: 4px 12px; flex-wrap: wrap; align-items: center; min-height: 34px; padding: 8px 4px 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.pc-hint button { border: 0; padding: 0; background: transparent; color: var(--paper); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.pc-import { margin-top: 12px; padding: 16px; border: 1px solid var(--hair); border-radius: 12px; background: var(--ink-1); }
+.pc-error, .pc-progress, .pc-recovery { margin: 12px 0 0; color: var(--muted); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.pc-error { color: var(--danger); }
+.pc-progress { border-left: 2px solid var(--accent); padding-left: 12px; }
+@media (max-width: 560px) {
+  .pc-box textarea { min-height: 130px; padding: 16px; font-size: 16px; }
+  .pc-controls { gap: 6px; padding: 8px 10px 10px; }
+  .pc-controls :is(select, .pc-attach) { font-size: 11px; padding: 0 7px; height: 34px; }
+  .pc-count { display: none; }
+  .pc-controls .pc-submit { width: 100%; margin-top: 3px; min-height: 42px; }
+}

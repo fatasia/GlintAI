@@ -37,6 +37,13 @@ describe("reference skeleton builder", () => {
     expect(project.scenes[1]!.camera).toEqual({ type: "static" });
     expect(parseProject(project)).toEqual(project);
   });
+  it("does not infer a camera motion when the measurement is unavailable", () => {
+    const report = analysis();
+    report.shots[0]!.motion = null;
+    const project = buildReferenceProject(report);
+    expect(project.scenes[0]!.camera).toBeUndefined();
+    expect(project.scenes[1]!.camera).toEqual({ type: "static" });
+  });
   it("rejects malformed reports and unsafe thumbnails instead of inventing scenes", () => {
     for (const bad of [
       { ...analysis(), shots: [] },

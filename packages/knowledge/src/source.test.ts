@@ -41,6 +41,10 @@ describe("source matrix", () => {
     const text = await readSourceText({ path: await fixture("html", '<h1>标题</h1><script>alert(1)</script><style>bad</style><p>&#x4e2d;&amp;</p>') });
     expect(text).toBe("标题\n中&");
   });
+  it("preserves table cell boundaries and excludes non-visible HTML", async () => {
+    const html = '<h1>用水</h1><!--假数据--><template>隐藏</template><noscript>备用</noscript><table><tr><th>月份</th><th>用量</th></tr><tr><td>一月</td><td>12</td></tr></table>';
+    expect(await readSourceText({ path: await fixture("html", html) })).toBe("用水\n月份 | 用量\n一月 | 12");
+  });
   it("preserves JSON structure", async () => { expect(await readSourceText({ path: await fixture("json", '{"中文":[1,2]}') })).toContain('"中文"'); });
   it("handles multiline CSV and escaped quotes", async () => {
     expect(await readSourceText({ path: await fixture("csv", 'name,note\r\n张三,"a\nb"\r\n李四,"say ""hi"""') })).toContain('Row 2: ["李四","say \\"hi\\""]');

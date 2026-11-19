@@ -1,0 +1,119 @@
+.task-center {
+  display: grid;
+  gap: var(--g-sp-5);
+  min-width: 0;
+}
+.task-center-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--g-sp-3);
+}
+.task-center-heading h1 {
+  margin: 0;
+  font-size: var(--g-fs-6);
+}
+.task-center-heading p,
+.task-center-footnote {
+  color: var(--g-fg-2);
+}
+.task-center-list {
+  display: grid;
+  gap: var(--g-sp-3);
+}
+.task-center-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--g-sp-4);
+  padding: var(--g-sp-4);
+  border: 1px solid var(--g-line-2);
+  border-radius: var(--g-r-3);
+  background: var(--g-bg-1);
+  min-width: 0;
+}
+.task-center-identity {
+  display: grid;
+  gap: var(--g-sp-2);
+  flex: 1 1 50%;
+  min-width: 0;
+}
+.task-center-row-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--g-sp-3);
+}
+.task-center-row h2 {
+  margin: 0;
+  font-size: var(--g-fs-3);
+}
+.task-center-row code {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  color: var(--g-fg-2);
+}
+.task-center-row small {
+  color: var(--g-fg-3);
+}
+.task-center-state {
+  padding: var(--g-sp-1) var(--g-sp-2);
+  border-radius: var(--g-r-2);
+  background: var(--g-bg-2);
+  font-size: var(--g-fs-2);
+}
+.task-center-cost {
+  margin: 0;
+  display: grid;
+  gap: var(--g-sp-1);
+}
+.task-center-cost dt {
+  color: var(--g-fg-2);
+  font-size: var(--g-fs-2);
+}
+.task-center-cost dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.task-center-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--g-sp-2);
+}
+.task-center-confirm {
+  flex: 1 1 100%;
+  padding-top: var(--g-sp-3);
+  border-top: 1px solid var(--g-line-2);
+}
+.task-center-confirm p {
+  margin-top: 0;
+  color: var(--g-fg-2);
+}
+.task-center-empty {
+  padding: var(--g-sp-6);
+  border: 1px solid var(--g-line-2);
+  border-radius: var(--g-r-3);
+}
+.task-center-notice {
+  padding: var(--g-sp-3);
+  margin: 0;
+  background: var(--g-bg-2);
+  border-radius: var(--g-r-2);
+}
+.task-center-footnote {
+  margin: 0;
+  font-size: var(--g-fs-2);
+}
+@media (max-width: 640px) {
+  .task-center-identity {
+    flex-basis: 100%;
+  }
+  .task-center-cost {
+    flex: 1 1 100%;
+  }
+  .task-center-row {
+    padding: var(--g-sp-3);
+  }
+}

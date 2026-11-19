@@ -1,7 +1,9 @@
+import { applicationUrl } from "./app-url";
+import { appFetch as fetch } from "./app-url";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { SceneScriptProject } from "@glintai/scenescript";
 import { adoptLibraryVisual, libraryVisual, type LibraryVisual } from "./media-adoption";
-const button: CSSProperties = { color: "inherit", background: "#1c1c21", border: "1px solid #2b2b31", padding: "8px 12px", borderRadius: 8, font: "inherit", cursor: "pointer" };
+const button: CSSProperties = { color: "inherit", background: "var(--ink-3)", border: "1px solid var(--line-2)", padding: "8px 12px", borderRadius: 8, font: "inherit", cursor: "pointer" };
 export function MediaCandidates({ project, sceneId, onChange, onSelect }: { project: SceneScriptProject; sceneId: string; onChange(project: SceneScriptProject): void; onSelect?(id: string): void }) {
   const [assets, setAssets] = useState<LibraryVisual[]>([]), [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading] = useState(false), [error, setError] = useState(""), [notice, setNotice] = useState("");
@@ -45,12 +47,12 @@ export function MediaCandidates({ project, sceneId, onChange, onSelect }: { proj
       {!assets.length && !loading && <p style={{ margin: 0 }}>还没有图片或视频。可先在素材工坊生成，再回来刷新。</p>}
       <div role="group" aria-label="可采用素材" style={{ display: "flex", gap: 8, overflowX: "auto", padding: 2 }}>
         {assets.map(item => <button type="button" key={item.name} aria-pressed={selected === item.name} style={{ ...button, minWidth: 150, maxWidth: 220, textAlign: "left", overflowWrap: "anywhere" }} onClick={() => { setSelected(item.name); setNotice(""); setError(""); }}>
-          {item.kind === "image" && <img alt="" loading="lazy" src={`/api/media/assets/${encodeURIComponent(item.name)}`} style={{ width: "100%", height: 75, objectFit: "contain" }} />}
+          {item.kind === "image" && <img alt="" loading="lazy" src={applicationUrl(`/api/media/assets/${encodeURIComponent(item.name)}`)} style={{ width: "100%", height: 75, objectFit: "contain" }} />}
           <small>{item.kind === "video" ? "视频" : "图片"}</small><div>{item.name}</div>
         </button>)}
       </div>
       {asset && <div style={{ display: "grid", gap: 8 }}>
-        {asset.kind === "video" ? <video key={asset.name} aria-label="候选视频预览" controls preload="metadata" src={`/api/media/assets/${encodeURIComponent(asset.name)}`} style={{ width: "100%", maxHeight: 260 }} /> : <img alt="候选图片预览" src={`/api/media/assets/${encodeURIComponent(asset.name)}`} style={{ width: "100%", maxHeight: 260, objectFit: "contain" }} />}
+        {asset.kind === "video" ? <video key={asset.name} aria-label="候选视频预览" controls preload="metadata" src={applicationUrl(`/api/media/assets/${encodeURIComponent(asset.name)}`)} style={{ width: "100%", maxHeight: 260 }} /> : <img alt="候选图片预览" src={applicationUrl(`/api/media/assets/${encodeURIComponent(asset.name)}`)} style={{ width: "100%", maxHeight: 260, objectFit: "contain" }} />}
         <small>视频素材默认静音用于画面；采用不会自动修改镜头时长。太短的素材请先调整时长，避免末帧停留。</small>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           <button type="button" style={button} disabled={!target || target.locked || loading || !["image", "video"].includes(target.kind)} onClick={() => adopt("replace")}>替换当前镜头素材</button>

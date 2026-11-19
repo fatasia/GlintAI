@@ -121,7 +121,15 @@ export function buildEdl(project: SceneScriptProject, videoPath: string, outputP
  */
 export interface NleTimelineExport { text: string; clips: number; textClips: number; audioClips: number }
 
+function assertInterchangeSpeed(project: NleProject, format: "FCPXML" | "EDL"): void {
+  const unsupported = project.tracks.flatMap(track => track.clips).filter(clip =>
+    (clip.kind === "audio" || clip.kind === "video") &&
+    ((clip.speedCurve && clip.speedCurve !== "linear") || (format === "FCPXML" && (clip.speed ?? 1) !== 1)));
+  if (unsupported.length) throw new Error(`${format} 暂不能无损保留片段 ${unsupported.map(clip => clip.id).join("、")} 的变速；请先渲染成片，或保留 NLE JSON 工程。`);
+}
+
 export function buildNleFcpxml(project: NleProject, assetPath: (name: string) => string = name => name): NleTimelineExport {
+  assertInterchangeSpeed(project, "FCPXML");
   const rate = frameRateOf(project.fps);
   const frames = (ms: number, minimum = 0) => Math.max(minimum, Math.round(ms / 1000 * project.fps));
   const total = frames(nleDurationMs(project), 1);
@@ -178,6 +186,7 @@ ${[...visual, ...audio].join("\n")}
 }
 
 export function buildNleEdl(project: NleProject): NleTimelineExport {
+  assertInterchangeSpeed(project, "EDL");
   const fps = project.fps;
   const frames = (ms: number) => Math.max(0, Math.round(ms / 1000 * fps));
   const events: { start: number; clip: { id: string; startMs: number; durationMs: number; trimStartMs?: number; speed?: number }; track: string }[] = [];

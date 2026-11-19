@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "title": "讲解生产线:Glint · 一源双输出",
+  "steps": [
+    {
+      "id": "lint",
+      "tool": "lint",
+      "args": [
+        "--project=project.scenescript.json",
+        "--out=independent-deck.lint.json"
+      ],
+      "dependsOn": [],
+      "outputs": [
+        "independent-deck.lint.json"
+      ]
+    },
+    {
+      "id": "render",
+      "tool": "render-native",
+      "args": [
+        "--project=project.scenescript.json",
+        "--out=independent-deck.mp4",
+        "--tts=edge",
+        "--music=synth"
+      ],
+      "dependsOn": [
+        "lint"
+      ],
+      "outputs": [
+        "independent-deck.mp4"
+      ]
+    },
+    {
+      "id": "qa",
+      "tool": "qa",
+      "args": [
+        "--video=independent-deck.mp4",
+        "--out=independent-deck.qa.json"
+      ],
+      "dependsOn": [
+        "render"
+      ],
+      "outputs": [
+        "independent-deck.qa.json"
+      ]
+    },
+    {
+      "id": "deck",
+      "tool": "deck",
+      "args": [
+        "--project=project.scenescript.json",
+        "--out=independent-deck-deck"
+      ],
+      "dependsOn": [
+        "qa"
+      ],
+      "outputs": [
+        "independent-deck-deck/index.html"
+      ]
+    }
+  ]
+}

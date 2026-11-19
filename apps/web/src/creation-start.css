@@ -1,0 +1,13 @@
+.creation-paths { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--g-sp-3); margin-bottom: var(--g-sp-6); }
+.creation-paths button { text-align: start; white-space: normal; height: auto; padding: var(--g-sp-5); display: grid; gap: var(--g-sp-2); }
+.creation-paths button[aria-pressed="true"] { border-color: var(--g-accent-line); background: var(--g-accent-soft); }
+.creation-paths small, .creation-explanation { color: var(--g-fg-2); font-size: var(--g-fs-2); line-height: var(--g-lh-body); }
+.creation-start { display: grid; gap: var(--g-sp-5); min-width: 0; }
+.creation-start .tool-page { width: 100%; padding: 0; }
+.creation-start .tool-page-head { display: none; }
+.creation-fields { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--g-sp-5); }
+.creation-fields label { display: grid; gap: var(--g-sp-2); font-size: var(--g-fs-2); }
+.creation-start :is(input, select) { min-width: 0; }
+.creation-media-recent { display: flex; flex-wrap: wrap; gap: var(--g-sp-3); }
+.creation-start [role="alert"] { color: var(--g-danger); }
+@media (max-width: 600px) { .creation-paths { grid-template-columns: 1fr; } }

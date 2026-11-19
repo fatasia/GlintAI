@@ -1,0 +1,24 @@
+.nle-render-options {
+  display: grid;
+  gap: var(--g-sp-4);
+  margin: 0;
+  padding: var(--g-sp-5);
+  border: 1px solid var(--g-line-2);
+  border-radius: var(--g-r-2);
+  min-width: 0;
+}
+.nle-render-options label {
+  display: grid;
+  gap: var(--g-sp-2);
+}
+.nle-render-options p {
+  margin: 0;
+  color: var(--g-fg-2);
+  font-size: var(--g-fs-2);
+  white-space: normal;
+}
+.nle-render-options input,
+.nle-render-options select {
+  min-width: 0;
+  width: 100%;
+}

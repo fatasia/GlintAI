@@ -3,7 +3,21 @@
 **/dist
 **/out
 **/.cache
-**/public
+# Studio public contains generated/user media; web public is authored UI assets.
+apps/studio/public
+**/target
+outputs
+evidence
+dist-portable
+.smoke-data
+.tmp-*
+**/.npmrc
+**/.media-settings.json
+**/*.pem
+**/*.key
+**/.env
+**/.env.*
+!**/.env.example
 .env*
 !.env.example
 *.log
@@ -13,6 +27,5 @@ quality-report.json*
 .github
 docs
 scripts
-skills
 README.md
 CHANGELOG.md

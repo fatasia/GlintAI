@@ -11,8 +11,8 @@ import { useMemo } from "react";
 const CJK =
   /[\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af\uff00-\uffef]/;
 
-const wordStyle = (spoken: boolean, active: boolean): React.CSSProperties => ({
-  color: active
+const wordStyle = (spoken: boolean, active: boolean, onImage: boolean): React.CSSProperties => ({
+  color: onImage ? (active ? "#fff" : "rgba(255,255,255,0.82)") : active
     ? "var(--glint-color-accent)"
     : spoken
       ? "var(--glint-color-text)"
@@ -48,8 +48,10 @@ export const Caption: React.FC<{
 }> = ({ scene, sceneDurationFrames }) => {
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
-  const side = width / height < 1.3 ? 76 : 170;
+  const onSlide = scene.kind === "image" && scene.presentation === "slide";
+  const side = onSlide ? width * 0.08 : width / height < 1.3 ? 76 : 170;
   const { narration } = scene;
+  const onImage = scene.kind === "image" && (scene.presentation === "showcase" || onSlide);
   const durationMs = Math.max(1, (sceneDurationFrames / fps) * 1000);
 
   const words = useMemo<WordTiming[]>(() => {
@@ -73,12 +75,14 @@ export const Caption: React.FC<{
         position: "absolute",
         left: side,
         right: side,
-        bottom: 130,
+        bottom: onSlide ? undefined : 130,
+        top: onSlide ? height * 0.86 : undefined,
         display: "flex",
         flexWrap: "wrap",
         rowGap: 8,
-        fontSize: "var(--glint-font-size-caption)",
+        fontSize: onSlide ? Math.min(width, height) / 1080 * 30 : "var(--glint-font-size-caption)",
         lineHeight: 1.55,
+        textShadow: onImage ? "0 1px 3px #000, 0 0 4px #000" : undefined,
         // CJK punctuation must never start a line (禁则处理).
         lineBreak: "strict",
       }}
@@ -95,7 +99,7 @@ export const Caption: React.FC<{
           <span
             key={`${index}-${word.text}`}
             style={{
-              ...wordStyle(nowMs >= word.endMs, nowMs >= word.startMs && nowMs < word.endMs),
+              ...wordStyle(nowMs >= word.endMs, nowMs >= word.startMs && nowMs < word.endMs, onImage),
               marginRight,
               overflowWrap: "anywhere",
               minWidth: 0,

@@ -43,7 +43,7 @@ it("shows recent assets and the non-destructive version chain", async () => {
 it("fills the prompt from a shared image-edit preset", async () => {
   vi.stubGlobal("fetch", vi.fn(async (url: string) => Response.json(url.includes("/api/media/models") ? { models: [] } : url === "/api/media/library" ? { assets: [] } : url === "/api/media/versions" ? { versions: [] } : {})));
   const div = await mount();
-  const preset = [...div.querySelectorAll("button")].find(button => button.textContent === "remove-bg")!;
+  const preset = [...div.querySelectorAll("button")].find(button => button.textContent === "白底改图（提示词）")!;
   await act(async () => { preset.click(); });
   const prompt = div.querySelector<HTMLTextAreaElement>('textarea[aria-label="素材描述"]')!;
   expect(prompt.value).toContain("去除背景");
@@ -73,4 +73,43 @@ it("limits generation to images when the gateway uses OpenAI Images", async () =
   expect(div.textContent).toContain("只支持图片");
   expect(type.querySelector('option[value="video"]')!.hasAttribute("disabled")).toBe(true);
   expect(div.querySelector('select[aria-label="媒体模型"]')!.textContent).toContain("gpt-image-2");
+});
+
+it("does not revive a cancelled task when an older status response arrives late", async () => {
+  localStorage.setItem("glint.media-task", JSON.stringify({ taskId: "cancel-race" }));
+  let finishStatus!: (response: Response) => void;
+  const pending = new Promise<Response>(resolve => { finishStatus = resolve; });
+  const fetch = vi.fn(async (url: string, _init?: RequestInit) => {
+    if (url === "/api/media/status/cancel-race") return pending;
+    if (url === "/api/media/cancel/cancel-race") return Response.json({ taskId: "cancel-race", state: "cancelled", isFinal: true });
+    return Response.json({ models: [], assets: [], versions: [] });
+  }); vi.stubGlobal("fetch", fetch);
+  const div = await mount();
+  await act(async () => [...div.querySelectorAll("button")].find(button => button.textContent === "取消等待")!.click());
+  expect(div.textContent).toContain("已本地取消");
+  await act(async () => finishStatus(Response.json({ taskId: "cancel-race", state: "running", isFinal: false })));
+  expect(div.textContent).toContain("已本地取消");
+  expect(div.querySelector('[role="status"]')?.textContent).toContain("cancelled");
+  expect(fetch.mock.calls.filter(([url]) => url === "/api/media/status/cancel-race")).toHaveLength(1);
+});
+
+it("isolates receipts and late responses when the task storage identity changes", async () => {
+  localStorage.setItem("scope-a", JSON.stringify({ taskId: "task-a" }));
+  localStorage.setItem("scope-b", JSON.stringify({ taskId: "task-b" }));
+  let finishA!: (response: Response) => void;
+  const pendingA = new Promise<Response>(resolve => { finishA = resolve; });
+  const fetch = vi.fn(async (url: string) => {
+    if (url === "/api/media/status/task-a") return pendingA;
+    if (url === "/api/media/status/task-b") return Response.json({ taskId: "task-b", isFinal: true, state: "success", assetUrl: "/api/media/assets/b.mp4" });
+    return Response.json({ models: [], assets: [], versions: [] });
+  }); vi.stubGlobal("fetch", fetch);
+  const div = document.createElement("div"); document.body.appendChild(div); const root = createRoot(div);
+  cleanup = () => { act(() => root.unmount()); div.remove(); };
+  await act(async () => root.render(createElement(MediaWorkshop, { taskStorageKey: "scope-a" })));
+  await act(async () => root.render(createElement(MediaWorkshop, { taskStorageKey: "scope-b" })));
+  expect(div.querySelector('[role="status"]')?.textContent).toContain("task-b");
+  await act(async () => finishA(Response.json({ taskId: "task-a", isFinal: true, state: "success", assetUrl: "/api/media/assets/a.mp4" })));
+  expect(div.querySelector("video")?.getAttribute("src")).toBe("/api/media/assets/b.mp4");
+  expect(JSON.parse(localStorage.getItem("scope-a")!).taskId).toBe("task-a");
+  expect(JSON.parse(localStorage.getItem("scope-b")!).taskId).toBe("task-b");
 });

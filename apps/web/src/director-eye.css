@@ -1,0 +1,43 @@
+/* Director's Eye — a reading of the cut, not a scoreboard. */
+.director-eye { display: grid; gap: 12px; min-width: 0; }
+.director-eye-head { display: flex; align-items: center; gap: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--hair); }
+.director-eye-score {
+  flex: none; display: flex; align-items: baseline; gap: 3px;
+  padding: 6px 10px; border-radius: 10px;
+  border: 1px solid var(--hair-strong); background: var(--wash);
+}
+.director-eye-score strong { font: 600 24px/1 var(--font-display); letter-spacing: -.04em; }
+.director-eye-score small { color: var(--faint); font-size: 10px; }
+.director-eye-score[data-band="good"] strong { color: var(--ok); }
+.director-eye-score[data-band="fair"] strong { color: var(--warn); }
+.director-eye-score[data-band="poor"] strong { color: var(--danger); }
+.director-eye-verdict { display: grid; gap: 2px; min-width: 0; }
+.director-eye-verdict strong { font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
+.director-eye-verdict small { color: var(--faint); font-size: 10.5px; }
+.director-eye-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.director-eye-list li {
+  display: grid; gap: 5px; padding: 10px 12px;
+  border: 1px solid var(--hair); border-radius: 9px; background: var(--wash);
+}
+.director-eye-list li[data-severity="block"] { border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.director-eye-list li[data-severity="warn"] { border-color: color-mix(in srgb, var(--warn) 38%, transparent); }
+.director-eye-item-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.director-eye-item-head strong { font-size: 12.5px; font-weight: 500; }
+.director-eye-tag {
+  flex: none; padding: 1px 7px; border-radius: var(--r-full);
+  border: 1px solid var(--hair-strong); color: var(--muted);
+  font: 500 9.5px/1.7 var(--font-mono); letter-spacing: .08em;
+}
+.director-eye-list li[data-severity="block"] .director-eye-tag { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.director-eye-list li[data-severity="warn"] .director-eye-tag { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+.director-eye-list p { margin: 0; color: var(--muted); font-size: 11.5px; line-height: 1.6; }
+.director-eye-action { color: var(--paper-dim) !important; }
+.director-eye-action::before { content: "改法 · "; color: var(--g-accent-text); font-size: 10px; letter-spacing: .08em; }
+.director-eye-list button {
+  justify-self: start; min-height: 24px; padding: 0 8px; margin-top: 2px;
+  border: 1px solid var(--hair-strong); border-radius: 6px; background: transparent;
+  color: var(--paper-dim); font: inherit; font-size: 11px; cursor: pointer;
+}
+.director-eye-list button:hover { background: var(--wash-strong); color: var(--paper); }
+.director-eye-empty { margin: 0; padding: 14px; border: 1px dashed var(--hair-strong); border-radius: 9px; color: var(--muted); font-size: 12px; }
+.director-eye-foot { margin: 0; color: var(--faint); font-size: 10px; line-height: 1.6; }

@@ -1,0 +1,94 @@
+import { openHomeTool } from "./browser-workspace-helpers";
+import { openInspector } from "./browser-workspace-helpers";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import type { AddressInfo } from "node:net";
+import type { Server } from "node:http";
+import { expect, it } from "vitest";
+import { parseProject } from "@glintai/scenescript";
+import { FileSessionStore } from "@glintai/session/node";
+import { findSystemBrowser, openCaptureBrowser } from "../../studio/scripts/direct-browser/host";
+
+const dist = process.env.GLINT_TEST_WEB_DIST ?? fileURLToPath(new URL("../dist", import.meta.url));
+let browserAvailable = false; try { findSystemBrowser(); browserAvailable = true; } catch { /* no browser download */ }
+
+it.skipIf(process.env.GLINT_BROWSER_UI_TEST !== "1" || !browserAvailable)("chooses a style before creating a project and renders a real local trial", async () => {
+  const root = process.env.GLINT_DATA_DIR;
+  if (!root || !process.env.GLINT_SESSION_DIR || !process.env.GLINT_CACHE_DIR || !process.env.GLINT_STYLE_SAMPLE_DIR) throw new Error("Explicit isolated data directories are required");
+  const { createWebServer } = await import("./index.mjs");
+  const server = createWebServer({ distDir: dist, sessionStore: new FileSessionStore(process.env.GLINT_SESSION_DIR, value => { parseProject(value); }) }) as Server;
+  let opened: Awaited<ReturnType<typeof openCaptureBrowser>> | undefined;
+  try {
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    opened = await openCaptureBrowser(1280, 900);
+    const page = opened.page, errors: string[] = [], submissions: string[] = [];
+    page.on("pageerror", error => errors.push(String(error)));
+    page.on("request", request => { if (request.method() === "POST" && request.url().endsWith("/api/make")) submissions.push(request.postData() ?? ""); });
+    await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, { waitUntil: "networkidle0" });
+    await openHomeTool(page, "create");
+    await page.locator('summary::-p-text(浏览风格样片)').click();
+    await page.select('[aria-label="预览风格"]', "bold-poster");
+    await page.waitForSelector('[aria-label="风格目录样片"] button[aria-label="Play video"]', { timeout: 30000 });
+    expect(await page.$eval('[aria-label="风格"]', element => (element as HTMLSelectElement).value)).toBe("glint-dark");
+    await page.locator('[aria-label="风格目录样片"] button[aria-label="Play video"]').click();
+    await page.waitForFunction(() => /0:0[12]\s*\/\s*0:03/.test(document.querySelector('[aria-label="风格目录样片"]')?.textContent ?? ""), { timeout: 6000 });
+    await page.locator('[aria-label="风格目录样片"] button[aria-label="Pause video"]').click();
+    await page.$eval('[aria-label="风格样片目录"]', element => element.scrollIntoView({ block: "center" }));
+    const evidence = process.env.GLINT_STYLE_HISTORY_EVIDENCE;
+    if (evidence) fs.mkdirSync(evidence, { recursive: true });
+    await page.screenshot({ path: path.join(evidence ?? root, "style-entry-desktop-dark.png") });
+    await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+    expect(await page.$eval('[aria-label="风格样片目录"]', element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    await page.$eval('[aria-label="风格样片目录"]', element => element.scrollIntoView({ block: "start" }));
+    await page.screenshot({ path: path.join(evidence ?? root, "style-entry-mobile-dark.png") });
+    await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
+    await page.locator('.workspace-tools-backdrop').click(); await page.waitForSelector('#workspace-tools', { hidden: true });
+    await page.locator('.rail-button[aria-label="帮助"]').click(); await page.locator('button[aria-label="切换浅色主题"]').click(); await page.keyboard.press("Escape");
+    // Opening a tool switches the studio to its workspace view, whose "more" menu is collapsed.
+    await page.locator('.workspace-more > summary').click();
+    await page.locator('.workspace-more button::-p-text(更多创作选项)').click(); await page.waitForSelector('#workspace-tools', { visible: true });
+    expect(await page.$eval("html", e => e.getAttribute("data-theme"))).toBe("light");
+    await page.$eval('[aria-label="风格样片目录"]', element => element.scrollIntoView({ block: "center" }));
+    await page.screenshot({ path: path.join(evidence ?? root, "style-entry-desktop-light.png") });
+    await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+    await page.$eval('[aria-label="风格样片目录"]', element => element.scrollIntoView({ block: "start" }));
+    await page.screenshot({ path: path.join(evidence ?? root, "style-entry-mobile-light.png") });
+    await page.locator('[aria-label="风格样片目录"] button::-p-text(使用「海报大字」)').click();
+    expect(await page.$eval('[aria-label="风格"]', element => (element as HTMLSelectElement).value)).toBe("bold-poster");
+    await page.$eval('[aria-label="创作资料"]', element => { const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!; setter.call(element, "# 本地测试\n\n这是用于检查风格试片的原创示例。"); element.dispatchEvent(new Event("input", { bubbles: true })); });
+    await page.locator('button::-p-text(生成分镜)').click();
+    await page.waitForSelector('[aria-label="共享工程编辑"]', { timeout: 30000 });
+    await openInspector(page); await page.locator('[aria-label="属性面板"] button::-p-text(画面)').click();
+    await page.locator('[aria-label="风格包"] summary').click();
+    await page.waitForSelector('[aria-label="当前工程风格试片"]');
+    console.log("试片提交前");
+    await page.locator('[aria-label="当前工程风格试片"] button::-p-text(生成当前工程试片)').click();
+    console.log("试片已提交，等待完成");
+    await page.waitForFunction(() => document.querySelector('[aria-label="当前工程风格试片"]')?.textContent?.includes("已完成"), { timeout: 60000 });
+    console.log("界面显示完成");
+    const video = await page.$eval('[aria-label="当前工程试片"]', element => element.getAttribute("src") ?? "");
+    const trialVideo = '[aria-label="当前工程试片"]';
+    await page.$eval(trialVideo, element => element.scrollIntoView({ block: "center" }));
+    await page.waitForFunction(selector => (document.querySelector(selector) as HTMLVideoElement)?.readyState >= 2, { timeout: 30000 }, trialVideo);
+    const box = await (await page.$(trialVideo))!.boundingBox();
+    if (!box) throw new Error("试片播放器不在视口中");
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForFunction(selector => { const v = document.querySelector(selector) as HTMLVideoElement; return !v.paused && v.currentTime > 0.5; }, { timeout: 10000 }, trialVideo);
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    expect(await page.$eval(trialVideo, element => (element as HTMLVideoElement).paused)).toBe(true);
+    await page.screenshot({ path: path.join(evidence ?? root, "style-trial-playing-paused.png") });
+    const result = await page.evaluate(async url => {
+      const response = await fetch(url);
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      return { status: response.status, length: bytes.length, signature: String.fromCharCode(...bytes.slice(4, 8)) };
+    }, video);
+    expect(result.status).toBe(200);
+    expect(result.signature).toBe("ftyp"); expect(result.length).toBeGreaterThan(1000);
+    expect(submissions).toHaveLength(1);
+    const body = JSON.parse(submissions[0]!);
+    expect(body.project.theme).toBe("bold-poster"); expect(body.tts).toBe("mock"); expect(body.music).toBe("off");
+    expect(errors).toEqual([]);
+    console.log(`真实试片 ${video}，${result.length} 字节，主题 ${body.project.theme}`);
+  } finally { await opened?.browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+}, 300000);

@@ -6,13 +6,14 @@ import { composeWithLlm } from "./llm";
 import type { SceneScriptProject } from "@glintai/scenescript";
 import { templateById } from "./templates";
 import { validateComposerOptions } from "./heuristic";
+import { createCreativeBrief, creativeBriefPrompt, type CreativeBrief } from "./creative-brief";
 
 export interface SourceInput {
   /** UTF-8 md/txt/html/json/csv or a text PDF file; relative to the caller's cwd. */
   path?: string;
   /** http(s) page or pdf. */
   url?: string;
-  /** One-sentence idea — expanded into a teaching outline by the LLM. */
+  /** Creative request — expanded without discarding the original intent. */
   idea?: string;
   /** Repository directory — surveyed into a code-walkthrough outline. */
   code?: string;
@@ -20,9 +21,10 @@ export interface SourceInput {
 
 export interface ComposedSource {
   project: SceneScriptProject;
-  /** The teaching document the scenes were composed from (audit trail). */
+  /** The material the scenes were composed from (audit trail). */
   sourceText: string;
   sourceName: string;
+  creativeBrief?: CreativeBrief;
 }
 
 /**
@@ -40,10 +42,36 @@ function withDefaultMotion(project: SceneScriptProject): SceneScriptProject {
 }
 
 const IDEA_SYSTEM = [
-  "你是一支讲解视频的编剧。把用户的一句话想法,扩写成一份可以直接拍摄的中文教学文档。",
-  "要求:Markdown;一个 H1 标题;4-6 个 H2 小节;每小节 2-4 句;用具体例子和类比;不编造事实性数据。",
-  "如果想法是英文,则全文用英文。",
+  "你是 Glint 的编剧。把用户创作要求扩写成可拍摄的 Markdown 内容稿，而不是一律写成教学文档。",
+  "用一个 H1 标题；按意图安排必要的段落或镜头节拍，H2 与篇幅按内容需要，不固定小节数，不因输入短就套课件，不因输入长就重复。",
+  "语言跟随原始要求：英文输入用英文，明确指定语言时按指定语言。保留品牌名、原句、时长、语气和风格限制。",
+  "分清可说的内容与画面构想；有必要时将视觉意象标成画面建议，不把导演说明写成旁白。",
+  "可以创造文案、视觉类比与情绪节奏，不能编造事实、数值、引语、效果保证或真实案例；缺少产品参数时不要替用户补卖点。",
+  "画面应能用现有 title/comparison/diagram/chart/image 与可编辑文字、形状表达：图表只用已给数字，image 只用已提供真实本地素材；无素材则描述构图，不承诺生成图片。禁止要求 HTML、脚本或 3D。",
 ].join("\n");
+
+export async function expandIdeaToSource(
+  originalRequest: string,
+  llm: LlmProvider,
+  options: ComposerOptions = {},
+  signal?: AbortSignal,
+): Promise<{ sourceText: string; creativeBrief: CreativeBrief }> {
+  validateComposerOptions(options);
+  const creativeBrief = createCreativeBrief(originalRequest);
+  signal?.throwIfAborted();
+  const template = templateById(options.template);
+  const response = await llm.chat({
+    system: [IDEA_SYSTEM, creativeBriefPrompt(creativeBrief), `Output options: ${JSON.stringify(options)}`,
+      template ? `显式模板结构合同：${JSON.stringify(template)}。仅使用有依据的资料满足结构，不得为了通过模板虚构结果、日期、代码或案例。` : "未指定模板，按原指令选创作结构，不默认 explainer。",
+    ].join("\n"),
+    temperature: 0.7,
+    timeoutMs: 150_000,
+    signal,
+    messages: [{ role: "user", content: originalRequest }],
+  });
+  signal?.throwIfAborted();
+  return { sourceText: response.text, creativeBrief };
+}
 
 export async function composeFromSource(
   input: SourceInput,
@@ -72,15 +100,9 @@ export async function composeFromSource(
         "--idea needs an LLM. Set GLINT_LLM_* env vars, or pass a --source file instead.",
       );
     }
-    const response = await llm.chat({
-      system: `${IDEA_SYSTEM}\n选定模板及资料结构要求：${JSON.stringify(templateById(options.template) ?? "explainer")}。不具备资料依据的实验结果、案例、日期不得编造，资料不足时明确指出。`,
-      temperature: 0.7,
-      timeoutMs: 150_000,
-      signal: sourceOptions.signal,
-      messages: [{ role: "user", content: input.idea }],
-    });
-    const project = withDefaultMotion(await composeWithLlm(response.text, llm, options, { signal: sourceOptions.signal }));
-    return { project, sourceText: response.text, sourceName: "idea.md" };
+    const { sourceText, creativeBrief } = await expandIdeaToSource(input.idea, llm, options, sourceOptions.signal);
+    const project = withDefaultMotion(await composeWithLlm(sourceText, llm, options, { signal: sourceOptions.signal, creativeBrief }));
+    return { project, sourceText, sourceName: "idea.md", creativeBrief };
   }
   if (input.path || input.url) {
     const text = await readSourceText({ path: input.path, url: input.url }, sourceOptions);

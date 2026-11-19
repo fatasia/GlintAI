@@ -39,10 +39,27 @@ describe("CSV → chart scenes, zero configuration", () => {
     if (big.scenes[0]!.kind !== "chart") throw new Error("Expected chart scene");
     expect(big.scenes[0]!.data).toHaveLength(24); expect(big.warnings.join()).toContain("截断");
   });
+  it("reports every lossy table conversion and keeps full source untouched", () => {
+    const label = "长标签".repeat(10), series = "系列名称".repeat(5);
+    const source = `名称,一,${series},三,四,五,六,七\n${label},1,2,3,4,5,6,7`;
+    const result = csv(source);
+    expect(result.warnings.join(" ")).toContain("标签超过 24");
+    expect(result.warnings.join(" ")).toContain("系列名称超过 16");
+    expect(result.warnings.join(" ")).toContain("1 列未用于图表");
+    expect(result.scenes).toHaveLength(6);
+    expect(result.scenes[0]!.kind === "chart" && result.scenes[0]!.data[0]!.label).toBe(label.slice(0, 24));
+    expect(source).toContain(label);
+  });
   it("throws actionable errors on single-column and broken tables", () => {
     expect(() => csv("只有一列\n没有数字")).toThrow(/数值列/);
     expect(() => csv("a,b\n1")).toThrow(/数值列|数据行/);
     expect(() => csv("label,value\n甲,不是数字")).toThrow(/数值列/);
+  });
+  it("rejects out-of-range numbers before creating scenes, including secondary and truncated rows", () => {
+    expect(() => csv("项目,数量\nA,1000000000001")).toThrow(/超出图表范围/);
+    expect(() => csv("项目,数量,利润\nA,1,-1000000000001")).toThrow(/利润.*超出图表范围/);
+    expect(() => csv("项目,数量\n" + Array.from({ length: 24 }, (_, i) => `行${i},1`).join("\n") + "\n末行,1000000000001")).toThrow(/超出图表范围/);
+    expect(csv("项目,数量\nA,-1000000000000\nB,1000000000000").scenes).toHaveLength(1);
   });
   it("reads CSV quoting, BOM, escaped quotes and embedded newlines", () => {
     const result = csv('\uFEFF品类,数量\r\n"手机,\"\"旗舰\"\"",10\r\n"跨\n行",20');

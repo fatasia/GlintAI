@@ -1,3 +1,5 @@
+import { applicationUrl } from "./app-url";
+import { appFetch as fetch } from "./app-url";
 import { useEffect, useState, type CSSProperties } from "react";
 import {
   parsePersonaCatalog,
@@ -38,9 +40,9 @@ export function PersonaLibrary({ cardStyle }: { cardStyle: CSSProperties }) {
           style={{
             padding: 12,
             borderRadius: 8,
-            border: "1px solid #35414e",
-            background: "#141b24",
-            color: "#f2f6fa",
+            border: "1px solid var(--line-2)",
+            background: "var(--ink-2)",
+            color: "#f5f3f7",
             minWidth: 0,
           }}
         />
@@ -54,7 +56,7 @@ export function PersonaLibrary({ cardStyle }: { cardStyle: CSSProperties }) {
           .map((entry) => (
             <article
               key={entry.id}
-              style={{ borderTop: "1px solid #35414e", paddingTop: 16 }}
+              style={{ borderTop: "1px solid var(--line-2)", paddingTop: 16 }}
             >
               <div
                 style={{
@@ -66,7 +68,7 @@ export function PersonaLibrary({ cardStyle }: { cardStyle: CSSProperties }) {
               >
                 <strong>{entry.title}</strong>
                 <a
-                  href={`/api/personas/${entry.id}`}
+                  href={applicationUrl(`/api/personas/${entry.id}`)}
                   download
                   style={{ color: "#aecef6" }}
                 >

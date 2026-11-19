@@ -7,7 +7,7 @@ export interface TaskPlan { version: 1; title: string; steps: TaskStep[] }
 export interface StepRecord { state: "pending" | "running" | "completed" | "failed"; attempts: number; error?: string; artifacts?: { path: string; sha256: string }[] }
 export interface TaskJournal { version: 1; planDigest: string; steps: Record<string, StepRecord>; updatedAt: string }
 const digest = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
-const allowedTools = new Set(["review", "insights", "render-native", "render", "lint", "qa", "deck", "srt", "check", "rehearse", "reexplain", "ask", "media"]);
+const allowedTools = new Set(["build", "review", "insights", "render-native", "render", "lint", "qa", "deck", "srt", "check", "rehearse", "reexplain", "ask", "media", "recipe-materialize", "recipe-export", "recipe-qa"]);
 
 export function validateTaskPlan(value: unknown): TaskPlan {
   const plan = value as TaskPlan;
@@ -34,7 +34,7 @@ function atomicJson(file: string, value: unknown) {
 export async function executeTaskPlan(options: {
   plan: TaskPlan; directory: string; baseDir: string;
   execute: (step: TaskStep, event: (message: string) => void) => Promise<void>;
-  signal?: AbortSignal;
+  signal?: AbortSignal; beforeStep?: (step: TaskStep, record: Readonly<StepRecord>) => void;
 }) {
   const plan = validateTaskPlan(options.plan), directory = path.resolve(options.directory);
   fs.mkdirSync(directory, { recursive: true });
@@ -52,6 +52,7 @@ export async function executeTaskPlan(options: {
     for (const step of plan.steps) {
       options.signal?.throwIfAborted();
       const record = journal.steps[step.id] ??= { state: "pending", attempts: 0 };
+      options.beforeStep?.(step, record);
       const outputs = step.outputs.map(file => path.resolve(options.baseDir, file));
       if (record.state === "completed") {
         const intact = outputs.length > 0 && record.artifacts?.length === outputs.length && record.artifacts.every((artifact, i) => artifact.path === outputs[i] && fs.existsSync(artifact.path) && digest(fs.readFileSync(artifact.path)) === artifact.sha256);

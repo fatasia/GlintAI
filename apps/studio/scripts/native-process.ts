@@ -2,10 +2,26 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
+// 受控进程台账：取消/超时排查需要确知归属的原生进程记录。pid 来自本进程
+// 自己的 spawn 返回值，绝不来自系统枚举——DELIVER-02 事故（2026-10-27）证明
+// 按 PID 枚举推断归属会误伤外部进程，台账只用于只读核查，不用于清理。
+let ledgerBroken = false;
+export function recordProcessLedger(command: string, pid: number | undefined, args: string[]) {
+  const ledger = process.env.GLINT_PROCESS_LEDGER;
+  if (!ledger || ledgerBroken || pid === undefined) return;
+  try {
+    fs.appendFileSync(ledger, JSON.stringify({ pid, command, argv: [command, ...args], at: new Date().toISOString() }) + "\n");
+  } catch (error) {
+    ledgerBroken = true;
+    console.error(`[glint] process ledger disabled: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 export function runMediaProcess(command: string, args: string[], options: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<void> {
   options.signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["ignore", "ignore", "pipe"], shell: false });
+    recordProcessLedger(command, child.pid, args);
     let stderr = "";
     const abort = () => child.kill();
     options.signal?.addEventListener("abort", abort, { once: true });
@@ -36,7 +52,9 @@ export interface PngEncoder { write(frame: Uint8Array): Promise<void>; finish():
 /** Streams PNG frames straight into x264 — no per-frame temp files on disk. */
 export function startPngEncoder(options: { fps: number; frameRateText?: string; crf: number; preset: string; output: string; signal?: AbortSignal }): PngEncoder {
   options.signal?.throwIfAborted();
-  const child = spawn("ffmpeg", ["-v", "error", "-y", "-f", "image2pipe", "-framerate", options.frameRateText ?? String(options.fps), "-i", "-", "-c:v", "libx264", "-preset", options.preset, "-crf", String(options.crf), "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an", options.output], { stdio: ["pipe", "ignore", "pipe"], shell: false });
+  const args = ["-v", "error", "-y", "-f", "image2pipe", "-framerate", options.frameRateText ?? String(options.fps), "-i", "-", "-c:v", "libx264", "-preset", options.preset, "-crf", String(options.crf), "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an", options.output];
+  const child = spawn("ffmpeg", args, { stdio: ["pipe", "ignore", "pipe"], shell: false });
+  recordProcessLedger("ffmpeg", child.pid, args);
   let stderr = "", bytes = 0, failed = false, pipeError: Error | undefined;
   const done = new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => child.kill(), 600000);

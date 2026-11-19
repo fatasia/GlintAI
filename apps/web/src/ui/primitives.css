@@ -1,0 +1,101 @@
+/* Shared primitives. Every value comes from tokens.css. */
+
+/* ── Button ─────────────────────────────────────────────────────────── */
+.g-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--g-sp-3);
+  height: var(--g-control-h); padding: 0 var(--g-sp-6);
+  border: 1px solid transparent; border-radius: var(--g-r-2);
+  font: var(--g-fw-medium) var(--g-fs-3)/1 var(--g-font);
+  white-space: nowrap; cursor: pointer; user-select: none;
+  transition: background var(--g-dur-1) var(--g-ease), border-color var(--g-dur-1) var(--g-ease),
+    color var(--g-dur-1) var(--g-ease), transform var(--g-dur-1) var(--g-ease);
+}
+.g-button:active:not(:disabled) { transform: translateY(1px); }
+.g-button:disabled { opacity: .45; cursor: not-allowed; }
+.g-button--sm { height: var(--g-control-h-sm); padding: 0 var(--g-sp-5); font-size: var(--g-fs-2); }
+.g-button-icon { display: inline-flex; margin-left: calc(var(--g-sp-2) * -1); }
+.g-button--primary { background: var(--g-accent); color: var(--g-on-accent); font-weight: var(--g-fw-semibold); }
+.g-button--primary:hover:not(:disabled) { background: var(--g-accent-hover); }
+.g-button--primary:active:not(:disabled) { background: var(--g-accent-press); }
+.g-button--secondary { background: var(--g-bg-2); border-color: var(--g-line-2); color: var(--g-fg-1); }
+.g-button--secondary:hover:not(:disabled) { background: var(--g-bg-3); border-color: var(--g-line-3); }
+.g-button--ghost { background: transparent; color: var(--g-fg-2); }
+.g-button--ghost:hover:not(:disabled) { background: var(--g-bg-3); color: var(--g-fg-1); }
+
+/* ── Segmented control ──────────────────────────────────────────────── */
+.g-segmented {
+  display: inline-flex; padding: 2px; gap: 2px;
+  border-radius: var(--g-r-2); background: var(--g-bg-0);
+  border: 1px solid var(--g-line-1);
+}
+.g-segmented > button {
+  height: 26px; padding: 0 var(--g-sp-5);
+  border: 0; border-radius: var(--g-r-1);
+  background: transparent; color: var(--g-fg-3);
+  font: var(--g-fw-medium) var(--g-fs-2)/1 var(--g-font);
+  cursor: pointer; transition: background var(--g-dur-1) var(--g-ease), color var(--g-dur-1) var(--g-ease);
+}
+.g-segmented > button:hover { color: var(--g-fg-1); }
+.g-segmented > button[aria-pressed="true"], .g-segmented > button[aria-selected="true"] {
+  background: var(--g-bg-3); color: var(--g-fg-1); box-shadow: var(--g-shadow-1);
+}
+
+/* ── Tooltip ────────────────────────────────────────────────────────── */
+.g-tooltip {
+  z-index: var(--g-z-toast);
+  display: grid; gap: 2px;
+  max-width: 260px; padding: var(--g-sp-3) var(--g-sp-5);
+  border: 1px solid var(--g-line-2); border-radius: var(--g-r-2);
+  background: var(--g-bg-2); color: var(--g-fg-1);
+  box-shadow: var(--g-shadow-2);
+  font-size: var(--g-fs-2); line-height: var(--g-lh-ui);
+  animation: g-pop-in var(--g-dur-2) var(--g-ease);
+}
+.g-tooltip strong { font-weight: var(--g-fw-semibold); }
+.g-tooltip span { color: var(--g-fg-3); }
+
+/* ── Popover ────────────────────────────────────────────────────────── */
+.g-popover {
+  z-index: var(--g-z-popover);
+  min-width: 220px; padding: var(--g-sp-3);
+  border: 1px solid var(--g-line-2); border-radius: var(--g-r-3);
+  background: var(--g-bg-2); color: var(--g-fg-1);
+  box-shadow: var(--g-shadow-3);
+  animation: g-pop-in var(--g-dur-2) var(--g-ease);
+}
+.g-popover:focus-visible { outline: none; }
+
+@keyframes g-pop-in {
+  from { opacity: 0; transform: translateY(2px) scale(.98); }
+  to { opacity: 1; transform: none; }
+}
+
+.g-link { color: var(--g-accent-text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--g-accent-text) 45%, transparent); transition: text-decoration-color var(--g-dur-1) var(--g-ease); }
+.g-link:hover { text-decoration-color: currentColor; }
+/* ── Command palette ── */
+.g-overlay { position: fixed; inset: 0; z-index: var(--g-z-dialog); background: var(--g-overlay); animation: g-fade-in var(--g-dur-2) var(--g-ease); }
+.g-palette {
+  position: fixed; z-index: var(--g-z-dialog); top: 14vh; left: 50%;
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(560px, calc(100vw - 32px)); max-height: min(520px, 72vh);
+  border: 1px solid var(--g-line-2); border-radius: var(--g-r-4);
+  background: var(--g-bg-2); color: var(--g-fg-1); box-shadow: var(--g-shadow-3);
+  transform: translateX(-50%); overflow: hidden;
+  animation: g-palette-in var(--g-dur-2) var(--g-ease);
+}
+.g-palette:focus-visible { outline: none; }
+.g-palette-search { display: flex; align-items: center; gap: var(--g-sp-5); padding: 0 var(--g-sp-6); border-bottom: 1px solid var(--g-line-1); color: var(--g-fg-3); }
+.g-palette-search input { flex: 1; min-width: 0; height: 52px; border: 0; outline: none; background: transparent; color: var(--g-fg-1); font: var(--g-fw-regular) var(--g-fs-5) var(--g-font); }
+.g-palette-search input::placeholder { color: var(--g-fg-3); }
+.g-palette-list { overflow: auto; padding: var(--g-sp-3); overscroll-behavior: contain; }
+.g-palette-group { padding: var(--g-sp-4) var(--g-sp-5) var(--g-sp-2); color: var(--g-fg-3); font-size: var(--g-fs-1); font-weight: var(--g-fw-medium); letter-spacing: .04em; }
+.g-palette-item { display: flex; align-items: center; justify-content: space-between; gap: var(--g-sp-5); min-height: 36px; padding: 0 var(--g-sp-5); border-radius: var(--g-r-2); color: var(--g-fg-2); font-size: var(--g-fs-4); cursor: pointer; }
+.g-palette-item[aria-selected="true"] { background: var(--g-accent-soft); color: var(--g-fg-1); box-shadow: inset 2px 0 0 var(--g-accent); }
+.g-palette-item > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g-palette kbd { padding: 1px 6px; border: 1px solid var(--g-line-2); border-radius: var(--g-r-1); background: var(--g-bg-1); color: var(--g-fg-3); font: var(--g-fw-medium) var(--g-fs-1) var(--g-font-mono); }
+.g-palette-empty { margin: 0; padding: var(--g-sp-8) var(--g-sp-5); color: var(--g-fg-3); font-size: var(--g-fs-3); text-align: center; }
+.g-palette-foot { display: flex; gap: var(--g-sp-7); padding: var(--g-sp-4) var(--g-sp-6); border-top: 1px solid var(--g-line-1); color: var(--g-fg-3); font-size: var(--g-fs-2); }
+.g-palette-foot kbd + kbd { margin-left: var(--g-sp-2); }
+
+@keyframes g-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes g-palette-in { from { opacity: 0; transform: translateX(-50%) translateY(-6px) scale(.985); } to { opacity: 1; transform: translateX(-50%); } }

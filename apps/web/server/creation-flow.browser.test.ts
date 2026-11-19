@@ -1,3 +1,4 @@
+import { openInspector } from "./browser-workspace-helpers";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -12,7 +13,7 @@ import { findSystemBrowser, openCaptureBrowser } from "../../studio/scripts/dire
 import { createWebServer } from "./index.mjs";
 import { createMediaJobs } from "./media-jobs.mjs";
 
-const dist = fileURLToPath(new URL("../dist", import.meta.url));
+const dist = process.env.GLINT_TEST_WEB_DIST ?? fileURLToPath(new URL("../dist", import.meta.url));
 let browserAvailable = false;
 try { findSystemBrowser(); browserAvailable = true; } catch { /* No implicit downloads. */ }
 // Opt-in: requires an explicitly fresh production build, never tests an arbitrary old dist.
@@ -31,11 +32,7 @@ it.skipIf(process.env.GLINT_BROWSER_UI_TEST !== "1" || !browserAvailable)("creat
     const page = opened.page, errors: string[] = [];
     page.on("pageerror", error => errors.push(String(error)));
     await page.goto(url, { waitUntil: "networkidle0" });
-    // The advanced panel is a native disclosure; click it in page context so
-    // Puppeteer's actionability scroll cannot race the long home page.
-    await page.evaluate(() => [...document.querySelectorAll<HTMLElement>("summary")].find(element => element.textContent?.includes("高级编辑"))!.click());
-    await page.waitForFunction(() => [...document.querySelectorAll<HTMLElement>("summary")].some(element => element.textContent?.includes("从模板开始") && element.getBoundingClientRect().height > 0));
-    await page.evaluate(() => [...document.querySelectorAll<HTMLElement>("summary")].find(element => element.textContent?.includes("从模板开始"))!.click());
+    await page.locator('button::-p-text(浏览模板)').click();
     await page.locator('[aria-label="创作包目录"] button').filter(element => element.textContent?.includes("12 秒产品发布")).click();
     await page.evaluate(() => document.querySelector('input[aria-label="产品名称"]')?.scrollIntoView({ block: "center" }));
     await page.locator('input[aria-label="产品名称"]').fill("浏览器验收商品");
@@ -44,71 +41,46 @@ it.skipIf(process.env.GLINT_BROWSER_UI_TEST !== "1" || !browserAvailable)("creat
     await page.locator('button::-p-text(用这个创作)').click();
     await page.waitForFunction(() => document.querySelector('[aria-label="分镜编辑器"]')?.textContent?.includes("3 个分镜"));
     await page.waitForFunction(() => document.querySelector('[aria-label="共享工程编辑"] [role="status"]')?.textContent?.includes("已连接") || document.querySelector('[aria-label="Agent 上下文"]')?.textContent?.includes("r0"));
-    await page.locator('[aria-label="属性面板"] button::-p-text(声音)').click();
+    await openInspector(page); await page.locator('[aria-label="属性面板"] button::-p-text(声音)').click();
     await page.waitForSelector('input[aria-label="旁白偏移"]');
-    await page.locator('[aria-label="属性面板"] button::-p-text(改稿)').click();
+    await openInspector(page); await page.locator('[aria-label="属性面板"] button::-p-text(改稿)').click();
     await page.waitForFunction(() => document.body.innerText.includes("剧本质量"));
-    await page.locator('input[aria-label="分镜修改指令"]').fill("稍后修改标题，保留其他内容");
+    await page.locator('textarea[aria-label="分镜修改指令"]').fill("稍后修改标题，保留其他内容");
     await page.locator('[aria-label="工作区视图"] button::-p-text(创意)').click();
-    await page.waitForSelector('[aria-label="镜头画布"] .react-flow__node[data-id="selling-points"]');
-    const sellingPoint = await page.evaluate(() => { const el = document.querySelector('[aria-label="镜头画布"] .react-flow__node[data-id="selling-points"]'); const all = [...document.querySelectorAll('[aria-label="镜头画布"] .react-flow__node')].map(n => n.getAttribute('data-id')); if (el) el.scrollIntoView({ block: "center" }); const rect = el ? el.getBoundingClientRect() : null; return { point: rect ? { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 } : null, all, hasCanvas: Boolean(document.querySelector('[aria-label="镜头画布"]')) }; });
-    if (!sellingPoint.point) throw new Error("selling-points node missing");
-    await page.mouse.click(sellingPoint.point.x, sellingPoint.point.y);
-    await page.waitForFunction(() => document.querySelector('[aria-label="镜头属性"]')?.textContent?.includes('selling-points'));
-    const launchTitle = await page.evaluate(() => { const el = document.querySelector('[aria-label="镜头画布"] .react-flow__node[data-id="launch-title"]'); el?.scrollIntoView({ block: "center" }); const rect = el?.getBoundingClientRect(); return rect ? { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 } : null; });
-    if (!launchTitle) throw new Error("launch-title node missing");
-    await page.mouse.click(launchTitle.x, launchTitle.y);
-    await page.waitForFunction(() => document.querySelector('[aria-label="镜头属性"]')?.textContent?.includes('launch-title'));
-    const node = await page.$('[aria-label="镜头画布"] .react-flow__node[data-id="launch-title"]');
-    await node!.scrollIntoView();
-    const dragLaunchTitle = async () => {
-      const current = await page.$('[aria-label="镜头画布"] .react-flow__node[data-id="launch-title"]');
-      const bounds = await current?.boundingBox();
-      if (!bounds) throw new Error('Scene card has no visible bounds');
-      await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + 30);
-      await page.mouse.down();
-      await new Promise(resolve => setTimeout(resolve, 80));
-      await page.mouse.move(bounds.x + bounds.width / 2 + 60, bounds.y + 70, { steps: 12 });
-      await new Promise(resolve => setTimeout(resolve, 120));
-      await page.mouse.move(bounds.x + bounds.width / 2 + 61, bounds.y + 71, { steps: 2 });
-      await page.mouse.up();
-    };
-    const boardSaved = () => page.evaluate(() => Object.keys(localStorage).some(key => key.startsWith('glint.scene-board:')));
-    await dragLaunchTitle();
-    await new Promise(resolve => setTimeout(resolve, 400));
-    // Under parallel CPU load the first press can land before React Flow marks
-    // the pointer as a drag; retry once instead of asserting on a lost event.
-    if (!(await boardSaved())) await dragLaunchTitle();
-    await page.waitForFunction(() => Object.keys(localStorage).some(key => key.startsWith('glint.scene-board:')));
+    const board = '[aria-label="项目画布"]';
+    await page.waitForSelector(`${board} .react-flow__node[data-id="scene:launch-title"]`, {visible:true});
+    const card = await page.$(`${board} .react-flow__node[data-id="scene:launch-title"]`);
+    const rect = await card!.boundingBox(); if (!rect) throw new Error("Scene card is not visible");
+    await page.mouse.move(rect.x + 90, rect.y + 40); await page.mouse.down();
+    await page.mouse.move(rect.x + 150, rect.y + 80, {steps:12}); await page.mouse.up();
+    await page.waitForFunction(() => Object.keys(localStorage).some(key => key.startsWith('glint:project-board:v1:')));
     expect(sessions.snapshot(sessions.list()[0]!.projectId).look.revision).toBe(0);
-    await page.locator('[aria-label="镜头画布"] button::-p-text(自动整理)').click();
+    await page.locator(`${board} button::-p-text(整理)`).click();
     if (process.env.GLINT_UI_SCREENSHOT_DIR) {
-      const directory = path.resolve(process.env.GLINT_UI_SCREENSHOT_DIR); fs.mkdirSync(directory, { recursive: true });
-      await page.locator('[aria-label="镜头画布"] button::-p-text(看全画布)').click();
-      await page.screenshot({ path: path.join(directory, 'scene-board-1280.png') as `${string}.png` });
-      await page.setViewport({ width: 480, height: 900 });
-      await page.waitForSelector('[aria-label="镜头列表"]');
-      await page.locator('[aria-label="镜头列表"] button').filter(element => element.textContent?.includes('镜头 1')).click();
-      await page.screenshot({ path: path.join(directory, 'scene-board-480.png') as `${string}.png` });
+      const directory = path.resolve(process.env.GLINT_UI_SCREENSHOT_DIR); fs.mkdirSync(directory, {recursive:true});
+      await page.screenshot({path:path.join(directory,'project-board-1280.png') as `${string}.png`});
+      await page.setViewport({width:480,height:900});
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
-      await page.setViewport({ width: 1280, height: 900 });
+      await page.screenshot({path:path.join(directory,'project-board-480.png') as `${string}.png`});
+      await page.setViewport({width:1280,height:900});
     }
-    await page.locator('[aria-label="工作区视图"] button::-p-text(作品)').click();
-    expect(await page.$eval('input[aria-label="分镜修改指令"]', input => (input as HTMLInputElement).value)).toBe("稍后修改标题，保留其他内容");
+    await page.locator(`${board} .react-flow__node[data-id="scene:launch-title"] button`).click();
+    await page.waitForSelector('.glint-editor[data-view="video"]', {visible:true});
+    expect(await page.$eval('textarea[aria-label="分镜修改指令"]', input => (input as HTMLInputElement).value)).toBe("稍后修改标题，保留其他内容");
     expect(await page.$$('[aria-label="创作助手"]')).toHaveLength(1);
-    await page.locator('[aria-label="属性面板"] button::-p-text(画面)').click();
+    await openInspector(page); await page.locator('[aria-label="属性面板"] button::-p-text(画面)').click();
     await page.locator('[aria-label="画面风格"] button::-p-text(黑白)').click();
     await page.waitForFunction(() => document.querySelector('[aria-label="画面风格"] [role="status"]')?.textContent?.includes("已应用黑白"));
     await page.waitForFunction(() => document.querySelector('[aria-label="Agent 上下文"]')?.textContent?.includes("r1"));
     await page.waitForFunction(() => Boolean(document.querySelector('[aria-label="分镜编辑器"] svg filter[id^="glint-fx-preview-"]')), { timeout: 30_000 });
     // Native browser UI and actual Remotion preview are mounted, not a DOM-only mock.
-    await page.locator('[aria-label="分镜编辑器"] button::-p-text(撤销)').click();
+    await page.locator('[aria-label="分镜编辑器"] button[aria-label="撤销"]').click();
     await page.waitForFunction(() => document.querySelector('[aria-label="画面风格"]')?.textContent?.includes("当前为原色"));
     await page.waitForFunction(() => document.querySelector('[aria-label="Agent 上下文"]')?.textContent?.includes("r2"));
     const current = sessions.list()[0]!;
     expect(parseProject(sessions.snapshot(current.projectId).snapshot.document).scenes[0]!.effects).toBeUndefined();
     expect(errors).toEqual([]);
-    await page.locator('[aria-label="属性面板"] button::-p-text(内容)').click();
+    await openInspector(page); await page.locator('[aria-label="属性面板"] button::-p-text(内容)').click();
     await page.locator('[aria-label="分镜编辑器"] summary::-p-text(存为创作包)').click();
     await page.locator('input[aria-label="创作包作者"]').fill('Browser author');
     await page.locator('input[aria-label="确认创作包权利与隐私"]').click();
@@ -118,7 +90,7 @@ it.skipIf(process.env.GLINT_BROWSER_UI_TEST !== "1" || !browserAvailable)("creat
     expect(savedPacks).toHaveLength(1); expect(savedPacks[0].author).toBe('Browser author');
     expect(sessions.snapshot(current.projectId).look.revision).toBe(2);
     // Real library bytes -> candidate preview -> explicit adoption -> same-origin preview URL.
-    await page.locator('[aria-label="属性面板"] button::-p-text(生成)').click();
+    await openInspector(page); await page.locator('[aria-label="属性面板"] button::-p-text(生成)').click();
     await page.locator('[aria-label="分镜编辑器"] details summary::-p-text(素材候选)').click();
     await page.waitForSelector('[aria-label="可采用素材"] button');
     await page.locator('[aria-label="可采用素材"] button').filter(element => element.textContent?.includes('candidate.png')).click();
@@ -130,11 +102,11 @@ it.skipIf(process.env.GLINT_BROWSER_UI_TEST !== "1" || !browserAvailable)("creat
     // The shot strip shows the real library frame, not just a number.
     await page.waitForFunction(() => Boolean(document.querySelector('[aria-label="分镜时间线"] img[src="/api/media/assets/candidate.png"]')));
     await page.waitForFunction(() => Boolean(document.querySelector('[aria-label="分镜编辑器"] img[src="/api/media/assets/candidate.png"]')), { timeout: 30_000 });
-    await page.locator('[aria-label="分镜编辑器"] button::-p-text(撤销)').click();
+    await page.locator('[aria-label="分镜编辑器"] button[aria-label="撤销"]').click();
     await page.waitForFunction(() => document.querySelector('[aria-label="分镜编辑器"]')?.textContent?.includes("3 个分镜"));
     await page.waitForFunction(() => document.querySelector('[aria-label="Agent 上下文"]')?.textContent?.includes("r4"));
     // Project-level style: applying a pack changes the theme, keeps scenes, and is undoable.
-    await page.locator('[aria-label="属性面板"] button::-p-text(画面)').click();
+    await openInspector(page); await page.locator('[aria-label="属性面板"] button::-p-text(画面)').click();
     await page.waitForSelector('[aria-label="可选风格包"] button', { timeout: 15_000 });
     await page.evaluate(() => {
       const details = document.querySelector<HTMLDetailsElement>('[aria-label="风格包"]')!;
@@ -154,12 +126,13 @@ it.skipIf(process.env.GLINT_BROWSER_UI_TEST !== "1" || !browserAvailable)("creat
     });
     await page.waitForFunction(() => document.querySelector('[aria-label="Agent 上下文"]')?.textContent?.includes("r6"));
     expect(parseProject(sessions.snapshot(current.projectId).snapshot.document).theme).not.toBe("cream-editorial");
-    // Same workbench: the creative view keeps a live preview beside the canvas.
+    // The project overview keeps scene cards; opening a card returns to its editable shot.
     await page.evaluate(() => [...document.querySelectorAll<HTMLButtonElement>('[aria-label="工作区视图"] button')].find(button => button.textContent === "创意")!.click());
     await page.waitForSelector('[aria-label="创意工作区"] .react-flow__node');
-    await page.waitForFunction(() => document.querySelector('[aria-label="画布预览"]')?.textContent?.includes("三个卖点"), { timeout: 30_000 });
+    await page.locator('summary::-p-text(镜头顺序与素材采用)').click();
+    expect(await page.$eval('[aria-label="项目画布"]', element => element.textContent)).toContain("三个卖点");
     // Library material appears on the same canvas and is adopted only on an explicit click.
-    await page.evaluate(() => [...document.querySelectorAll<HTMLButtonElement>('[aria-label="创意工作区"] button')].find(button => button.textContent === "显示素材")!.click());
+    await page.locator('[aria-label="创意工作区"] button::-p-text(显示素材)').click();
     await page.waitForSelector('[aria-label="素材节点"]');
     await page.evaluate(() => document.querySelector<HTMLElement>('[aria-label="素材节点"]')!.click());
     await page.waitForFunction(() => document.querySelector('[aria-label="素材详情"]')?.textContent?.includes("candidate.png"));

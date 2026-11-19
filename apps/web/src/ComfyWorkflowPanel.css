@@ -1,0 +1,5 @@
+.comfy-workflow { min-width: 0; }
+.comfy-workflow-fields { display: grid; gap: var(--s-3); min-width: 0; margin: 0; padding: 0; border: 0; }
+.comfy-workflow code { overflow-wrap: anywhere; }
+.comfy-workflow textarea { font-family: var(--font-mono); }
+.comfy-workflow input[type="file"] { max-width: 100%; color: var(--muted); }

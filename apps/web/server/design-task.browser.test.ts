@@ -1,0 +1,32 @@
+import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import{createServer}from'node:http';import{createRequire}from'node:module';import{fileURLToPath}from'node:url';import{build}from'esbuild';import{expect,it}from'vitest';import{findSystemBrowser}from'../../studio/scripts/direct-browser/host';import{proposeArtifact}from'./artifact-proposal.mjs';
+const puppeteer=createRequire(new URL('../../studio/package.json',import.meta.url))('puppeteer-core');let available=false;try{findSystemBrowser();available=true;}catch{}
+it.skipIf(!available||process.env.GLINT_BROWSER_UI_TEST!=='1')('resumes a multi-page design after browser restart and adopts the complete draft once',async()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'glint-design-task-ui-'));
+ const bundle=await build({stdin:{contents:`import React from'react';import{createRoot}from'react-dom/client';import{DesignEditor}from'./DesignEditor';import'./app-theme.css';createRoot(document.getElementById('app')).render(<DesignEditor projectId="batch-project" title="批量设计"/>);`,resolveDir:fileURLToPath(new URL('../src',import.meta.url)),loader:'tsx'},bundle:true,write:false,format:'iife',platform:'browser',jsx:'automatic',outdir:'harness'});
+ const plan={title:'阅读活动演示',style:'白底深绿文字，统一字号和间距',pages:[{title:'活动目标',brief:'本周三场阅读活动'},{title:'预约流程',brief:'预约步骤待补充'}]};let calls=0,failSecond=true;
+ const server=createServer(async(req,res)=>{
+  if(req.url==='/app.js')return res.writeHead(200,{'content-type':'text/javascript'}).end(bundle.outputFiles.find(file=>file.path.endsWith('.js'))!.text);
+  if(req.url==='/app.css')return res.writeHead(200,{'content-type':'text/css'}).end(bundle.outputFiles.find(file=>file.path.endsWith('.css'))?.text??'');
+  if(req.url==='/')return res.writeHead(200,{'content-type':'text/html;charset=utf-8'}).end('<link rel="stylesheet" href="/app.css"><div id="app"></div><script src="/app.js"></script>');
+  if(req.url==='/api/artifact/proposal'){try{let raw='';for await(const chunk of req)raw+=chunk;const request=JSON.parse(raw);calls++;
+   if(request.document.pages?.[0]?.id.endsWith('page-2')&&failSecond){failSecond=false;return res.writeHead(503).end('{}');}
+   const result=await proposeArtifact(request,{chat:async()=>({text:JSON.stringify({document:'content'in request.document?{...request.document,content:JSON.stringify(plan)}:{...request.document,pages:[{...request.document.pages[0],html:`<!doctype html><html><head><style>body{font:24px sans-serif;color:#163c32;padding:40px}</style></head><body><main><h1>${request.document.pages[0].title}</h1><p>本周有三场阅读活动。欢迎读者参与，其他细节待补充。</p></main></body></html>`,notes:'根据提供资料介绍活动安排。'}]},summary:'完成当前步骤'})})});return res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify(result));
+  }catch(error){console.error('proposal fixture failure',String(error));return res.writeHead(400).end(JSON.stringify({error:String(error)}));}}res.writeHead(404).end();
+ });let browser:any;
+ try{await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));const url=`http://127.0.0.1:${(server.address()as{port:number}).port}`;
+ const launch=()=>puppeteer.launch({executablePath:findSystemBrowser(),headless:true,userDataDir:path.join(root,'profile')});browser=await launch();let page=await browser.newPage();page.on('pageerror',(error:Error)=>console.error('pageerror',String(error)));await page.setViewport({width:1280,height:900});await page.goto(url,{waitUntil:'networkidle0'});
+ await page.locator('button::-p-text(连续设计)').click();await page.locator('[aria-label="连续设计资料"]').fill('本周举办三场阅读活动。向读者介绍活动和预约方式，不知道的安排标注待补充。');await page.locator('[aria-label="连续设计页数"]').fill('2');await page.setViewport({width:390,height:844});
+ expect(await page.$eval('.design-task-dialog',(el:HTMLElement)=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ await page.locator('button::-p-text(规划并生成)').click();
+ await page.waitForFunction(()=>JSON.parse(localStorage.getItem('glint.design-task.v1:batch-project')??'null')?.pages.length===1).catch(async(error:unknown)=>{console.error('task failure',calls,await page.$eval('[aria-label="连续设计任务"]',(el:HTMLElement)=>el.innerText));throw error;});await page.waitForSelector('button::-p-text(继续未完成步骤)');expect(calls).toBe(3);
+ const before=await page.evaluate(()=>localStorage.getItem('glint.design-task.v1:batch-project'));await browser.close();browser=await launch();page=await browser.newPage();await page.setViewport({width:1280,height:900});await page.goto(url,{waitUntil:'networkidle0'});await page.locator('button::-p-text(连续设计)').click();expect(calls).toBe(3);expect(await page.evaluate(()=>localStorage.getItem('glint.design-task.v1:batch-project'))).toBe(before);
+ await page.evaluate(()=>{const original=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){if(key==='glint.design-task.v1:batch-project'&&JSON.parse(value).pages.length===2){Storage.prototype.setItem=original;throw new DOMException('quota test','QuotaExceededError');}return original.call(this,key,value);};});
+ await page.locator('button::-p-text(继续未完成步骤)').click();await page.waitForSelector('button::-p-text(重试保存当前成果)');expect(calls).toBe(4);
+ expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('glint.design-task.v1:batch-project')!).pages.length)).toBe(1);
+ await page.keyboard.press('Escape');expect(await page.$('dialog[open]')).not.toBeNull();
+ await page.locator('button::-p-text(重试保存当前成果)').click();await page.waitForFunction(()=>JSON.parse(localStorage.getItem('glint.design-task.v1:batch-project')!).pages.length===2);expect(calls).toBe(4);
+ await page.locator('button::-p-text(确认加入项目)').click();await page.waitForFunction(()=>JSON.parse(localStorage.getItem('glint.project-designs.v1:batch-project')!).documents.some((doc:any)=>doc.title==='阅读活动演示'&&doc.pages.length===2));
+ await page.reload({waitUntil:'networkidle0'});await page.locator('button::-p-text(连续设计)').click();await page.locator('button::-p-text(确认加入项目)').click();expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('glint.project-designs.v1:batch-project')!).documents.filter((doc:any)=>doc.title==='阅读活动演示').length)).toBe(1);
+ if(process.env.GLINT_DESIGN_TASK_EVIDENCE){fs.mkdirSync(process.env.GLINT_DESIGN_TASK_EVIDENCE,{recursive:true});await page.screenshot({path:path.join(process.env.GLINT_DESIGN_TASK_EVIDENCE,'restored-task.png'),fullPage:true});}
+ }finally{await browser?.close();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));fs.rmSync(root,{recursive:true,force:true});}
+},90000);

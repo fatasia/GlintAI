@@ -92,6 +92,14 @@ export function formatSrt(cues: CaptionCue[]): string {
     .join("\n\n") + "\n";
 }
 
+/** WebVTT differs from SRT only in the header and the millisecond separator. */
+export function formatVtt(cues: CaptionCue[]): string {
+  const vttTime = (ms: number) => srtTime(ms).replace(",", ".");
+  return "WEBVTT\n\n" + cues
+    .map((cue, index) => `${index + 1}\n${vttTime(cue.startMs)} --> ${vttTime(cue.endMs)}\n${cue.text.trim()}`)
+    .join("\n\n") + "\n";
+}
+
 const uuid = () =>
   `${Math.random().toString(16).slice(2, 10)}-${Math.random().toString(16).slice(2, 6)}-4${Math.random().toString(16).slice(2, 5)}-a${Math.random().toString(16).slice(2, 5)}-${Math.random().toString(16).slice(2, 14)}`.slice(0, 36);
 

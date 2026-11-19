@@ -1,4 +1,5 @@
 import { AspectRatio, parseProject, type Scene, type SceneScriptProject } from "@glintai/scenescript";
+import { buildBeatShowcase, SHOWCASE_FPS } from "./beat-showcase";
 
 export interface CreationPackInput {
   id: string;
@@ -113,6 +114,18 @@ const definitions: readonly Definition[] = [
     { id: "steps-overview", kind: "bullets", heading: v.title!, items: [v.step1!, v.step2!, v.step3!], narration: narration(v.title!, 3000) },
     ...["step1", "step2", "step3"].map((key, index): Scene => ({ id: `step-${index + 1}`, kind: "title", title: `第 ${index + 1} 步`, subtitle: v[key]!, narration: narration(v[key]!, 3000) })),
   ]),
+  definePack({
+    id: "beat-showcase", title: "节拍展示片", description: "大字卡与产品、代码镜头交替：84 BPM、24 拍、约 17 秒。原生文字与节拍动画可编辑，预览无声。",
+    tags: ["展示", "节拍", "代码", "产品"], capabilities: ["title", "bullets", "code", "elements", "keyframes"],
+    inputs: [
+      input("title", "开场大字", "让作品说话", 16), input("tagline", "一句话介绍", "把想法变成可编辑的作品", 32),
+      input("productName", "展示名称", "你的作品", 24),
+      input("feature1", "特点一", "用你的真实特点替换", 32), input("feature2", "特点二", "每个镜头都能继续编辑", 32),
+      input("statement", "转折大字", "不止于展示", 16), input("codeHeading", "代码说明", "你的实现", 24),
+      input("code", "代码片段", "const idea = '你的想法';", 120),
+      input("value", "价值大字", "保持创造", 16), input("cta", "结尾行动", "开始你的作品", 24),
+    ],
+  }, "bold-poster", buildBeatShowcase),
 ];
 
 function numericValue(text: string, label: string): number {
@@ -204,6 +217,7 @@ export function instantiateCreationPack(id: string, values: Values, options: Cre
     schemaVersion: 1, id: projectId, title: inputs.productName ?? inputs.heading ?? inputs.title ?? inputs.brandName,
     creationPack: { id: definition.metadata.id, version: definition.metadata.version },
     language: "zh-CN", aspect, theme: definition.theme, knowledgeSources: [], scenes: definition.build(inputs),
+    ...(id === "beat-showcase" ? { fps: SHOWCASE_FPS } : {}),
   });
   return { project, pack: { id: definition.metadata.id, version: definition.metadata.version }, inputs };
 }

@@ -3,20 +3,22 @@ import path from "node:path";
 import os from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { parseProject, sceneDurationMs, buildTimeline, timelineToFrames, type SceneScriptProject, type Scene } from "@glintai/scenescript";
+import { parseProject, sceneDurationMs, buildTimeline, timelineToFrames, frameRateOf, type SceneScriptProject, type Scene } from "@glintai/scenescript";
 import {
   checkBudget, computeDigests, createBuildGraph, createManifest, environmentDrift, planBuild, sha256Hex, validateReceipt,
   type BuildGraph, type BuildManifest, type BuildPlan, type EnvironmentFingerprint, type Receipt, type Reproducibility, type ReceiptNode, type ProvenanceRange,
 } from "@glintai/buildgraph";
-import { assetFingerprint, sceneMediaFingerprint, sceneAssetFingerprint, sceneCacheKey, nativeCacheEnvironment, visualSceneIdentity, cacheArtifactValid } from "./native-cache";
+import { assetFingerprint, sceneMediaFingerprint, sceneAssetFingerprint, sceneCacheKey, sceneEncoding, nativeCacheEnvironment, visualSceneIdentity, cacheArtifactValid } from "./native-cache";
 import { supportsNativeScene } from "./native-svg";
 import { renderNative } from "./native-render";
+import { cachedNarrationProject, narrationSignature } from "./native-audio";
 import { readArg } from "./glint-runtime";
 import { diffVideos, formatDiff, probeFrameCount } from "./frame-diff";
 import { resolveTheme } from "@glintai/design-tokens";
+import { FileSessionStore } from "@glintai/session/node";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
-const CACHE_DIR = () => path.resolve(".cache", "native-scenes");
+const CACHE_DIR = () => path.resolve(process.env.GLINT_CACHE_DIR ?? ".cache", "native-scenes");
 const MANIFEST_RELATIVE = path.join(".glint", "manifest.json");
 
 export interface RenderProfile { fast?: boolean; plate?: boolean; resolution?: string; tts?: string; music?: string }
@@ -39,6 +41,10 @@ export function provenanceForScene(scene: Scene, start: number, end: number): Pr
   plan: BuildPlan;
   environment: EnvironmentFingerprint;
   notes: string[];
+  /** Internal check that the narration used by the renderer is the one planned. */
+  narrationSignature?: string;
+  /** Planned TTS provider calls; null denotes unknown. */
+  modelCalls: number | null;
 }
 
 export interface BuildReport extends PlanReport {
@@ -97,7 +103,7 @@ function fontFiles(): string[] {
 function frameSize(project: SceneScriptProject, options: { fast?: boolean; resolution?: string }): { width: number; height: number; fps: number } {
   const scale = options.resolution ? ({ "540": 0.5, "720": 2 / 3, "1080": 1, "1440": 4 / 3, "2160": 2 } as Record<string, number>)[options.resolution] ?? 1 : (options.fast ? 0.5 : 1);
   const dimensions = project.aspect === "9:16" ? [1080, 1920] : project.aspect === "1:1" ? [1080, 1080] : [1920, 1080];
-  return { width: Math.round(dimensions[0]! * scale), height: Math.round(dimensions[1]! * scale), fps: project.fps ?? 30 };
+  return { width: Math.round(dimensions[0]! * scale), height: Math.round(dimensions[1]! * scale), fps: frameRateOf(project.fps ?? 30).value };
 }
 
 export function environmentFingerprint(options: { browserRequired: boolean }): EnvironmentFingerprint {
@@ -119,11 +125,14 @@ export interface GraphResult {
   exact: boolean;
   sceneKeys: Record<string, string>;
   mustExecute: string[];
+  narrationSignature?: string;
 }
 
 /** Maps a SceneScript project onto build nodes whose params are the renderer's own cache keys. */
-export function graphForProject(project: SceneScriptProject, projectPath: string, options: { fast?: boolean; plate?: boolean; resolution?: string; tts?: string; music?: string }): GraphResult {
+export function graphForProject(project: SceneScriptProject, projectPath: string, options: { fast?: boolean; plate?: boolean; resolution?: string; tts?: string; music?: string; noCache?: boolean }): GraphResult {
   const projectDir = path.dirname(projectPath);
+  const narration = cachedNarrationProject(project, projectDir, options);
+  project = narration.project;
   const browserRequired = project.scenes.some(scene => !supportsNativeScene(scene));
   const cacheEnvironment = nativeCacheEnvironment(SCRIPT_DIR, { browserRequired, fontFiles: fontFiles() });
   const assets = browserRequired ? assetFingerprint(projectDir) : "no-assets";
@@ -137,12 +146,12 @@ export function graphForProject(project: SceneScriptProject, projectPath: string
       scene: visualSceneIdentity(scene, Boolean(options.plate)),
       media: sceneMediaFingerprint(scene as Scene, projectDir, assets),
       assets: sceneAssetFingerprint(project, scene as Scene),
-      previousShared: scene.transition?.in === "magic-move" ? previous?.sharedElements : undefined,
-      theme, width: size.width, height: size.height, fps: size.fps, duration: entries[index]!.duration, plate: Boolean(options.plate),
+      previousShared: scene.transition?.in === "magic-move" ? previous?.sharedElements : scene.transition?.in === "shape-morph" ? previous?.elements : undefined,
+      theme, width: size.width, height: size.height, fps: size.fps, duration: entries[index]!.duration, plate: Boolean(options.plate), encoding: sceneEncoding(options.fast),
     });
     return { id: `scene:${scene.id}`, kind: "scene/eval" as const, inputs: [] as string[], params: { cacheKey: key }, granularity: "scene" as const, estimatedMs: Math.round((entries[index]?.duration ?? 30) / size.fps * 18) };
   });
-  const audioParams = { text: project.scenes.map(scene => scene.narration.text), voices: project.scenes.map(scene => scene.narration.voice ?? null), tts: options.tts ?? "auto", music: options.music ?? "auto" };
+  const audioParams = { text: project.scenes.map(scene => scene.narration.text), voices: project.scenes.map(scene => scene.narration.voice ?? null), tts: options.tts ?? "existing", music: options.music ?? (project.music ? "existing" : "off") };
   const planNodes = [
     ...nodes,
     { id: "audio:mix", kind: "audio/mix" as const, inputs: [] as string[], params: audioParams, executability: "opaque" as const, granularity: "project" as const, estimatedMs: 400 },
@@ -150,9 +159,9 @@ export function graphForProject(project: SceneScriptProject, projectPath: string
   ];
   const graph = createBuildGraph(planNodes);
   const sceneKeys = Object.fromEntries(nodes.map(node => [node.id, (node.params as { cacheKey: string }).cacheKey]));
-  const mustExecute = ["audio:mix", ...nodes.filter(node => !cacheArtifactValid(path.join(CACHE_DIR(), `${sceneKeys[node.id]}.mp4`))).map(node => node.id)];
-  const exact = project.scenes.every(scene => scene.narration.durationMs !== undefined);
-  return { graph, environment: environmentFingerprint({ browserRequired }), exact, sceneKeys, mustExecute };
+  const mustExecute = ["audio:mix", ...nodes.filter(node => options.noCache || !cacheArtifactValid(path.join(CACHE_DIR(), `${sceneKeys[node.id]}.mp4`))).map(node => node.id)];
+  const exact = narration.exact;
+  return { graph, environment: environmentFingerprint({ browserRequired }), exact, sceneKeys, mustExecute, narrationSignature: exact ? narrationSignature(project) : undefined };
 }
 
 export function manifestPath(projectPath: string): string { return path.join(path.dirname(projectPath), MANIFEST_RELATIVE); }
@@ -180,22 +189,29 @@ export interface PlanInput {
   resolution?: string;
   tts?: string;
   music?: string;
+  noCache?: boolean;
+}
+
+export function effectiveRenderProfile(input: RenderProfile, stored?: RenderProfile): RenderProfile {
+  return {
+    fast: input.fast ?? stored?.fast,
+    plate: input.plate ?? stored?.plate,
+    resolution: input.resolution ?? stored?.resolution,
+    tts: input.tts ?? stored?.tts,
+    music: input.music ?? stored?.music,
+  };
 }
 
 export function planProject(input: PlanInput): PlanReport {
+  return planProjectWithManifest(input, loadManifest(path.resolve(input.projectPath)));
+}
+
+function planProjectWithManifest(input: PlanInput, stored: BuildManifest | undefined, cacheOnlyTts = false): PlanReport {
   const projectPath = path.resolve(input.projectPath);
-  const stored = loadManifest(projectPath);
   const profile = stored?.profile as RenderProfile | undefined;
   // A plan without explicit flags must describe the same render profile as the last
   // build; otherwise every cache key changes and the budget becomes meaningless.
-  const effective: PlanInput = {
-    ...input,
-    fast: input.fast ?? profile?.fast,
-    plate: input.plate ?? profile?.plate,
-    resolution: input.resolution ?? profile?.resolution,
-    tts: input.tts ?? profile?.tts,
-    music: input.music ?? profile?.music,
-  };
+  const effective: PlanInput = { ...input, ...effectiveRenderProfile(input, profile) };
   const { project } = changedProject(projectPath, effective.changes ?? []);
   const graphResult = graphForProject(project, projectPath, effective);
   // Without a manifest, a valid scene cache still proves which nodes already exist;
@@ -211,12 +227,16 @@ export function planProject(input: PlanInput): PlanReport {
     if (Object.keys(seeded).length) notes.push(`没有 manifest，但场景缓存命中 ${Object.keys(seeded).length} 个节点，按已构建处理。`);
   }
   const plan = planBuild(graphResult.graph, previous, graphResult.environment, graphResult.mustExecute, { executionOnly: true });
+  const tts = effective.tts ?? "existing";
+  const plannedCallsKnown = ["existing", "mock"].includes(tts) || (cacheOnlyTts && graphResult.exact && tts !== "auto");
+  const plannedCalls: number | null = plannedCallsKnown ? 0 : null;
+  if (!plannedCallsKnown) { plan.costCny = null; notes.push("TTS 供应方调用数及费用未知，计划不会发起请求；费用不代表零。"); }
   if (profile && ["fast", "plate", "resolution", "tts", "music"].some(key => (input as unknown as Record<string, unknown>)[key] !== undefined && (input as unknown as Record<string, unknown>)[key] !== (profile as Record<string, unknown>)[key])) notes.push("本次显式渲染参数与上次构建不同：缓存 key 会全部变化。");
-  if (!graphResult.exact) notes.push("有场景未显式设置 narration.durationMs：TTS 会重新决定时长，本次预算为近似值（--assert-budget 会拒绝）。");
+  if (!graphResult.exact) notes.push("旁白时长（durationMs）或合成结果尚未确定：计划仅为估算；--assert-budget 会在渲染或 TTS 请求前拒绝。旧版或无效缓存不会复用；普通构建重合成可能产生费用，请先确认供应商价格。");
   if (!stored) notes.push("没有上一次构建的 manifest：除缓存命中外均视为需要重建。");
   return {
     projectId: project.id, revision: `sha256:${projectSha256(project)}`, projectPath,
-    exact: graphResult.exact, plan, environment: graphResult.environment, notes,
+    exact: graphResult.exact, plan, environment: graphResult.environment, notes, narrationSignature: graphResult.narrationSignature, modelCalls: plannedCalls,
   };
 }
 
@@ -233,6 +253,7 @@ function fileSha256(file: string): string {
 
 export interface BuildInput extends PlanInput {
   output: string;
+  assertBudget?: boolean;
   signal?: AbortSignal;
   log?: (message: string) => void;
 }
@@ -242,10 +263,15 @@ export async function buildProject(input: BuildInput): Promise<BuildReport> {
   const log = input.log ?? console.log;
   const projectPath = path.resolve(input.projectPath), output = path.resolve(input.output);
   const { project, changed } = changedProject(projectPath, input.changes ?? []);
-  // Predict before rendering, from the same project the renderer will read.
-  const report = planProject(input);
+  const stored = loadManifest(projectPath);
+  const effective = effectiveRenderProfile(input, stored?.profile as RenderProfile | undefined);
+  // Use one manifest snapshot and profile for prediction, rendering and receipts.
+  const report = planProjectWithManifest({ ...input, ...effective }, stored, Boolean(input.assertBudget));
+  if (input.assertBudget && !report.exact) throw new Error("Budget cannot be asserted before rendering: narration duration or TTS result is unknown; check provider pricing before retrying without --assert-budget, because rejected or legacy cache entries may trigger a paid TTS request.");
+  if (!report.exact && !["existing", "mock"].includes(effective.tts ?? "existing")) log("[glint] TTS cache unavailable, unverified or bypassed: synthesis may call the provider and incur charges. Check provider pricing before retrying.");
   let renderPath = projectPath;
   let temporaryProject: string | undefined;
+  let providerCalls = 0;
   try {
     if (changed) {
       temporaryProject = path.join(path.dirname(projectPath), `.glint-change-${randomUUID()}.json`);
@@ -254,13 +280,13 @@ export async function buildProject(input: BuildInput): Promise<BuildReport> {
     }
     const rendered = await renderNative({
       projectPath: renderPath, output,
-      tts: input.tts, music: input.music, fast: input.fast, plate: input.plate,
-      resolution: input.resolution as never, signal: input.signal, log,
+      tts: effective.tts ?? "existing", music: effective.music, fast: effective.fast, plate: effective.plate,
+      resolution: effective.resolution as never, noCache: input.noCache, ttsCacheOnly: input.assertBudget, expectedNarrationSignature: input.assertBudget ? report.narrationSignature : undefined, onProviderCall: () => { providerCalls++; }, signal: input.signal, log,
     });
     const executed = new Set<string>(["audio:mix", "container"]);
     for (const scene of rendered.scenes) if (!scene.cached) executed.add(`scene:${scene.id}`);
     const actual = [...executed];
-    const budget = checkBudget(report.plan, actual);
+    const budget = report.exact ? checkBudget(report.plan, actual) : { matches: false, missing: [], extra: [] };
     const reproducibility: Reproducibility = project.scenes.some(scene => !supportsNativeScene(scene)) ? "L1" : "L0";
     const nodes: ReceiptNode[] = report.plan.predicted.concat(report.plan.reused).map(id => ({
       id,
@@ -268,7 +294,7 @@ export async function buildProject(input: BuildInput): Promise<BuildReport> {
       digest: report.plan.digests[id] ?? "",
       executability: (id === "audio:mix" ? "opaque" : "deterministic") as ReceiptNode["executability"],
       reused: !executed.has(id),
-      costCny: 0,
+      costCny: id === "audio:mix" && rendered.modelCalls > 0 ? null : 0,
     }));
     // L3: describe where every delivered frame came from, using the project the renderer actually wrote (audio durations included).
     const delivered = parseProject(JSON.parse(fs.readFileSync(`${output}.project.json`, "utf8")));
@@ -287,22 +313,30 @@ export async function buildProject(input: BuildInput): Promise<BuildReport> {
       format: "glint-receipt", version: 1,
       project: { id: project.id, revision: report.revision, path: projectPath, changes: input.changes ?? [] },
       reproducibility,
-      recipe: { fast: input.fast ?? false, plate: input.plate ?? false, resolution: input.resolution, tts: input.tts, music: input.music },
+      recipe: { fast: effective.fast ?? false, plate: effective.plate ?? false, resolution: effective.resolution, tts: effective.tts, music: effective.music },
       environment: report.environment,
       plan: { predicted: report.plan.predicted, actual, matches: budget.matches, missing: budget.missing, extra: budget.extra },
       nodes,
       provenance,
       output: { path: output, sha256: fileSha256(output), bytes: fs.statSync(output).size, frames: totalFrames },
       verification: [
-        { law: "L1", pass: budget.matches, detail: budget.matches ? undefined : `missing: ${budget.missing.join(",") || "-"}; extra: ${budget.extra.join(",") || "-"}` },
+        { law: "L1", pass: budget.matches, detail: !report.exact ? "not verified: narration timing unknown before execution" : budget.matches ? undefined : `missing: ${budget.missing.join(",") || "-"}; extra: ${budget.extra.join(",") || "-"}` },
         { law: "L2", pass: true, detail: `sha256=${fileSha256(output)}` },
         { law: "L3", pass: covered, detail: covered ? `${totalFrames} frames covered by ${provenance.length} provenance range(s)` : "provenance does not cover every frame exactly once" },
       ],
-      totals: { modelCalls: 0, costCny: report.plan.costCny, wallMs: Math.round(performance.now() - started), executed: executed.size, reused: report.plan.reused.length },
+      totals: { modelCalls: rendered.modelCalls, costCny: rendered.modelCalls > 0 ? null : 0, wallMs: Math.round(performance.now() - started), executed: executed.size, reused: report.plan.reused.length },
     };
     atomicWrite(`${output}.receipt.json`, JSON.stringify(receipt, null, 2));
-    saveManifest(projectPath, { ...createManifest(report.plan, report.environment), profile: { fast: input.fast, plate: input.plate, resolution: input.resolution, tts: input.tts, music: input.music } });
+    saveManifest(projectPath, { ...createManifest(report.plan, report.environment), profile: { ...effective } });
     return { ...report, output, receipt, budget, elapsedMs: Math.round(performance.now() - started) };
+  } catch (error) {
+    // A failed provider call may still incur charges. Never replace an existing user file.
+    const attemptId = randomUUID();
+    const failureFile = `${output}.failure.${attemptId}.receipt.json`;
+    const failure = { format: "glint-build-failure", version: 1, attemptId, status: "failed", stage: "build-execution", project: { id: project.id, revision: report.revision }, output, providerCalls, costCny: providerCalls ? null : 0, note: "Provider attempts are not proof of billing; check the provider's account before retrying.", elapsedMs: Math.round(performance.now() - started) };
+    try { fs.writeFileSync(failureFile, JSON.stringify(failure, null, 2), { flag: "wx" }); log(`[glint] failure receipt: ${failureFile}`); }
+    catch (writeError) { log(`[glint] could not write failure receipt ${failureFile}: ${writeError instanceof Error ? writeError.message : String(writeError)}; provider attempts=${providerCalls}, cost=${providerCalls ? "unknown" : "0"}`); }
+    throw error;
   } finally {
     if (temporaryProject) fs.rmSync(temporaryProject, { force: true });
   }
@@ -380,7 +414,7 @@ export async function verifyReceipt(input: VerifyInput): Promise<VerifyReport> {
 function printPlan(report: PlanReport): void {
   const { plan } = report;
   console.log(`[glint] plan ${report.projectId} · ${report.revision.slice(0, 19)} · exact=${report.exact}`);
-  console.log(`  predicted: ${plan.predicted.length} node(s) · 0 model calls · ¥${plan.costCny.toFixed(2)} · ~${(plan.estimatedMs / 1000).toFixed(1)}s`);
+  console.log(`  predicted: ${plan.predicted.length} node(s) · TTS provider calls: ${report.modelCalls ?? "unknown"} · cost: ${plan.costCny === null ? "unknown" : `¥${plan.costCny.toFixed(2)}`} · ~${(plan.estimatedMs / 1000).toFixed(1)}s`);
   if (plan.changed.length) console.log(`  changed:   ${plan.changed.join(", ")}`);
   if (plan.forced.length) console.log(`  forced:    ${plan.forced.join(", ")} (cache miss or opaque)`);
   if (plan.reused.length) console.log(`  reused:    ${plan.reused.length} node(s)`);
@@ -395,7 +429,7 @@ export function runPlan(args: string[]): PlanReport {
     projectPath,
     changes: args.filter(arg => arg.startsWith("--set=")).map(arg => arg.slice(6)),
     fast: args.includes("--fast") ? true : undefined, plate: args.includes("--plate") ? true : undefined,
-    resolution: readArg(args, "resolution"), tts: readArg(args, "tts"), music: readArg(args, "music"),
+    resolution: readArg(args, "resolution"), tts: readArg(args, "tts"), music: readArg(args, "music"), noCache: args.includes("--no-cache"),
   });
   printPlan(report);
   const out = readArg(args, "out");
@@ -408,16 +442,15 @@ export async function runBuild(args: string[]): Promise<BuildReport> {
   const projectPath = readArg(args, "project"), output = readArg(args, "out");
   if (!projectPath || !output) throw new Error("build requires --project=<scenescript.json> and --out=<file.mp4>");
   const report = await buildProject({
-    projectPath, output,
+    projectPath, output, assertBudget: args.includes("--assert-budget"),
     changes: args.filter(arg => arg.startsWith("--set=")).map(arg => arg.slice(6)),
     fast: args.includes("--fast") ? true : undefined, plate: args.includes("--plate") ? true : undefined,
-    resolution: readArg(args, "resolution"), tts: readArg(args, "tts"), music: readArg(args, "music"),
+    resolution: readArg(args, "resolution"), tts: readArg(args, "tts"), music: readArg(args, "music"), noCache: args.includes("--no-cache"),
   });
-  console.log(`[glint] build ${report.budget.matches ? "budget-matched" : "BUDGET-MISMATCH"}: ${report.plan.predicted.length} predicted / ${report.receipt.totals.executed} executed · ${report.elapsedMs}ms`);
+  console.log(`[glint] build ${!report.exact ? "budget-unverified" : report.budget.matches ? "budget-matched" : "BUDGET-MISMATCH"}: ${report.plan.predicted.length} predicted / ${report.receipt.totals.executed} executed · ${report.elapsedMs}ms`);
   console.log(`  receipt → ${report.output}.receipt.json`);
-  if (!report.budget.matches) console.log(`  missing: ${report.budget.missing.join(", ") || "-"}; extra: ${report.budget.extra.join(", ") || "-"}`);
+  if (report.exact && !report.budget.matches) console.log(`  missing: ${report.budget.missing.join(", ") || "-"}; extra: ${report.budget.extra.join(", ") || "-"}`);
   if (args.includes("--assert-budget")) {
-    if (!report.exact) throw new Error("Budget cannot be asserted: some scenes have no narration.durationMs, so TTS decides their length.");
     if (!report.budget.matches) { process.exitCode = 1; throw new Error("Build exceeded its predicted change set"); }
   }
   return report;
@@ -463,4 +496,38 @@ export function applyProjectChanges(input: ApplyInput): { projectId: string; rev
   const next = parseProject(raw);
   const revisionAfter = writeProjectJson(projectPath, next);
   return { projectId: next.id, revision: revisionAfter, changes: input.changes };
+}
+
+/** CORE-09: MCP semantic edits ride the shared session domain — the same
+ * durable history and undo line as the web and CLI entries — and are written
+ * back so file consumers stay byte-identical with the session. The CAS
+ * contract (expectedRevision over the content hash) is unchanged.
+ */
+export function applySessionChanges(input: ApplyInput & { sessionDirectory?: string }): { projectId: string; revision: string; changes: string[] } {
+  const projectPath = path.resolve(input.projectPath);
+  if (!input.changes.length) throw new Error("apply requires at least one change");
+  const raw = JSON.parse(fs.readFileSync(projectPath, "utf8")) as Record<string, unknown>;
+  const current = parseProject(raw);
+  const revision = `sha256:${projectSha256(current)}`;
+  if (input.expectedRevision && input.expectedRevision !== revision) {
+    throw new Error(`Revision conflict: expected ${input.expectedRevision}, found ${revision}. Re-read the project and re-apply.`);
+  }
+  const operations = input.changes.map(change => {
+    const equals = change.indexOf("=");
+    if (equals <= 0) throw new Error(`Change must look like path=value: ${change}`);
+    const editPath = change.slice(0, equals).trim().replace(/\[(\d+)\]/g, ".$1").split(".").map(segment => segment.trim()).filter(Boolean);
+    if (!editPath.length || editPath.length > 40) throw new Error(`Change path is invalid: ${change}`);
+    let value: unknown;
+    try { value = JSON.parse(change.slice(equals + 1).trim()); } catch { value = change.slice(equals + 1).trim(); }
+    return { kind: "set" as const, path: editPath, value };
+  });
+  const store = new FileSessionStore(input.sessionDirectory, document => { parseProject(document); });
+  const projectId = current.id;
+  const opened = store.open(projectId, raw);
+  if (opened.conflict) throw new Error("Session and project file have diverged; open the work in the studio to reconcile before applying MCP edits.");
+  const { look } = store.snapshot(projectId);
+  const applied = store.applyTransform(projectId, { id: `mcp-${randomUUID()}`, baseRevision: look.revision, actor: "cli", scope: {}, intent: "MCP glint_apply" }, () => operations);
+  if (applied.receipt.stage !== "verified") throw new Error(`Session apply refused (${applied.receipt.stage}): ${"reason" in applied.receipt && applied.receipt.reason ? applied.receipt.reason : "transaction rejected"}`);
+  const document = store.snapshot(projectId).snapshot.document as SceneScriptProject;
+  return { projectId, revision: writeProjectJson(projectPath, document), changes: input.changes };
 }

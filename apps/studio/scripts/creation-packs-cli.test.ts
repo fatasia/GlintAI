@@ -2,9 +2,24 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { parseProject } from "@glintai/scenescript";
+import { buildTimeline, parseProject } from "@glintai/scenescript";
+import { instantiateCreationPack } from "@glintai/composer/creation-packs";
 import { runCreationPacks } from "./creation-packs-cli";
 const roots: string[] = [];
+it("shares the editable beat showcase with software and preserves existing output", () => {
+  vi.spyOn(console, "log").mockImplementation(() => {});
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "glint-beat-pack-")); roots.push(root);
+  const output = path.join(root, "showcase.json"), params = path.join(root, "inputs.json");
+  const values = { title: "我的展示", code: "const value = 42;" };
+  fs.writeFileSync(params, JSON.stringify(values));
+  runCreationPacks(["--use=beat-showcase", `--params=${params}`, `--out=${output}`]);
+  const original = fs.readFileSync(output, "utf8"), project = parseProject(JSON.parse(original));
+  expect(project).toEqual(instantiateCreationPack("beat-showcase", values, { projectId: project.id }).project);
+  expect(project.fps).toBe(30);
+  expect(buildTimeline(project).totalMs).toBe(17133);
+  expect(() => runCreationPacks(["--use=beat-showcase", `--out=${output}`])).toThrow(/already exists/);
+  expect(fs.readFileSync(output, "utf8")).toBe(original);
+});
 afterEach(() => { vi.restoreAllMocks(); for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true }); });
 it("uses the shared pack core to create a pinned editable project without overwriting", () => {
   vi.spyOn(console, "log").mockImplementation(() => {});

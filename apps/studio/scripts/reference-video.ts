@@ -7,9 +7,12 @@ import { captureProcess } from "./frame-diff";
 import { runMediaProcess } from "./native-process";
 import { readArg } from "./glint-runtime";
 import { parseProject, type SceneScriptProject } from "@glintai/scenescript";
+import { reviewTemporalFrames } from "./reference-temporal";
 
 const MAX_DURATION_MS = 600_000, MAX_BYTES = 2 * 1024 ** 3, TIMEOUT_MS = 180_000;
-const MAX_DIMENSION = 8192, MAX_PIXELS = 33_554_432, MAX_FPS = 120, MAX_STDERR_BYTES = 16 * 1024 ** 2;
+const MAX_DIMENSION = 8192, MAX_PIXELS = 33_554_432, MAX_FPS = 120, MAX_STDERR_BYTES = 32 * 1024 ** 2;
+const ADAPTIVE_FLOOR = 0.025, MAX_ADAPTIVE_CANDIDATES = 120;
+const NEIGHBOR_PERCENTILE = 0.75, WEAK_CANDIDATE_RATIO = 1.6, TEMPORAL_FRAMES_BEFORE = 4, TEMPORAL_FRAMES_AFTER = 5;
 // Exclude playlists, concat, image sequences and other indirect/network-bearing demuxers.
 const FORMATS = "mov,matroska,webm,avi,mpegts,mpeg,mpegvideo,flv,ogg";
 const LOCAL_INPUT = ["-protocol_whitelist", "file,pipe", "-format_whitelist", FORMATS];
@@ -17,11 +20,14 @@ export interface ReferenceOptions { videoPath: string; outDir: string; threshold
 export interface ReferenceAnalysis {
   format: "glint-reference-analysis"; version: 1;
   source: { name: string; sha256: string; bytes: number; durationMs: number; width: number; height: number; fps: number };
-  shots: { id: string; startMs: number; endMs: number; thumbnail: string; /** Mean absolute luma difference of two sampled frames; not pose or skeleton. */ motion: number }[];
+  shots: { id: string; startMs: number; endMs: number; thumbnail: string; /** Mean absolute luma difference of two sampled frames; null when unavailable, not pose or skeleton. */ motion: number | null; /** Boundary-frame luma difference, not a probability of a correct cut. */ boundaryChange?: number | null }[];
   limits: {
     threshold: number; minShotMs: number; maxShots: number; maxShotsAllowed: number;
     maxDurationMs: number; maxBytes: number; maxDimension: number; maxPixels: number; maxFps: number;
     timeoutMs: number; maxStderrBytes: number; detectedCuts: number; mergedCuts: number; omittedCuts: number; shotCapReached: boolean;
+    detector?: "adaptive-local-v1" | "adaptive-temporal-v2" | "scene-threshold"; adaptiveCandidatesSkipped?: number;
+    /** Review hints, not confirmed cuts or probabilities. */
+    uncertainCuts?: { timeMs: number; reason: string }[];
     scope: "cuts-thumbnails-and-motion"; recovery: string;
   };
   inferred: true;
@@ -41,14 +47,46 @@ async function digest(file: string, signal: AbortSignal): Promise<string> {
   return hash.digest("hex");
 }
 
-/** Successful showinfo is on stderr; existing process helpers intentionally discard it. */
-function sceneCuts(video: string, threshold: number, signal: AbortSignal): Promise<number[]> {
+type SceneScore = { timeMs: number; score: number };
+
+/** Select at most one early candidate per time bucket first, then evenly fill unused capacity. */
+export function selectAdaptiveCandidates(candidates: SceneScore[], durationMs: number): { selected: SceneScore[]; skipped: number } {
+  const unique = new Map<number, SceneScore>();
+  for (const candidate of candidates) {
+    if (!Number.isInteger(candidate.timeMs) || candidate.timeMs <= 0 || candidate.timeMs >= durationMs || !Number.isFinite(candidate.score)) continue;
+    const previous = unique.get(candidate.timeMs);
+    if (!previous || candidate.score > previous.score) unique.set(candidate.timeMs, candidate);
+  }
+  const ordered = [...unique.values()].sort((a, b) => a.timeMs - b.timeMs);
+  if (ordered.length <= MAX_ADAPTIVE_CANDIDATES) return { selected: ordered, skipped: 0 };
+  const buckets = new Map<number, SceneScore>();
+  for (const candidate of ordered) {
+    const bucket = Math.floor(candidate.timeMs * MAX_ADAPTIVE_CANDIDATES / durationMs);
+    if (!buckets.has(bucket)) buckets.set(bucket, candidate);
+  }
+  const chosen = new Set(buckets.values());
+  const remaining = ordered.filter(candidate => !chosen.has(candidate));
+  const slots = MAX_ADAPTIVE_CANDIDATES - chosen.size;
+  for (let i = 0; i < slots; i++) chosen.add(remaining[Math.floor((i + 0.5) * remaining.length / slots)]!);
+  return { selected: ordered.filter(candidate => chosen.has(candidate)), skipped: ordered.length - chosen.size };
+}
+
+/** The callback reviews a candidate; skipped candidates are never promoted to cuts. */
+export async function reviewAdaptiveCandidates(candidates: SceneScore[], durationMs: number, review: (candidate: SceneScore) => Promise<boolean>) {
+  const { selected, skipped } = selectAdaptiveCandidates(candidates, durationMs);
+  const cuts: number[] = [];
+  for (const candidate of selected) if (await review(candidate)) cuts.push(candidate.timeMs);
+  return { cuts, skipped };
+}
+/** Successful metadata is on stderr; existing process helpers intentionally discard it. */
+function sceneScores(video: string, threshold: number, adaptive: boolean, signal: AbortSignal): Promise<SceneScore[]> {
   signal.throwIfAborted();
   return new Promise((resolve, reject) => {
+    const filter = adaptive ? "select=gte(scene\\,0),metadata=print" : `select=gt(scene\\,${threshold}),metadata=print`;
     const child = spawn("ffmpeg", ["-nostdin", "-hide_banner", "-nostats", "-v", "info", ...LOCAL_INPUT, "-i", video,
-      "-map", "0:v:0", "-an", "-sn", "-dn", "-t", "600.001", "-vf", `setpts=PTS-STARTPTS,select=gt(scene\\,${threshold}),showinfo`, "-f", "null", "-"], { shell: false, stdio: ["ignore", "ignore", "pipe"] });
-    let pending = "", tail = "", bytes = 0, failure: Error | undefined;
-    const cuts: number[] = [];
+      "-map", "0:v:0", "-an", "-sn", "-dn", "-t", "600.001", "-vf", `setpts=PTS-STARTPTS,${filter}`, "-f", "null", "-"], { shell: false, stdio: ["ignore", "ignore", "pipe"] });
+    let pending = "", tail = "", bytes = 0, failure: Error | undefined, timeMs: number | undefined;
+    const scores: SceneScore[] = [];
     const abort = () => child.kill();
     signal.addEventListener("abort", abort, { once: true });
     if (signal.aborted) abort();
@@ -59,8 +97,11 @@ function sceneCuts(video: string, threshold: number, signal: AbortSignal): Promi
       const lines = pending.split(/\r?\n/); pending = lines.pop() ?? "";
       if (pending.length > 16_384) { failure = new Error("Scene detection emitted an oversized log line"); child.kill(); return; }
       for (const line of lines) {
-        const match = /\bpts_time:([\d.e+-]+)/.exec(line);
-        if (line.includes("showinfo") && match) cuts.push(Math.round(Number(match[1]) * 1000));
+        if (!line.includes("Parsed_metadata")) continue;
+        const time = /\bpts_time:([\d.e+-]+)/.exec(line);
+        if (time) timeMs = Math.round(Number(time[1]) * 1000);
+        const score = /lavfi\.scene_score=([\d.e+-]+)/.exec(line);
+        if (score && timeMs !== undefined) { scores.push({ timeMs, score: Number(score[1]) }); timeMs = undefined; }
       }
     });
     child.once("error", error => { signal.removeEventListener("abort", abort); reject(error); });
@@ -69,9 +110,50 @@ function sceneCuts(video: string, threshold: number, signal: AbortSignal): Promi
       if (signal.aborted) reject(signal.reason ?? new Error("Reference analysis cancelled"));
       else if (failure) reject(failure);
       else if (code !== 0) reject(new Error(`Reference scene detection failed (${code}): ${tail}`));
-      else resolve(cuts);
+      else resolve(scores);
     });
   });
+}
+
+/** Review strong and weak candidate spikes using bounded, timestamp-ordered temporal evidence. */
+async function detectCuts(video: string, threshold: number, adaptive: boolean, durationMs: number, signal: AbortSignal) {
+  const scores = await sceneScores(video, threshold, adaptive, signal);
+  if (!adaptive) return { cuts: scores.map(item => item.timeMs), skipped: 0, uncertain: [] as { timeMs: number; reason: string }[] };
+  const baselines = new Map<number, number>();
+  const candidates = scores.filter((item, i) => {
+    if (i === 0 || item.score < ADAPTIVE_FLOOR) return false;
+    const start = Math.max(1, i - 5);
+    const neighbors = scores.slice(start, Math.min(scores.length, i + 6))
+      .filter((_, j) => start + j !== i).map(entry => entry.score).sort((a, b) => a - b);
+    const baseline = neighbors.length ? neighbors[Math.ceil((neighbors.length - 1) * NEIGHBOR_PERCENTILE)]! : 0;
+    baselines.set(item.timeMs, baseline);
+    return item.score > threshold || item.score >= baseline * WEAK_CANDIDATE_RATIO;
+  });
+  const scoreIndex = new Map(scores.map((item, index) => [item.timeMs, index]));
+  const uncertain: { timeMs: number; reason: string }[] = [];
+  const reviewed = await reviewAdaptiveCandidates(candidates, durationMs, async candidate => {
+    signal.throwIfAborted();
+    const index = scoreIndex.get(candidate.timeMs)!;
+    const previous = scores[index - 1], next = scores[index + 1];
+    if (!previous || !next || previous.timeMs >= candidate.timeMs || next.timeMs <= candidate.timeMs) {
+      uncertain.push({ timeMs: candidate.timeMs, reason: "insufficient-timestamps" });
+      return false;
+    }
+    const start = Math.max(0, index - TEMPORAL_FRAMES_BEFORE), end = Math.min(scores.length, index + TEMPORAL_FRAMES_AFTER);
+    const samples = scores.slice(start, end);
+    if (samples.some((item, i) => i > 0 && item.timeMs <= samples[i - 1]!.timeMs)) {
+      uncertain.push({ timeMs: candidate.timeMs, reason: "insufficient-timestamps" });
+      return false;
+    }
+    // One seek and bounded sequential decode per candidate; no FPS-based timestamp synthesis.
+    const seek = start === 0 ? 0 : (scores[start - 1]!.timeMs + samples[0]!.timeMs) / 2;
+    const frames = await sampleFrames(video, seek, samples.length, signal);
+    const split = index - start;
+    const result = reviewTemporalFrames({ before: frames.slice(0, split), after: frames.slice(split) }, candidate.score, baselines.get(candidate.timeMs) ?? 0);
+    if (result.decision !== "cut") uncertain.push({ timeMs: candidate.timeMs, reason: result.reason });
+    return result.decision === "cut";
+  });
+  return { ...reviewed, uncertain };
 }
 
 /** Local, heuristic shot timing only. Never reconstructs editable layers, identity, rigs or structure. */
@@ -118,7 +200,8 @@ export async function analyzeReference(options: ReferenceOptions): Promise<Refer
     if (!Number.isFinite(duration) || durationMs < 1 || duration > MAX_DURATION_MS) throw new Error("Reference duration must be positive and at most 10 minutes");
     if (![width, height].every(n => Number.isInteger(n) && n > 0 && n <= MAX_DIMENSION) || width * height > MAX_PIXELS || !Number.isFinite(fps) || fps <= 0 || fps > MAX_FPS)
       throw new Error("Reference metadata exceeds supported dimensions, pixel count or frame rate");
-    const cuts = [...new Set(await sceneCuts(video, threshold, signal))].filter(n => Number.isFinite(n) && n > 0 && n < durationMs).sort((a, b) => a - b);
+    const detection = await detectCuts(video, threshold, options.threshold === undefined, durationMs, signal);
+    const cuts = [...new Set(detection.cuts)].filter(n => Number.isFinite(n) && n > 0 && n < durationMs).sort((a, b) => a - b);
     const retained = [0];
     let mergedCuts = 0;
     for (const cut of cuts) {
@@ -146,7 +229,8 @@ export async function analyzeReference(options: ReferenceOptions): Promise<Refer
       const destination = path.join(out, thumbnail);
       await fs.link(file, destination); // Atomic exclusive publication; never overwrite an existing artifact.
       ownedFiles.push({ file: destination, stat, dir: out });
-      shots.push({ id, startMs, endMs, thumbnail, motion: await shotMotion(video, startMs, endMs, signal) });
+      const boundaryChange = index === 0 ? null : await frameDifference(video, Math.max(0, startMs - 1000 / fps), startMs, signal);
+      shots.push({ id, startMs, endMs, thumbnail, motion: await shotMotion(video, startMs, endMs, signal), boundaryChange });
     }
     const after = await fs.stat(video);
     if (!same(before, after) || before.size !== after.size || before.mtimeMs !== after.mtimeMs || await digest(video, signal) !== sha256)
@@ -155,8 +239,10 @@ export async function analyzeReference(options: ReferenceOptions): Promise<Refer
       source: { name: path.basename(input), sha256, bytes: before.size, durationMs, width, height, fps }, shots,
       limits: { threshold, minShotMs, maxShots, maxShotsAllowed: 30, maxDurationMs: MAX_DURATION_MS, maxBytes: MAX_BYTES,
         maxDimension: MAX_DIMENSION, maxPixels: MAX_PIXELS, maxFps: MAX_FPS, timeoutMs: TIMEOUT_MS, maxStderrBytes: MAX_STDERR_BYTES,
-        detectedCuts: cuts.length, mergedCuts, omittedCuts, shotCapReached: omittedCuts > 0, scope: "cuts-thumbnails-and-motion",
-        recovery: "Heuristic cuts and reference thumbnails only; no original editable layers, identity, rig, or structure are recovered." }, inferred: true };
+        detectedCuts: cuts.length, mergedCuts, omittedCuts, shotCapReached: omittedCuts > 0,
+        detector: options.threshold === undefined ? "adaptive-temporal-v2" : "scene-threshold", adaptiveCandidatesSkipped: detection.skipped,
+        uncertainCuts: detection.uncertain, scope: "cuts-thumbnails-and-motion",
+        recovery: "Heuristic cuts and reference thumbnails only; no original editable layers, identity, rig, or structure are recovered. Undetected weak cuts and unreviewed candidates may exist; uncertain positions require manual review, not calibrated confidence." }, inferred: true };
     signal.throwIfAborted();
     if (!await ownsDir(out)) throw new Error("Reference output directory changed during analysis");
     const file = path.join(out, "analysis.json"), handle = await fs.open(file, "wx");
@@ -169,17 +255,35 @@ export async function analyzeReference(options: ReferenceOptions): Promise<Refer
   }
 }
 
-/** Mean absolute luma difference between two sampled frames (0..1). Not pose, skeleton or camera tracking. */
-async function shotMotion(video: string, startMs: number, endMs: number, signal: AbortSignal): Promise<number> {
-  const span = endMs - startMs;
-  if (span < 300) return 0;
-  const frame = async (atMs: number) => await captureProcess("ffmpeg", ["-nostdin", "-v", "error", ...LOCAL_INPUT, "-ss", String(atMs / 1000), "-i", video,
+async function sampleFrames(video: string, atMs: number, count: number, signal: AbortSignal): Promise<Buffer[]> {
+  const raw = await captureProcess("ffmpeg", ["-nostdin", "-v", "error", ...LOCAL_INPUT, "-ss", String(atMs / 1000), "-i", video,
+    "-frames:v", String(count), "-an", "-sn", "-dn", "-vf", "scale=64:36,format=gray", "-fps_mode", "passthrough", "-f", "rawvideo", "-"], { signal, timeoutMs: 30_000 });
+  if (raw.length !== count * 64 * 36) return [];
+  return Array.from({ length: count }, (_, index) => raw.subarray(index * 64 * 36, (index + 1) * 64 * 36));
+}
+
+async function sampleFrame(video: string, atMs: number, signal: AbortSignal): Promise<Buffer> {
+  return await captureProcess("ffmpeg", ["-nostdin", "-v", "error", ...LOCAL_INPUT, "-ss", String(atMs / 1000), "-i", video,
     "-frames:v", "1", "-an", "-sn", "-dn", "-vf", "scale=64:36,format=gray", "-f", "rawvideo", "-"], { signal, timeoutMs: 30_000 });
-  const [a, b] = await Promise.all([frame(startMs + span * 0.25), frame(startMs + span * 0.75)]);
-  if (!a.length || a.length !== b.length) return 0;
+}
+
+function lumaDifference(a: Buffer, b: Buffer): number | null {
+  if (a.length !== 64 * 36 || b.length !== 64 * 36) return null;
   let total = 0;
   for (let index = 0; index < a.length; index++) total += Math.abs(a[index]! - b[index]!);
   return Math.round((total / a.length / 255) * 1000) / 1000;
+}
+
+/** Mean absolute luma difference between two sampled frames (0..1). Not pose, skeleton or camera tracking. */
+async function frameDifference(video: string, firstMs: number, secondMs: number, signal: AbortSignal): Promise<number | null> {
+  const [a, b] = await Promise.all([sampleFrame(video, firstMs, signal), sampleFrame(video, secondMs, signal)]);
+  return lumaDifference(a, b);
+}
+
+async function shotMotion(video: string, startMs: number, endMs: number, signal: AbortSignal): Promise<number | null> {
+  const span = endMs - startMs;
+  if (span < 300) return null;
+  return await frameDifference(video, startMs + span * 0.25, startMs + span * 0.75, signal);
 }
 
 export async function runReferenceVideo(args: string[]): Promise<void> {
@@ -189,8 +293,10 @@ export async function runReferenceVideo(args: string[]): Promise<void> {
     threshold: readArg(args, "threshold") === undefined ? undefined : Number(readArg(args, "threshold")),
     minShotMs: readArg(args, "min-shot-ms") === undefined ? undefined : Number(readArg(args, "min-shot-ms")),
     maxShots: readArg(args, "max-shots") === undefined ? undefined : Number(readArg(args, "max-shots")) });
-  const moving = report.shots.filter(shot => shot.motion >= 0.08).length;
-  console.log(`[glint] reference: ${report.shots.length} inferred shot(s), ${moving} with notable motion; ${report.limits.mergedCuts} close cuts merged, ${report.limits.omittedCuts} cuts omitted by cap. Motion is frame-difference only: no pose, rig, layers or original project are recovered.`);
+  const moving = report.shots.filter(shot => shot.motion !== null && shot.motion >= 0.08).length;
+  const unavailable = report.shots.filter(shot => shot.motion === null).length;
+  if (report.limits.uncertainCuts?.length) console.log(`[glint] Needs manual review (not confirmed cuts): ${report.limits.uncertainCuts.map(item => `${item.timeMs}ms (${item.reason})`).join(", ")}`);
+  console.log(`[glint] reference: ${report.shots.length} inferred shot(s), ${moving} with notable motion, ${unavailable} without a motion measurement; ${report.limits.mergedCuts} close cuts merged, ${report.limits.omittedCuts} cuts omitted by shot cap; ${report.limits.adaptiveCandidatesSkipped ?? 0} adaptive candidates skipped without flash review due to review cap. Cuts are heuristic, not verified accuracy. Motion is frame-difference only: no pose, rig, layers or original project are recovered.`);
 }
 
 const ASPECT = (width: number, height: number): "16:9" | "9:16" | "1:1" => {
@@ -215,7 +321,8 @@ export function buildReferenceProject(report: ReferenceAnalysis, options: { titl
     if (!Number.isInteger(shot.startMs) || !Number.isInteger(shot.endMs) || shot.startMs < 0 || shot.endMs <= shot.startMs) throw new Error("Reference shot ranges must be positive integer milliseconds");
     const durationMs = Math.max(100, shot.endMs - shot.startMs);
     // Motion hint affects the camera only: busy reference → keep still; calm reference → slow push.
-    const camera = shot.motion >= 0.08 ? { type: "static" as const } : shot.motion > 0 && shot.motion <= 0.02 ? { type: "push" as const, intensity: 0.25 } : undefined;
+    const motion = shot.motion;
+    const camera = motion !== null && motion >= 0.08 ? { type: "static" as const } : motion !== null && motion > 0 && motion <= 0.02 ? { type: "push" as const, intensity: 0.25 } : undefined;
     return {
       id: `ref-shot-${String(index + 1).padStart(3, "0")}`,
       kind: "image" as const,

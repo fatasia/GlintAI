@@ -2,14 +2,17 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { createHash } from "node:crypto";
-import { createCliRuntime, readArg, renderArgs, sourceInput } from "./glint-runtime";
+import { createRequire } from "node:module";
+import { spawn } from "node:child_process";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { createCliRuntime, normalizeCommandArgs, readArg, renderArgs, sourceInput } from "./glint-runtime";
 import { styleRhythmIssues } from "./style-rhythm";
-import { composeFromSource, isTemplateId, reviewProject, craftLint, lintVerdict } from "@glintai/composer";
+import { composeFromMarkdown, composeFromSource, isTemplateId, reviewProject, craftLint, lintVerdict } from "@glintai/composer";
+import { planToSource, VideoPlan } from "@glintai/composer/plan";
 import { llmFromEnvironment } from "@glintai/llm";
 import { defaultPersonas, reexplain, rehearse, parsePersonaPack } from "@glintai/listener";
 import { parseProject, type SceneScriptProject } from "@glintai/scenescript";
 import { commandSourceAdapter, officeSourceAdapters, mediaSourceAdapters, readSourceText, type SourceAdapter } from "@glintai/knowledge";
-
 /**
  * Unified Glint CLI — the single entry both the apps and the agent skill drive.
  *
@@ -22,11 +25,9 @@ import { commandSourceAdapter, officeSourceAdapters, mediaSourceAdapters, readSo
 const runtime = createCliRuntime(import.meta.url);
 const STUDIO_DIR = runtime.studioDir;
 const { resolvePaths, runScript } = runtime;
-
 function hasFlag(args: string[], name: string): boolean {
   return args.includes(`--${name}`);
 }
-
 function requireLlm() {
   if (!process.env.GLINT_LLM_API_KEY) {
     throw new Error(
@@ -35,8 +36,14 @@ function requireLlm() {
   }
   return llmFromEnvironment();
 }
-
-async function runMake(args: string[]): Promise<void> {
+function enforceWebMakePolicy(project: unknown): void {
+  if (process.env.GLINT_WEB_MAKE_POLICY !== "1") return;
+  const parsed = parseProject(project);
+  if (parsed.scenes.some(scene => scene.kind === "html" || scene.kind === "three")) {
+    throw new Error("Web 不支持渲染 HTML 或 3D 场景；请导出工程后使用本机 glint render。");
+  }
+}
+export async function runMake(args: string[]): Promise<void> {
   const input = sourceInput(args);
   const beatGrid = await (await import("./beat-policy")).beatsForMake(args);
   // Multiple data sources share one editable SceneScript; workbook sheets are separate scenes.
@@ -45,6 +52,7 @@ async function runMake(args: string[]): Promise<void> {
     const { tableProject } = await import("./table-sources");
     const table = await tableProject(sources, { title: readArg(args, "title"), kind: readArg(args, "kind"), id: readArg(args, "id"), language: readArg(args, "language"), aspect: readArg(args, "aspect") as SceneScriptProject["aspect"], sheet: readArg(args, "sheet"), python: readArg(args, "table-python") });
     const project = table.project;
+    enforceWebMakePolicy(project);
     const outDir = path.resolve(STUDIO_DIR, "out"); fs.mkdirSync(outDir, { recursive: true });
     const projectPath = path.join(outDir, `${project.id}.project.json`); fs.writeFileSync(projectPath, JSON.stringify(project, null, 2));
     for (const warning of table.warnings) console.warn(`[glint] table: ${warning}`);
@@ -61,7 +69,6 @@ async function runMake(args: string[]): Promise<void> {
   if (!["llm", "heuristic"].includes(engine)) throw new Error("Invalid engine");
   const useLlm = engine === "llm" || Boolean(readArg(args, "engine") === "llm");
   const llm = engine === "llm" ? requireLlm() : process.env.GLINT_LLM_API_KEY ? requireLlm() : undefined;
-
   console.log("[glint] 1/4 composing...");
   const adapters: Record<string, SourceAdapter> = hasFlag(args, "office") ? officeSourceAdapters() : {};
   if(readArg(args,"media-python"))Object.assign(adapters,mediaSourceAdapters({python:readArg(args,"media-python")!,modelDir:readArg(args,"transcription-model")}));
@@ -93,9 +100,11 @@ async function runMake(args: string[]): Promise<void> {
   fs.mkdirSync(outDir, { recursive: true });
   const sourcePath = path.join(outDir, `${project.id}.source.md`);
   fs.writeFileSync(sourcePath, composed.sourceText);
-  console.log(`[glint]    project "${project.title}" — ${project.scenes.length} scenes → ${sourcePath}`);
-
-  if ((hasFlag(args, "rehearse") || hasFlag(args, "polish")) && !llm) throw new Error("Rehearsal requires a configured LLM.");
+  console.log(
+    `[glint]    project "${project.title}" — ${project.scenes.length} scenes → ${sourcePath}`,
+  );
+  if ((hasFlag(args, "rehearse") || hasFlag(args, "polish")) && !llm)
+    throw new Error("Rehearsal requires a configured LLM.");
   if ((hasFlag(args, "rehearse") || hasFlag(args, "polish")) && llm) {
     console.log("[glint] 2/4 rehearsal (virtual listeners)...");
     const reports = await rehearse(project, llm, {
@@ -110,7 +119,6 @@ async function runMake(args: string[]): Promise<void> {
     }
     const reportPath = path.join(outDir, `${project.id}.rehearsal.json`);
     fs.writeFileSync(reportPath, JSON.stringify(reports, null, 2));
-
     if (hasFlag(args, "polish")) {
       const actionable = reports
         .flatMap((report) => report.confusions)
@@ -126,13 +134,13 @@ async function runMake(args: string[]): Promise<void> {
       }
     }
   }
-
   const backend = readArg(args, "backend") ?? "native";
   if (!["native", "reference"].includes(backend)) throw new Error("backend must be native or reference");
   if (beatGrid && backend === "reference") (await import("./beat-policy")).injectBeatGrid(project, beatGrid);
   const { repairPresentation } = await import("./presentation-repair");
   const repair = repairPresentation(project);
   project = repair.project;
+  enforceWebMakePolicy(project);
   fs.writeFileSync(path.join(outDir, `${project.id}.repair.json`), JSON.stringify({ changes: repair.changes, remaining: repair.issues, verdict: repair.verdict }, null, 2));
   if (repair.verdict === "red") throw new Error("Presentation checks still fail after one bounded repair; inspect repair.json. Content was not rewritten.");
   const projectPath = path.join(outDir, `${project.id}.project.json`);
@@ -159,10 +167,9 @@ async function runMake(args: string[]): Promise<void> {
   }
   console.log(`[glint] make done — "${project.title}"`);
 }
-
 async function main(): Promise<void> {
   const [command, ...raw] = process.argv.slice(2);
-  const normalized = command === "delivery-check" ? raw.map(arg => /^--audio=(required|optional|forbidden)$/.test(arg) ? arg.replace("--audio=", "--audio-policy=") : arg) : raw;
+  const normalized = normalizeCommandArgs(command, raw);
   const rest = resolvePaths(normalized);
   switch (command) {
     case "make":
@@ -222,6 +229,189 @@ async function main(): Promise<void> {
       console.log(`[glint] applied ${changes.length} change(s) → ${result.revision}`);
       return;
     }
+    case "clip": {
+      const { runClipCommand } = await import("./longform-clip");
+      await runClipCommand(rest);
+      return;
+    }
+    case "brand": {
+      // W5 TEAM-01: merge a brand pack over an installed theme, print CSS vars.
+      const { parseBrandPack, brandTheme } = await import("@glintai/design-tokens/brand");
+      const { tokensToCssVariables } = await import("@glintai/design-tokens");
+      const packInput = readArg(rest, "pack"), outFile = readArg(rest, "out");
+      const base = (readArg(rest, "base") ?? "glint-dark") as Parameters<typeof brandTheme>[0];
+      const { pack, issues } = parseBrandPack(packInput ? JSON.parse(fs.readFileSync(packInput, "utf8")) : { name: readArg(rest, "name") ?? "品牌", colors: { accent: readArg(rest, "accent") ?? "#9b8bfb", ...(readArg(rest, "bg") ? { bg: readArg(rest, "bg") } : {}), ...(readArg(rest, "text") ? { text: readArg(rest, "text") } : {}) }, ...(readArg(rest, "logo") ? { logoText: readArg(rest, "logo") } : {}) });
+      if (!pack) throw new Error(`品牌包无效：${issues.join("；")}`);
+      const { theme, issues: contrast } = brandTheme(base, pack);
+      for (const issue of contrast) console.warn(`[glint] 对比度：${issue}`);
+      const css = tokensToCssVariables(theme);
+      const projectFile = readArg(rest, "project");
+      if (projectFile) {
+        // SceneScript theme accepts inline token overrides (resolveTheme), so
+        // the merged brand tokens go straight into the project and render.
+        const project = JSON.parse(fs.readFileSync(projectFile, "utf8"));
+        project.theme = { ...theme, name: pack.name, base };
+        fs.writeFileSync(projectFile, JSON.stringify(project, null, 2));
+        console.log(`[glint] brand：${pack.name} 已写入工程 ${path.basename(projectFile)}（渲染走 resolveTheme 内联覆盖）`);
+        return;
+      }
+      if (outFile) { fs.writeFileSync(outFile, css); console.log(`[glint] brand：${pack.name}（基于 ${base}）→ ${outFile}`); }
+      else console.log(css);
+      return;
+    }
+    case "clip-copy": {
+      // S06 copy step: per-clip platform copy from the configured text model.
+      const manifestFile = readArg(rest, "manifest");
+      if (!manifestFile) throw new Error("clip-copy requires --manifest=<clips.json>");
+      const { writeClipCopy } = await import("./clip-copy");
+      const { copies, manifestFile: written } = await writeClipCopy({ manifestFile });
+      console.log(`[glint] clip-copy：${copies.length} 条文案 → ${written}`);
+      for (const copy of copies) console.log(`  ${copy.id}: ${copy.title}｜${copy.hook}`);
+      return;
+    }
+    case "batch": {
+      // S07 steps 1-5: validate, fill, budget, schedule and resume a product batch.
+      const tableFile = readArg(rest, "table"), templateFile = readArg(rest, "template"), out = readArg(rest, "out");
+      const model = readArg(rest, "model");
+      if (!tableFile || !templateFile) throw new Error("batch requires --table=<csv> and --template=<plan.json>");
+      const { validateBatchTable, applyTemplate, expandSceneGroups, estimateBatchBudget, scheduleBatch, resumeBatch } = await import("@glintai/composer/batch");
+      const table = validateBatchTable(fs.readFileSync(tableFile, "utf8"), { assetExists: asset => fs.existsSync(asset) || fs.existsSync(path.resolve(path.dirname(path.resolve(tableFile)), asset)) });
+      for (const issue of table.issues) console.warn(`[glint] 表第 ${issue.row} 行 ${issue.column}：${issue.message}`);
+      if (!table.rows.length) throw new Error("没有可用的商品行；先修复上表中的错误。");
+      const template = JSON.parse(fs.readFileSync(templateFile, "utf8"));
+      const outDir = path.resolve(out ?? path.join(STUDIO_DIR, "out", "batch"));
+      fs.mkdirSync(outDir, { recursive: true });
+      if (model) {
+        const { MediaGatewayClient } = await import("@glintai/media");
+        const client = new MediaGatewayClient({ baseUrl: process.env.GLINT_MEDIA_BASE_URL ?? "", apiKey: process.env.GLINT_MEDIA_API_KEY ?? "" });
+        const raw = await client.pricing(model);
+        const billing = String(raw?.channel_groups?.[0]?.billing_method ?? "");
+        const price = Number(raw?.channel_groups?.[0]?.base_price ?? 0) || Number(raw?.channel_groups?.[0]?.input_token_price ?? 0);
+        const pricing = billing.includes("秒") ? { perSecond: price } : { perCall: price };
+        const planSeconds = template.scenes?.reduce((sum: number, scene: { seconds: number }) => sum + scene.seconds, 0) ?? 0;
+        const budget = estimateBatchBudget(table.rows, { planSeconds, pricing: { ...pricing, currency: "算力" } });
+        console.log(`[glint] 预算：${budget.rows} 行 × ${budget.perRow} = ${budget.total} ${budget.currency}（${billing || "按次"}；${budget.basis}）`);
+      }
+      const force = hasFlag(rest, "force");
+      const planFileFor = (id: string) => path.join(outDir, `${id}.plan.json`);
+      const runStage = hasFlag(rest, "run");
+      // Plan stage: a valid plan counts as done. Run stage: only a rendered mp4 does.
+      const { todo, done } = resumeBatch(table.rows, { isDone: row => {
+        if (force) return false;
+        if (!fs.existsSync(planFileFor(row.id))) return false;
+        if (runStage) return fs.existsSync(path.join(outDir, row.id, `${row.id}.mp4`));
+        try { return Boolean(JSON.parse(fs.readFileSync(planFileFor(row.id), "utf8")).title); } catch { return false; }
+      } });
+      if (done.length) console.log(`[glint] 已完成 ${done.length} 行，跳过（--force 重做全部）`);
+      const maxConcurrent = Number(readArg(rest, "concurrency") ?? 2);
+      const { chunks, duplicates } = scheduleBatch(todo, { maxConcurrent, keyOf: row => row.id });
+      const manifest = chunks.flat().map(row => {
+        const filled = applyTemplate(expandSceneGroups(template, row), row);
+        const planFile = planFileFor(row.id);
+        fs.writeFileSync(planFile, JSON.stringify(filled.plan, null, 2));
+        return { id: row.id, name: row.name, planFile, warnings: filled.warnings };
+      });
+      // BATCH×GEN bridge: generate missing product assets through the media gateway.
+      const fillModel = readArg(rest, "fill-assets");
+      const resolvedAssets = new Map<string, string[]>();
+      const assetDir = path.join(outDir, "assets");
+      if (fillModel) {
+        const { MediaGatewayClient, downloadMediaResult } = await import("@glintai/media");
+        const client = new MediaGatewayClient({ baseUrl: process.env.GLINT_MEDIA_BASE_URL ?? "", apiKey: process.env.GLINT_MEDIA_API_KEY ?? "" });
+        fs.mkdirSync(assetDir, { recursive: true });
+        const writeAtomic = (file: string, bytes: Uint8Array) => { const tmp = `${file}.tmp`; fs.writeFileSync(tmp, bytes); fs.renameSync(tmp, file); };
+        for (const row of table.rows) {
+          const missing = row.assets.filter(asset => !fs.existsSync(asset) && !fs.existsSync(path.join(outDir, asset)));
+          const generated: string[] = [...row.assets];
+          for (const [index, asset] of missing.entries()) {
+            const prompt = `${row.assetPrompt || `${row.name}，${row.sellingPoints[0] ?? "产品图"}`}，商业摄影质感，浅景深，16:9 构图`;
+            const taskId = await client.submit(fillModel, prompt, {}, AbortSignal.timeout(30_000));
+            const task = await client.wait(taskId, { timeoutMs: 300_000 });
+            if (task.state !== "success" || !task.result_url) throw new Error(`素材生成失败（${row.id} #${index + 1}）：${task.state}`);
+            // TUN/Fake-IP environments resolve public hosts into reserved ranges;
+            // retry with the opt-in public-DNS path, same as the media jobs.
+            let result;
+            try { result = await downloadMediaResult(task, AbortSignal.timeout(120_000)); }
+            catch (error) {
+              const reason = error instanceof Error ? error.message : String(error);
+              if (!/Private, loopback or reserved/.test(reason) || process.env.GLINT_MEDIA_PUBLIC_DNS !== "1") throw error;
+              result = await downloadMediaResult(task, AbortSignal.timeout(120_000), { publicDns: true });
+            }
+            const local = `${row.id}-${index + 1}${result.contentType.includes("png") ? ".png" : ".jpg"}`;
+            writeAtomic(path.join(assetDir, local), result.bytes);
+            generated[index] = `assets/${local}`;
+            console.log(`[glint] fill-assets：${row.id} #${index + 1} → ${local}（${result.bytes.length} 字节）`);
+          }
+          resolvedAssets.set(row.id, generated);
+        }
+      }
+      const manifestFile = path.join(outDir, "batch.json");
+      fs.writeFileSync(manifestFile, JSON.stringify({ rows: manifest, issues: table.issues, schedule: { maxConcurrent, chunkSizes: chunks.map(chunk => chunk.length) }, duplicates: duplicates.map(entry => entry.key), ...(resolvedAssets.size ? { assetsResolved: [...resolvedAssets.entries()].map(([id, files]) => ({ id, files })) } : {}) }, null, 2));
+      console.log(`[glint] batch：本轮填充 ${manifest.length} 个方案 → ${outDir}（并发块 ${chunks.map(chunk => chunk.length).join("/")}；清单 ${path.basename(manifestFile)}）`);
+      if (!hasFlag(rest, "run")) { console.log("逐个制作：glint task --plan=<file> --out=<目录>；或重跑加 --run 批量渲染。"); return; }
+
+      // BATCH executor: offline-compose each plan into a SceneScript project,
+      // then render rows concurrently in separate processes (build is heavy).
+      const { runChunked, applyBatchAssets } = await import("@glintai/composer/batch");
+      const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+      const require = createRequire(import.meta.url);
+      const rowsById = new Map(manifest.map(entry => [entry.id, entry]));
+      const runs = await runChunked(chunks.map(chunk => chunk.map(row => rowsById.get(row.id)!)), async entry => {
+        const rowDir = path.join(outDir, entry.id);
+        fs.mkdirSync(rowDir, { recursive: true });
+        const projectPath = path.join(rowDir, `${entry.id}.project.json`);
+        const plan = VideoPlan.parse(JSON.parse(fs.readFileSync(entry.planFile, "utf8")));
+        const project = composeFromMarkdown(planToSource(plan), { projectId: `batch-${entry.id}`, aspect: plan.platform, theme: plan.theme });
+        // Bind generated assets: {{素材N}} scenes become real image scenes.
+        const rowAssetDir = path.join(rowDir, "assets"); fs.mkdirSync(rowAssetDir, { recursive: true });
+        const { project: staged, bound } = applyBatchAssets(project, resolvedAssets.get(entry.id) ?? [], { copyAsset: file => {
+          const target = path.join(rowAssetDir, path.basename(file));
+          const source = path.join(assetDir, path.basename(file));
+          if (fs.existsSync(source)) fs.copyFileSync(source, target);
+          return `assets/${path.basename(file)}`;
+        } });
+        if (bound) console.log(`[${entry.id}] 素材绑定：${bound} 个场景转图片镜头`);
+        fs.writeFileSync(projectPath, JSON.stringify(project, null, 2));
+        const output = path.join(rowDir, `${entry.id}.mp4`);
+        await new Promise<void>((resolve, reject) => {
+          const child = spawn(process.execPath, ["--import", pathToFileURL(require.resolve("tsx")).href, path.join(scriptDir, "glint.ts"), "build", "--project=" + projectPath, "--out=" + output, "--tts=" + (readArg(rest, "tts") ?? "mock"), "--fast"], { cwd: STUDIO_DIR, env: process.env, shell: false, stdio: ["ignore", "pipe", "pipe"] });
+          child.stdout.on("data", (chunk: Buffer) => process.stdout.write(`[${entry.id}] ${chunk}`));
+          child.stderr.on("data", (chunk: Buffer) => process.stderr.write(`[${entry.id}] ${chunk}`));
+          child.once("error", reject);
+          child.once("close", (code: number | null) => code === 0 ? resolve() : reject(new Error(`build exited with code ${code}`)));
+        });
+        return { id: entry.id, projectPath, output };
+      });
+      const outcomes = runs.map(run => ({ id: run.item.id, ok: run.ok, ...(run.value ? run.value : {}), ...(run.error ? { error: run.error } : {}) }));
+      fs.writeFileSync(manifestFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(manifestFile, "utf8")), run: outcomes }, null, 2));
+      const failed = outcomes.filter(outcome => !outcome.ok);
+      console.log(`[glint] batch run：${outcomes.length - failed.length}/${outcomes.length} 成功${failed.length ? `；失败行 ${failed.map(outcome => `${outcome.id}(${outcome.error})`).join("、")}，重跑自动恢复` : ""}`);
+      if (failed.length) process.exitCode = 1;
+      return;
+    }
+    case "blind": {
+      // QA-02: identity-free comparison and score distribution over projects.
+      const { blindMetrics, blindCompare, scoreDistribution } = await import("@glintai/composer/blind");
+      const load = (file: string) => parseProject(JSON.parse(fs.readFileSync(file, "utf8")));
+      const dir = readArg(rest, "dir");
+      if (dir) {
+        const files: string[] = [];
+        const walk = (entry: string) => { for (const name of fs.readdirSync(entry, { withFileTypes: true })) { const full = path.join(entry, name.name); if (name.isDirectory()) walk(full); else if (name.name.endsWith(".project.json")) files.push(full); } };
+        walk(dir);
+        if (files.length < 2) throw new Error("分布至少需要目录里两个 .project.json");
+        const distribution = scoreDistribution(files.map(load));
+        console.log(`[glint] 盲评分布（${distribution.count} 个工程，指标方向：语速为展示项不判胜负）`);
+        for (const metric of distribution.metrics) console.log(`  ${metric.metric}: min ${metric.min} / 中位 ${metric.median} / max ${metric.max}`);
+        return;
+      }
+      const a = readArg(rest, "a"), b = readArg(rest, "b");
+      if (!a || !b) throw new Error("blind requires --a=<project.json> --b=<project.json>（或 --dir=<目录> 看分布）");
+      const comparison = blindCompare(blindMetrics(load(a)), blindMetrics(load(b)));
+      console.log("[glint] 盲评对比（A/B 脱标识；揭晓映射前先记录你的偏好）");
+      for (const row of comparison.rows) console.log(`  ${row.metric}: A ${row.A} | B ${row.B} → ${row.winner === "tie" ? "平" : `${row.winner} 优`}`);
+      console.log(`  ${comparison.summary}`);
+      return;
+    }
     case "reference": {
       const { runReferenceVideo } = await import("./reference-video");
       await runReferenceVideo(rest);
@@ -234,12 +424,18 @@ async function main(): Promise<void> {
     }
     case "packs": {
       const { runCreationPacks } = await import("./creation-packs-cli");
-      runCreationPacks(rest);
-      return;
+      return void runCreationPacks(rest);
     }
+    case "look": return (await import("./look")).runLook(rest).then(() => undefined);
+    case "project-migrate": return (await import("./project-container-io")).runProjectMigration(rest).then(() => undefined);
     case "delivery-check": {
       const { runDeliveryCheck } = await import("./delivery-check");
       await runDeliveryCheck(rest);
+      return;
+    }
+    case "verify-export": {
+      const { runVerifyExport } = await import("./verify-export");
+      await runVerifyExport(rest);
       return;
     }
     case "timeline": {
@@ -297,11 +493,39 @@ async function main(): Promise<void> {
       console.log(`[glint] report: ${result.scenes} scenes, QA ${result.qa} → ${result.out}`);
       return;
     }
+    case "alpha-frames": {
+      const projectPath = readArg(rest, "project"), outDir = readArg(rest, "out");
+      if (!projectPath || !outDir) throw new Error("alpha-frames requires --project=<project.json> --out=<new directory>");
+      const width = readArg(rest, "width"), height = readArg(rest, "height");
+      if ((width === undefined) !== (height === undefined)) throw new Error("Pass --width and --height together");
+      const { exportAlphaFrames } = await import("./alpha-frames");
+      const result = await exportAlphaFrames({ projectPath, outDir, ...(width === undefined ? {} : { width: Number(width), height: Number(height) }) });
+      console.log(JSON.stringify(result, null, 2)); return;
+    }
+    case "alpha-webm": {
+      const projectPath = readArg(rest, "project"), out = readArg(rest, "out");
+      if (!projectPath || !out) throw new Error("alpha-webm requires --project=<project.json> --out=<new.webm>");
+      const width = readArg(rest, "width"), height = readArg(rest, "height");
+      if ((width === undefined) !== (height === undefined)) throw new Error("Pass --width and --height together");
+      const { exportAlphaWebm } = await import("./alpha-webm");
+      const result = await exportAlphaWebm({ projectPath, out, ...(width === undefined ? {} : { width: Number(width), height: Number(height) }) });
+      console.log(JSON.stringify(result, null, 2)); return;
+    }
+    case "image-canvas": {
+      const src = readArg(rest, "src"), out = readArg(rest, "out");
+      if (!src || !out) throw new Error("image-canvas requires --src=<image> --out=<new.png> and margins in pixels");
+      const margin = (name: string) => { const value = readArg(rest, name); return value === undefined ? undefined : Number(value); };
+      const { expandImageCanvas } = await import("./image-canvas");
+      const result = await expandImageCanvas({ src, out, left: margin("left"), right: margin("right"), top: margin("top"), bottom: margin("bottom"), color: readArg(rest, "color") });
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
     case "image-edit": {
       const src = readArg(rest, "src"), out = readArg(rest, "out");
       const preset = readArg(rest, "preset");
       const prompt = readArg(rest, "prompt") ?? (preset ? (await import("./image-edit")).EDIT_PRESETS[preset] : undefined);
       if (!src || !out || !prompt) throw new Error("image-edit requires --src=<image> --out=<new image path> and (--prompt=\"改动\" 或 --preset=remove-bg|new-background|retouch|restore|upscale)");
+      if (!readArg(rest, "prompt") && (preset === "remove-bg" || preset === "upscale")) console.warn(preset === "remove-bg" ? "remove-bg 是白底改图提示词，不生成透明抠图。" : "upscale 是清晰精修提示词，不保证输出像素尺寸放大。");
       const { imageEdit } = await import("./image-edit");
       const result = await imageEdit({ src, prompt, out, mask: readArg(rest, "mask"), taskId: readArg(rest, "task"), model: readArg(rest, "model"), baseUrl: process.env.GLINT_MEDIA_BASE_URL, apiKey: process.env.GLINT_MEDIA_API_KEY, size: readArg(rest, "size"), aspectRatio: readArg(rest, "aspect"), publicDns: process.env.GLINT_MEDIA_PUBLIC_DNS === "1" });
       console.log(`[glint] image edited (${result.cost ?? "?"} 算力) → ${result.output}; 版本链: ${result.chain}`);
@@ -367,6 +591,11 @@ async function main(): Promise<void> {
       console.log(`\n风格包(主题): ${STYLE_PACKS.map((pack) => pack.name).join(" | ")}\n→ pnpm glint styles 看说明`);
       return;
     }
+    case "style-catalog": {
+      const { runStyleCatalog } = await import("./style-catalog");
+      runStyleCatalog(rest, path.resolve(STUDIO_DIR, "../../outputs/style-samples"));
+      return;
+    }
     case "styles": {
       const { AESTHETIC_FONTS, STYLE_PACKS } = await import("@glintai/design-tokens");
       if (readArg(rest, "json") !== undefined || rest.includes("--json")) {
@@ -427,6 +656,31 @@ async function main(): Promise<void> {
       console.log("  剪映打开后如提示升级草稿属正常;重导出请重跑本命令,不要读回剪映改过的草稿。");
       return;
     }
+    case "lottie-studio": {
+      const { runLottieStudio } = await import("./lottie-studio");
+      await runLottieStudio(rest);
+      return;
+    }
+    case "lottie-import": {
+      const { runLottieImport } = await import("./lottie-import");
+      runLottieImport(rest);
+      return;
+    }
+    case "html-template": {
+      const { runHtmlTemplate } = await import("./html-template");
+      runHtmlTemplate(rest);
+      return;
+    }
+    case "render-env": {
+      const { runRenderEnv } = await import("./render-env");
+      runRenderEnv(rest);
+      return;
+    }
+    case "gltf-controls": {
+      const { runGltfControls } = await import("./gltf-controls");
+      runGltfControls(rest);
+      return;
+    }
     case "nle-render":
       return runScript("nle-render", rest);
     case "nle": {
@@ -448,13 +702,139 @@ async function main(): Promise<void> {
     case "srt": {
       const projectFile = readArg(rest, "project");
       if (!projectFile) throw new Error("srt requires --project=<scenescript.json>");
-      const { buildProjectCues, formatSrt } = await import("./jianying");
+      const { buildProjectCues, formatSrt, formatVtt } = await import("./jianying");
       const project = parseProject(JSON.parse(fs.readFileSync(projectFile, "utf8")));
-      const cues = buildProjectCues(project);
-      const out = readArg(rest, "out") ?? path.join(STUDIO_DIR, "out", `${project.id}.srt`);
+      let cues = buildProjectCues(project);
+      const lang = readArg(rest, "lang");
+      if (lang) {
+        const { translateCues } = await import("./subtitle-translate");
+        const { llmFromEnvironment } = await import("@glintai/llm");
+        cues = await translateCues(cues, lang, llmFromEnvironment());
+      }
+      const format = readArg(rest, "format") ?? "srt";
+      if (!["srt", "vtt", "both"].includes(format)) throw new Error("format must be srt, vtt or both");
+      const out = readArg(rest, "out") ?? path.join(STUDIO_DIR, "out", `${project.id}${lang ? `.${lang}` : ""}.srt`);
       fs.mkdirSync(path.dirname(out), { recursive: true });
       fs.writeFileSync(out, formatSrt(cues), "utf8");
+      if (format !== "srt") {
+        const vttOut = format === "both" ? out.replace(/\.srt$/, ".vtt") : (readArg(rest, "out") ? out.replace(/\.srt$/, ".vtt") : path.join(STUDIO_DIR, "out", `${project.id}${lang ? `.${lang}` : ""}.vtt`));
+        fs.writeFileSync(vttOut, formatVtt(cues), "utf8");
+        console.log(`[glint] ${cues.length} 条字幕 → ${out} + ${vttOut}`);
+        return;
+      }
       console.log(`[glint] ${cues.length} 条字幕 → ${out}`);
+      return;
+    }
+    case "bundle": {
+      const projectFile = readArg(rest, "project"), out = readArg(rest, "out");
+      if (!projectFile || !out) throw new Error("bundle requires --project=<scenescript.json> --out=<bundle dir>");
+      const { migrateProject } = await import("@glintai/scenescript/migrate");
+      const { writeBundle } = await import("@glintai/scenescript/bundle");
+      const { project } = migrateProject(JSON.parse(fs.readFileSync(projectFile, "utf8")));
+      const plan = writeBundle(project, path.dirname(path.resolve(projectFile)), out);
+      if (plan.missingAssets.length) console.log(`[glint] 警告：${plan.missingAssets.length} 个资源缺失，已记录在 manifest 但未拷贝：${plan.missingAssets.join("、")}`);
+      console.log(`[glint] 资源包 → ${out}（${plan.manifest.assets.length} 个资源引用）`);
+      return;
+    }
+    case "open-bundle": {
+      const dir = readArg(rest, "dir");
+      if (!dir) throw new Error("open-bundle requires --dir=<bundle dir>");
+      const { openBundle } = await import("@glintai/scenescript/bundle");
+      const opened = openBundle(dir);
+      if (opened.missingAssets.length) console.log(`[glint] 警告：资源包缺 ${opened.missingAssets.length} 个文件：${opened.missingAssets.join("、")}`);
+      if (opened.hashMismatches.length) throw new Error(`资源包校验失败，以下文件与 manifest 不符：${opened.hashMismatches.join("、")}`);
+      console.log(`[glint] 工程 ${opened.project.id}「${opened.project.title}」：${opened.project.scenes.length} 场景，校验通过`);
+      return;
+    }
+    case "bundle-chapters": {
+      const files = rest.filter(arg => arg.startsWith("--project=")).map(arg => arg.slice("--project=".length));
+      const out = readArg(rest, "out");
+      if (!files.length || !out || files.some(file => !file)) throw new Error("bundle-chapters requires one or more --project=<chapter.json> and --out=<new directory>");
+      const { writeChapterBundle } = await import("@glintai/scenescript/chapter-bundle");
+      const inputs = files.map(file => ({ project: parseProject(JSON.parse(fs.readFileSync(path.resolve(file), "utf8"))), root: path.dirname(path.resolve(file)) }));
+      const result = writeChapterBundle(inputs, out);
+      console.log(`[glint] 章节包 → ${out}（${result.chapters.length} 个工程）`);
+      return;
+    }
+    case "inspect-chapters": {
+      const dir = readArg(rest, "dir");
+      if (!dir) throw new Error("inspect-chapters requires --dir=<chapter bundle>");
+      const { inspectChapterBundle } = await import("@glintai/scenescript/chapter-bundle");
+      console.log(JSON.stringify(inspectChapterBundle(dir), null, 2));
+      return;
+    }
+    case "restore-chapters": {
+      const dir = readArg(rest, "dir"), out = readArg(rest, "out");
+      if (!dir || !out) throw new Error("restore-chapters requires --dir=<chapter bundle> --out=<new directory>");
+      const { restoreChapterBundle } = await import("@glintai/scenescript/chapter-bundle");
+      const result = restoreChapterBundle(dir, out);
+      console.log(`[glint] 已验证并恢复 ${result.chapters.length} 个工程 → ${out}`);
+      return;
+    }
+    case "drama-plan": {
+      const script = readArg(rest, "script"), out = readArg(rest, "out");
+      if (!script || !out) throw new Error("drama-plan requires --script=<剧本.txt> --out=<plan.json>");
+      const { buildDramaEpisodePlan } = await import("@glintai/composer/drama-pipeline");
+      const result = buildDramaEpisodePlan({ screenplay: fs.readFileSync(script, "utf8"), episode: Number(readArg(rest, "episode") ?? 1) || 1, episodeSize: Number(readArg(rest, "episode-size")) || undefined, theme: readArg(rest, "theme"), aspect: readArg(rest, "aspect") as "16:9" | "9:16" | "1:1" | undefined });
+      fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
+      fs.writeFileSync(out, JSON.stringify({ plan: result.plan, episodes: result.episodes, characters: result.characters }, null, 2));
+      console.log(`[glint] 第${result.plan.title.match(/第(\d+)集/)?.[1] ?? 1}集：${result.plan.scenes.length} 镜头 / ${result.plan.totalSeconds}s / 角色 ${result.characters.join("、")} → ${out}`);
+      return;
+    }
+    case "asset-impact": {
+      const projectFile = readArg(rest, "project"), assetId = readArg(rest, "asset");
+      if (!projectFile || !assetId) throw new Error("asset-impact requires --project=<scenescript.json> --asset=<assetId>");
+      const { scenesAffectedByAsset } = await import("@glintai/scenescript/asset-invalidate");
+      const project = parseProject(JSON.parse(fs.readFileSync(projectFile, "utf8")));
+      const affected = scenesAffectedByAsset(project, assetId);
+      console.log(JSON.stringify({ assetId, affectedSceneIds: affected, count: affected.length }, null, 2));
+      return;
+    }
+    case "lang-variant": {
+      const projectFile = readArg(rest, "project"), lang = readArg(rest, "lang"), translationsFile = readArg(rest, "translations"), out = readArg(rest, "out");
+      if (!projectFile || !lang || !translationsFile || !out) throw new Error("lang-variant requires --project=<plan.json> --lang=<语言> --translations=<json> --out=<plan.json>");
+      const { deriveLanguageVariant } = await import("@glintai/composer/multilang");
+      const source = JSON.parse(fs.readFileSync(projectFile, "utf8")).plan ?? JSON.parse(fs.readFileSync(projectFile, "utf8"));
+      const variant = deriveLanguageVariant(source, lang, JSON.parse(fs.readFileSync(translationsFile, "utf8")));
+      fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
+      fs.writeFileSync(out, JSON.stringify(variant, null, 2));
+      console.log(`[glint] ${lang} 版本（${variant.scenes.filter(scene => scene.narration).length} 条译文）→ ${out}`);
+      return;
+    }
+    case "clip-transcribe": {
+      const manifest = readArg(rest, "clips"), model = readArg(rest, "model");
+      if (!manifest || !model) throw new Error("clip-transcribe requires --clips=<clips.json> --model=<多模态文本模型，如 gem-3.8-flash>");
+      const { transcribeClips } = await import("./clip-insight");
+      const result = await transcribeClips({ manifestFile: manifest, model });
+      console.log(`[glint] 已转写 ${result.transcripts} 个片段，字幕与旁白写回 ${result.manifestFile}`);
+      return;
+    }
+    case "clip-highlights": {
+      const manifest = readArg(rest, "clips");
+      if (!manifest) throw new Error("clip-highlights requires --clips=<clips.json> [--brief=主题] [--top=N]");
+      const { pickHighlights } = await import("./clip-insight");
+      const result = await pickHighlights({ manifestFile: manifest, brief: readArg(rest, "brief"), top: Number(readArg(rest, "top")) || undefined });
+      console.log(`[glint] 亮点片段：${result.highlights.join("、")}（已写回 ${result.manifestFile}）`);
+      return;
+    }
+    case "lipsync": {
+      const face = readArg(rest, "face"), audio = readArg(rest, "audio"), out = readArg(rest, "out");
+      if (!face || !audio || !out) throw new Error("lipsync requires --face=<人脸图> --audio=<配音音频> --out=<mp4> [--model=] [--duration-ms=] [--aspect=]");
+      const { lipSync, heuristicMouthCheck } = await import("./lipsync");
+      const result = await lipSync({ faceImage: face, audio, out, model: readArg(rest, "model"), durationMs: Number(readArg(rest, "duration-ms")) || undefined, aspect: readArg(rest, "aspect") as "9:16" | "16:9" | "1:1" | undefined, baseUrl: process.env.GLINT_MEDIA_BASE_URL, apiKey: process.env.GLINT_MEDIA_API_KEY });
+      console.log(`[glint] 口型视频 → ${result.out}（${result.model}，${(result.durationMs / 1000).toFixed(1)}s，${result.cost ?? "?"} 算力，任务 ${result.taskId}）`);
+      const check = await heuristicMouthCheck(result.out);
+      console.log(`[glint] ${check.notes}`);
+      return;
+    }
+    case "publish-kit": {
+      const planFile = readArg(rest, "plan"), platform = readArg(rest, "platform"), out = readArg(rest, "out");
+      if (!planFile || !platform || !out) throw new Error("publish-kit requires --plan=<plan.json> --platform=<douyin|shipinhao|bilibili> --out=<dir> [--tags=a,b]");
+      const { writePublishKit } = await import("@glintai/composer/publish-presets");
+      const raw = JSON.parse(fs.readFileSync(planFile, "utf8"));
+      const plan = raw.plan ?? raw;
+      const kit = writePublishKit(platform, { title: String(plan.title ?? ""), hook: String(plan.hook ?? ""), takeaway: String(plan.takeaway ?? "") }, out, (readArg(rest, "tags") ?? "").split(",").filter(Boolean));
+      console.log(`[glint] ${platform} 发布包 → ${kit.file}（标题：${kit.title}）`);
       return;
     }
     case "beats": {
@@ -515,10 +895,15 @@ async function main(): Promise<void> {
       return runScript("rehearse", rest);
     case "reexplain":
       return runScript("reexplain", rest);
+    case "recipe":
+    case "previz-controls":
+    case "tasks":
+      return (await import("./core-cli")).runCoreCommand(command, rest);
+    case "comfyui": process.exitCode = await (await import("./comfyui-cli")).runComfyUI(rest); return;
+    case "container": process.exitCode = await (await import("./container-cli")).runContainer(rest); return;
     case "session": {
       const { runSession } = await import("./session-cli");
-      runSession(rest);
-      return;
+      runSession(rest); return;
     }
     case "studio":
       return runtime.runStudio();
@@ -535,12 +920,30 @@ async function main(): Promise<void> {
           "  pnpm glint render --project=p.json --scenes=s1,s2   子集重渲;--plate 出无字幕底片",
           "  pnpm glint qa --video=out/final.mp4        成片门禁(丰富度/静止/蓝紫/空画面/首帧)",
           "  pnpm glint nle --project=p.json --video=out.mp4 --format=fcpxml|edl   剪辑时间线(实验)",
-          "  pnpm glint nle-render --project=nle.json --assets=media --out=out.mp4   多轨 NLE 成片",
+          "  pnpm glint nle-render --project=nle.json --assets=media --out=out.mp4   多轨 NLE 成片；可选 --motion-samples=2|4|8 --shutter-angle=180（仅≤720p）",
+          "  pnpm glint gltf-controls --project=p.json --scene=id [--clip=动作 --morph=表情=0.5 --out=new.json]   查看/设置模型动作和表情",
+          "  pnpm glint html-template --project=p.json --scene=id [--append --headline=标题 --out=new.json]   查看/编辑本地 HTML 动效模板",
+          "  pnpm glint render-env [--fonts=家族,家族]                渲染环境指纹与字体命中（近似）",
+          "  pnpm glint render-env --font-lock-create=<新文件> --font-file=<字体文件> 记录字体 SHA-256，可重复指定文件",
+          "  pnpm glint render-env --font-lock-verify=<锁文件> [--font-file=<字体文件>] 校验缺失或版本变化（不绑定渲染）",
+          "  pnpm glint lottie-studio --project=p.json --scene=id [--source=animation.json]   本地参数编辑台（不执行动画）",
+          "  pnpm glint lottie-import --inspect-source=animation.json   本地导入前只读检查",
+          "  pnpm glint lottie-import --project=p.json --scene=id [--append --source=animation.json --out=new.json]   本地 Lottie 导入与参数",
+          "  pnpm glint lottie-import --project=p.json --scene=id --save-assets=<素材库目录>   内嵌图片素材回库（魔数/大小校验，独占写不覆盖）",
+          "  pnpm glint image-canvas --src=in.png --out=new.png --left=100 --right=100 [--color=#ffffff]   仅扩画布，不生成内容",
+          "  pnpm glint alpha-frames --project=p.json --out=new-dir [--width=960 --height=540]   受限 SVG 透明 PNG 序列",
+          "  pnpm glint alpha-webm --project=p.json --out=new.webm [--width=960 --height=540]   受限 SVG 透明 WebM（无音频）",
+          "  pnpm glint look --video=out.mp4 --out=new-dir [--at=1 --start=0 --end=3]\n  pnpm glint project-migrate --project=old.json --out=new-dir --kind=scene-document|timeline-document",
           "  pnpm glint delivery-check --video=out.mp4 --audio=optional   最终文件解码与响度检查",
+          "  pnpm glint verify-export --video=out.mp4 [--expect-width=1920 --expect-height=1080 --expect-fps=30 --expect-duration-ms=15000]   导出规格验证报告（自动项+未覆盖人工项）",
           "  pnpm glint packs [--query=商品] [--use=product-launch --out=new.json --params=inputs.json]   统一创作包",
           "  pnpm glint jianying --project=p.json --video=out.mp4   剪映草稿+SRT(实验)",
           "  pnpm glint srt|beats|audio-master|styles|templates",
-          "  pnpm glint session inspect|set|verify --project=...   产品/Skill 共用工程会话",
+          "  pnpm glint style-catalog samples [--dir=样片目录]   查看历史真实样片及校验状态",
+          "  pnpm glint style-catalog archive --project=p.json --dir=历史目录   保存主题版本",
+          "  pnpm glint style-catalog list --dir=历史目录 [--id=工程ID]   查看主题版本",
+          "  pnpm glint style-catalog restore --project=p.json --source=版本文件 --out=新工程.json   恢复到新文件",
+          "  pnpm glint session inspect|set|verify --project=...   产品/Skill 共用工程会话", "  pnpm glint container snapshot --id=... --endpoint=... | open|append|undo|redo --request=...",
           "  pnpm glint timeline --project=p.json                 查看共享修订与场景起点/时长",
           "  pnpm glint timeline --project=p.json --op=trim --scene=id --edge=end --delta-ms=100 --base-revision=0   事务化剪辑",
           "  pnpm glint plan --project=p.json --set='scenes[1].title=X'   预测本次改动的节点/费用/耗时",
@@ -549,7 +952,9 @@ async function main(): Promise<void> {
           "  pnpm glint diff --before=a.mp4 --after=b.mp4 --strict            帧级差异与变化区间",
           "  pnpm glint prove --project=p.json --tests=glint.tests.json       可机器判定的断言",
           "  pnpm glint apply --project=p.json --set='scene.title=X'           CAS 编辑工程",
-          "  pnpm glint mcp                                        以 MCP stdio 提供 plan/apply/build/prove",
+          "  pnpm glint mcp                                        以 MCP stdio 提供 plan/apply/build/prove", "  pnpm glint comfyui submit|status|cancel|download --endpoint=...   本地 ComfyUI（提交需 --confirm-execute）",
+          "  pnpm glint previz-controls --document=FILE --shot=ID --frame=0 --out=NEW_DIR",
+          "  pnpm glint tasks list|status|cancel --family=media --id=ID [--confirm]",
           "  pnpm glint render|ask|rehearse|reexplain|studio",
         ].join("\n"),
       );
@@ -557,8 +962,10 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
-  console.error(`[glint] failed: ${error instanceof Error ? error.message : String(error)}`);
-  process.exit(1);
-});
+if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+  main().catch((error: unknown) => {
+    console.error(`[glint] failed: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  });
+}
 

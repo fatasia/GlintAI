@@ -183,7 +183,7 @@ async function prepareAudio(
         text: scene.narration.text,
         voice: scene.narration.voice ?? voice,
         speakingRate: scene.narration.speakingRate,
-      })), { concurrency: options.concurrency, cacheDir: options.noCache ? undefined : path.resolve(".cache", "tts") }); }
+      })), { concurrency: options.concurrency, cacheDir: options.noCache ? undefined : path.resolve(process.env.GLINT_CACHE_DIR ?? ".cache", "tts") }); }
   finally { await provider.dispose?.(); }
     prepared.scenes.forEach((scene, index) => {
       const result = results[index]!;
@@ -225,7 +225,7 @@ async function buildTtsProvider(args: RenderArgs): Promise<TtsProvider> {
 export function prepareSilentProject(project: SceneScriptProject): SceneScriptProject {
   const prepared = structuredClone(project);
   for (const scene of prepared.scenes) {
-    const durationMs = estimateNarrationDurationMs(scene.narration.text, { speakingRate: scene.narration.speakingRate });
+    const durationMs = (!scene.narration.audioRef && scene.narration.durationMs) || estimateNarrationDurationMs(scene.narration.text, { speakingRate: scene.narration.speakingRate });
     delete scene.narration.audioRef;
     scene.narration.durationMs = durationMs;
     scene.narration.segments = [{ text: scene.narration.text, words: estimateWordTimings(scene.narration.text, durationMs) }];

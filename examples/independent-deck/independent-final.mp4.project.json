@@ -1,0 +1,262 @@
+{
+  "schemaVersion": 1,
+  "id": "independent-deck",
+  "title": "Glint · 一源双输出",
+  "language": "zh-CN",
+  "aspect": "16:9",
+  "fps": 24,
+  "knowledgeSources": [],
+  "theme": "cream-editorial",
+  "scenes": [
+    {
+      "id": "control",
+      "narration": {
+        "text": "先定义内容，再决定如何呈现。",
+        "durationMs": 3288,
+        "segments": [
+          {
+            "text": "先定义内容，再决定如何呈现。",
+            "words": [
+              {
+                "text": "先",
+                "startMs": 0,
+                "endMs": 263
+              },
+              {
+                "text": "定",
+                "startMs": 263,
+                "endMs": 526
+              },
+              {
+                "text": "义",
+                "startMs": 526,
+                "endMs": 789
+              },
+              {
+                "text": "内",
+                "startMs": 789,
+                "endMs": 1052
+              },
+              {
+                "text": "容",
+                "startMs": 1052,
+                "endMs": 1315
+              },
+              {
+                "text": "，",
+                "startMs": 1315,
+                "endMs": 1381
+              },
+              {
+                "text": "再",
+                "startMs": 1381,
+                "endMs": 1644
+              },
+              {
+                "text": "决",
+                "startMs": 1644,
+                "endMs": 1907
+              },
+              {
+                "text": "定",
+                "startMs": 1907,
+                "endMs": 2170
+              },
+              {
+                "text": "如",
+                "startMs": 2170,
+                "endMs": 2433
+              },
+              {
+                "text": "何",
+                "startMs": 2433,
+                "endMs": 2696
+              },
+              {
+                "text": "呈",
+                "startMs": 2696,
+                "endMs": 2959
+              },
+              {
+                "text": "现",
+                "startMs": 2959,
+                "endMs": 3222
+              },
+              {
+                "text": "。",
+                "startMs": 3222,
+                "endMs": 3288
+              }
+            ]
+          }
+        ],
+        "audioRef": "independent-final.mp4.assets/control.mp3"
+      },
+      "notes": "开场用一个具体收益引入：数字改一次，视频和演示一起更新。",
+      "sharedElements": [
+        {
+          "key": "metric",
+          "text": "18%",
+          "x": 0.78,
+          "y": 0.3,
+          "fontSize": 70
+        }
+      ],
+      "kind": "title",
+      "title": "让内容成为\n可以控制的作品",
+      "subtitle": "一份 SceneScript，生成视频与演示"
+    },
+    {
+      "id": "evidence",
+      "narration": {
+        "text": "同一个数字跨场景移动，内容仍然可编辑。",
+        "durationMs": 4152,
+        "segments": [
+          {
+            "text": "同一个数字跨场景移动，内容仍然可编辑。",
+            "words": [
+              {
+                "text": "同",
+                "startMs": 0,
+                "endMs": 237
+              },
+              {
+                "text": "一",
+                "startMs": 237,
+                "endMs": 475
+              },
+              {
+                "text": "个",
+                "startMs": 475,
+                "endMs": 712
+              },
+              {
+                "text": "数",
+                "startMs": 712,
+                "endMs": 949
+              },
+              {
+                "text": "字",
+                "startMs": 949,
+                "endMs": 1186
+              },
+              {
+                "text": "跨",
+                "startMs": 1186,
+                "endMs": 1424
+              },
+              {
+                "text": "场",
+                "startMs": 1424,
+                "endMs": 1661
+              },
+              {
+                "text": "景",
+                "startMs": 1661,
+                "endMs": 1898
+              },
+              {
+                "text": "移",
+                "startMs": 1898,
+                "endMs": 2135
+              },
+              {
+                "text": "动",
+                "startMs": 2135,
+                "endMs": 2373
+              },
+              {
+                "text": "，",
+                "startMs": 2373,
+                "endMs": 2432
+              },
+              {
+                "text": "内",
+                "startMs": 2432,
+                "endMs": 2669
+              },
+              {
+                "text": "容",
+                "startMs": 2669,
+                "endMs": 2906
+              },
+              {
+                "text": "仍",
+                "startMs": 2906,
+                "endMs": 3144
+              },
+              {
+                "text": "然",
+                "startMs": 3144,
+                "endMs": 3381
+              },
+              {
+                "text": "可",
+                "startMs": 3381,
+                "endMs": 3618
+              },
+              {
+                "text": "编",
+                "startMs": 3618,
+                "endMs": 3855
+              },
+              {
+                "text": "辑",
+                "startMs": 3855,
+                "endMs": 4093
+              },
+              {
+                "text": "。",
+                "startMs": 4093,
+                "endMs": 4152
+              }
+            ]
+          }
+        ],
+        "audioRef": "independent-final.mp4.assets/evidence.mp3"
+      },
+      "notes": "指向 Q3：修改 value 字段即可更新画面，不需要重新绘图。",
+      "quiz": {
+        "question": "把 Q3 从 18% 改成 20%，应该修改哪里？",
+        "options": [
+          "修改数据字段",
+          "重新绘制整张图片",
+          "提高播放速度"
+        ],
+        "answerIndex": 0,
+        "explanation": "数据是结构化对象；修改 Q3 的 value 后，重渲这一镜即可。"
+      },
+      "sharedElements": [
+        {
+          "key": "metric",
+          "text": "18%",
+          "x": 0.68,
+          "y": 0.23,
+          "fontSize": 44
+        }
+      ],
+      "transition": {
+        "in": "magic-move",
+        "durationMs": 800
+      },
+      "kind": "chart",
+      "chartType": "bar",
+      "heading": "数据对象，而不是一张截图",
+      "unit": "%",
+      "data": [
+        {
+          "label": "Q1",
+          "value": 12
+        },
+        {
+          "label": "Q2",
+          "value": 15
+        },
+        {
+          "label": "Q3",
+          "value": 18
+        }
+      ]
+    }
+  ]
+}

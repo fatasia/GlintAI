@@ -1,9 +1,11 @@
+import { appFetch as fetch } from "./app-url";
 export interface IdeaJob {
   id: string;
   status: "recovering" | "queued" | "running" | "cancelling" | "done" | "failed" | "cancelled";
   stage?: string;
   log: string[];
   video?: string;
+  duration?: number;
   error?: string;
 }
 export const terminalJob = (job: IdeaJob | null) => Boolean(job && ["done", "failed", "cancelled"].includes(job.status));

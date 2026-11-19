@@ -1,0 +1,24 @@
+{
+  "name": "@glintai/previz",
+  "version": "0.1.0",
+  "description": "Previs document, coordinate convention, camera evaluation and measurement-based checks",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./three-preview": {
+      "types": "./src/three-preview.ts",
+      "default": "./src/three-preview.ts"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "sideEffects": false,
+  "dependencies": {
+    "zod": "^3.23.8"
+  }
+}

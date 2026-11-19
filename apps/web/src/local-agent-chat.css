@@ -1,0 +1,102 @@
+.local-agent-chat {
+  display: flex; flex-direction: column; gap: 12px; min-width: 0; width: 100%;
+  padding: 16px; color: var(--paper); background: var(--ink-2);
+  border: 1px solid var(--line-2); border-radius: var(--r-md);
+  font: 13px/1.55 var(--font-ui); font-variant-numeric: tabular-nums;
+}
+.local-agent-chat button, .local-agent-chat select, .local-agent-chat input, .local-agent-chat textarea {
+  color: var(--paper); background: var(--ink-3); border: 1px solid var(--line-2);
+  border-radius: var(--r-sm); padding: 8px 10px; font: inherit; min-width: 0; max-width: 100%;
+  transition: border-color 160ms var(--ease-out), background 160ms var(--ease-out);
+}
+.local-agent-chat button { cursor: pointer; }
+.local-agent-chat button:hover:not(:disabled) { background: var(--ink-4); border-color: var(--line-3); }
+.local-agent-chat :is(button, select, input, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.local-agent-chat :disabled { opacity: .48; cursor: not-allowed; }
+.local-agent-chat .lac-primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.local-agent-chat .lac-primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+.local-agent-chat .lac-primary:disabled { background: var(--ink-4); color: var(--muted); border-color: var(--line-2); }
+.local-agent-chat p { margin: 0; overflow-wrap: anywhere; }
+.local-agent-chat small { color: var(--muted); font-size: 11px; }
+.local-agent-chat label { display: flex; flex-direction: column; gap: 5px; color: var(--paper-dim); font-size: 11px; min-width: 0; }
+.lac-head, .lac-head > div, .lac-row, .lac-compose-foot { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.lac-head > div { justify-content: flex-start; }
+.lac-head strong { font-size: 14px; font-weight: 600; letter-spacing: -.02em; }
+.local-agent-chat .lac-icon-button { padding: 5px 0; background: transparent; border: 0; color: var(--muted); font-size: 11px; }
+.lac-state { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 10px; }
+.lac-state i { width: 5px; height: 5px; border-radius: var(--r-full); background: currentColor; }
+.lac-state.is-ready { color: var(--ok); }
+.lac-controls { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px; }
+.lac-controls label { flex: 1 1 120px; }
+.lac-controls button { font-size: 11px; }
+.lac-controls select { width: 100%; }
+.lac-log { display: flex; flex-direction: column; gap: 16px; min-height: 180px; max-height: min(480px, 52dvh); overflow-y: auto; overscroll-behavior: contain; padding: 4px 2px 8px; scrollbar-width: thin; }
+.lac-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 24px 4px; color: var(--paper-dim); }
+.lac-empty p { color: var(--muted); font-size: 12px; max-width: 35ch; }
+.lac-empty-mark { display: grid; place-items: center; width: 28px; height: 28px; color: var(--g-accent-text); border: 1px solid var(--line-2); border-radius: var(--r-sm); margin-bottom: 4px; }
+.lac-message { display: grid; gap: 5px; min-width: 0; align-self: flex-start; max-width: 100%; }
+.lac-message > div { white-space: pre-wrap; overflow-wrap: anywhere; }
+.lac-message.is-user { align-self: flex-end; max-width: 94%; background: var(--ink-4); border: 1px solid var(--line-1); border-radius: var(--r-md) var(--r-md) 2px var(--r-md); padding: 10px 12px; }
+.lac-message.is-assistant > small { color: var(--g-accent-text); }
+.lac-working { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
+.lac-working i { width: 6px; height: 6px; border-radius: var(--r-full); background: var(--accent); animation: lac-breathe 1.8s ease-in-out infinite; }
+.lac-request, .lac-proposal { display: grid; gap: 10px; border: 1px solid var(--line-3); border-radius: var(--r-sm); padding: 12px; background: var(--ink-3); min-width: 0; }
+.lac-request { border-inline-start: 2px solid var(--warn); }
+.lac-request form { display: grid; gap: 12px; }
+.lac-request input[type="checkbox"] { align-self: flex-start; accent-color: var(--accent); }
+.lac-proposal { border-inline-start: 2px solid var(--accent); }
+.lac-proposal p { color: var(--paper-dim); font-size: 12px; }
+.lac-proposal .lac-row span { color: var(--muted); font-size: 11px; }
+.lac-proposal > button { justify-self: start; }
+.lac-diff > ol, .lac-activity ol { padding-left: 20px; margin: 0 0 12px; display: grid; gap: 14px; }
+.lac-diff li { font-size: 12px; overflow-wrap: anywhere; }
+.lac-diff strong { display: block; margin-bottom: 5px; }
+.lac-before { color: var(--muted); }
+.local-agent-chat summary { color: var(--muted); font-size: 11px; cursor: pointer; padding: 5px 0; }
+.local-agent-chat pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; color: var(--muted); font: 10px/1.6 var(--font-mono); max-height: 180px; overflow-y: auto; }
+.lac-activity { border-top: 1px solid var(--line-1); padding-top: 8px; }
+.lac-activity > button { border: 0; background: transparent; color: var(--muted); font-size: 11px; padding: 0; }
+.lac-activity ol { margin-top: 12px; }
+.lac-activity li { font-size: 11px; }
+.lac-activity li > span { display: block; color: var(--muted); }
+.lac-hint { color: var(--muted); font-size: 11px; }
+.lac-error { color: var(--danger); font-size: 12px; display: grid; gap: 8px; }
+.lac-error button { justify-self: start; }
+.lac-composer { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--ink-1); }
+.lac-composer:focus-within { border-color: var(--accent); }
+.local-agent-chat .lac-composer textarea { width: 100%; min-height: 64px; max-height: 200px; resize: vertical; border: 0; background: transparent; padding: 2px; font-size: 13px; }
+.local-agent-chat .lac-composer textarea:focus-visible { outline: none; }
+.lac-composer textarea::placeholder { color: var(--muted); }
+.lac-compose-foot small { font-size: 10px; }
+.lac-compose-foot button { padding: 6px 12px; min-height: 32px; }
+.lac-compose-foot .lac-cancel { border-color: var(--line-3); }
+.lac-connection { border-top: 1px solid var(--line-1); padding-top: 4px; }
+.lac-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.glint-editor-chat .local-agent-executor { padding: var(--g-sp-5) var(--g-sp-6) 0; }
+.local-agent-executor { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 12px; }
+.local-agent-executor select { width: auto; min-width: 0; max-width: 100%; font: inherit; color: var(--paper); background: var(--ink-3); border: 1px solid var(--line-2); border-radius: var(--r-sm); padding: 7px 10px; }
+.lac-conversation-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.lac-conversation-actions button { font-size: 11px; padding: 6px 10px; }
+.lac-history { display: grid; gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--ink-1); }
+.lac-history > .lac-row button { font-size: 10px; padding: 4px 8px; }
+.lac-history ol { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; }
+.lac-history li > button { width: 100%; text-align: left; display: grid; gap: 4px; overflow-wrap: anywhere; }
+.lac-history li strong { font-size: 12px; font-weight: 500; }
+.lac-history li span { font-size: 10px; color: var(--muted); }
+.lac-history li button[aria-current="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.lac-history .lac-task-running { color: var(--warn); }
+.lac-history-page { display: grid; gap: 6px; align-items: start; justify-items: start; }
+.lac-history-page button { font-size: 11px; }
+.lac-history-page p { color: var(--danger); font-size: 11px; }
+@keyframes lac-breathe { 50% { opacity: .35; } }
+@media (max-width: 480px) {
+  .local-agent-chat { padding: 12px; gap: 10px; }
+  .lac-log { max-height: 40dvh; min-height: 140px; }
+  .lac-head > div { gap: 8px; }
+  .lac-controls label { flex-basis: 130px; }
+  .lac-compose-foot { gap: 6px; }
+  .lac-compose-foot small { max-width: 65%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .local-agent-chat *, .local-agent-chat *::before, .local-agent-chat *::after { animation: none !important; transition: none !important; }
+}

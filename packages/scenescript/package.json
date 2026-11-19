@@ -5,16 +5,25 @@
   "license": "MIT",
   "type": "module",
   "exports": {
+    "./project-container": "./src/project-container.ts",
+    "./gen-canvas": "./src/gen-canvas.ts",
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
-    }
+    },
+    "./migrate": "./src/migrate.ts",
+    "./bundle": "./src/bundle.ts",
+    "./chapter-bundle": "./src/chapter-bundle.ts",
+    "./asset-invalidate": "./src/asset-invalidate.ts",
+    "./project-container-v2": "./src/project-container-v2.ts",
+    "./auxiliary-documents": "./src/auxiliary-documents.ts"
   },
   "files": [
     "src"
   ],
   "sideEffects": false,
   "dependencies": {
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "@glintai/previz": "workspace:*"
   }
 }

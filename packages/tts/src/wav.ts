@@ -51,25 +51,32 @@ export function parseWavDurationMs(
     if (readAscii(view, 0, 4) !== "RIFF" || readAscii(view, 8, 4) !== "WAVE") {
       return fallbackMs;
     }
+    if (view.byteLength < 12 || view.getUint32(4, true) + 8 !== view.byteLength) return fallbackMs;
     let sampleRate = 0;
     let channels = 0;
+    let format = 0;
+    let blockAlign = 0;
     let bitsPerSample = 0;
     let dataBytes = 0;
     let offset = 12;
     while (offset + 8 <= view.byteLength) {
       const id = readAscii(view, offset, 4);
       const size = view.getUint32(offset + 4, true);
+      if (size > view.byteLength - offset - 8) return fallbackMs;
       if (id === "fmt ") {
+        if (size < 16) return fallbackMs;
+        format = view.getUint16(offset + 8, true);
         channels = view.getUint16(offset + 10, true);
+        blockAlign = view.getUint16(offset + 20, true);
         sampleRate = view.getUint32(offset + 12, true);
         bitsPerSample = view.getUint16(offset + 22, true);
       } else if (id === "data") {
+        if (dataBytes) return fallbackMs;
         dataBytes = size;
-        break;
       }
       offset += 8 + size + (size % 2);
     }
-    if (!sampleRate || !channels || !bitsPerSample || !dataBytes) {
+    if (offset !== view.byteLength || ![1, 3].includes(format) || !sampleRate || !channels || !bitsPerSample || bitsPerSample % 8 !== 0 || blockAlign !== channels * bitsPerSample / 8 || !dataBytes || dataBytes % blockAlign !== 0) {
       return fallbackMs;
     }
     const seconds = dataBytes / (sampleRate * channels * (bitsPerSample / 8));

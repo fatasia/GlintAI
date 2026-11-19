@@ -1,0 +1,42 @@
+{
+  "video": "examples/independent-deck/independent-deck.mp4",
+  "spec": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "durationSec": 7.458008
+  },
+  "frames": 8,
+  "avgFrameDiff": 3.0112089712852117,
+  "longestStaticSec": 1.864502,
+  "bluePurpleRatio": 0,
+  "flatFrameRatio": 0,
+  "gates": [
+    {
+      "id": "richness",
+      "level": "green",
+      "detail": "平均帧差 3.01,画面变化充足"
+    },
+    {
+      "id": "static-span",
+      "level": "green",
+      "detail": "最长静止 1.9s"
+    },
+    {
+      "id": "blue-purple",
+      "level": "green",
+      "detail": "蓝紫底占比 0.0%"
+    },
+    {
+      "id": "empty-frames",
+      "level": "green",
+      "detail": "近空画面帧占比 0%"
+    },
+    {
+      "id": "spec",
+      "level": "green",
+      "detail": "1920x1080@24, 7.46s"
+    }
+  ],
+  "verdict": "green"
+}

@@ -21,14 +21,19 @@ export class MediaGatewayClient {
   async models(type: "audio" | "image" | "video", signal = AbortSignal.timeout(20000)) {
     const data = await this.json(`/v1/skills/models?type=${type}`, signal);
     if (!Array.isArray(data.models)) throw new Error("Invalid media model catalog");
-    return data.models.filter((item: any) => typeof item.name === "string" && item.available_for_this_key !== false).map((item: any) => ({ id: item.name as string, name: String(item.display_name ?? item.name), type, description: typeof item.description === "string" ? item.description : "", inputHint: typeof item.input_hint === "string" ? item.input_hint : "", tags: Array.isArray(item.tags) ? item.tags.filter((tag: unknown) => typeof tag === "string").slice(0, 8) : [] }));
+    return data.models.filter((item: any) => typeof item.name === "string" && item.available_for_this_key !== false).map((item: any) => ({ id: item.name as string, name: String(item.display_name ?? item.name), type, description: typeof item.description === "string" ? item.description : "", capabilityTagsValid: Array.isArray(item.tags) && item.tags.length <= 32 && item.tags.every((tag: unknown) => typeof tag === "string" && tag.length <= 120), inputHint: typeof item.input_hint === "string" ? item.input_hint : "", tags: Array.isArray(item.tags) ? item.tags.filter((tag: unknown) => typeof tag === "string").slice(0, 8) : [] }));
   }
   async voices(model: string, signal = AbortSignal.timeout(20000)) { return this.json(`/v1/skills/voices?model=${encodeURIComponent(model)}`, signal); }
+  /** Per-model price card; the estimate side of the generation contract (§8.4). */
+  async pricing(model: string, signal = AbortSignal.timeout(20000)) {
+    if (!/^[a-zA-Z0-9_.\/-]{1,160}$/.test(model)) throw new Error("Invalid media model name");
+    return this.json(`/v1/skills/models/${encodeURIComponent(model)}/pricing`, signal);
+  }
   async submit(model: string, prompt: string, params: Record<string, unknown> = {}, signal = AbortSignal.timeout(30000)) {
     if (!model.trim() || model.length > 160 || !prompt.trim() || prompt.length > 10000 || JSON.stringify(params).length > 40 * 1024 * 1024) throw new Error("Invalid media request");
     const data = await this.json("/v1/media/generate", signal, { model, prompt, params });
     const id = data.data?.task_id ?? data.task_id;
-    if (!/^[a-zA-Z0-9_-]{1,100}$/.test(String(id ?? ""))) throw new Error("Media submission did not return a task ID; do not resubmit automatically");
+    if (!/^[a-zA-Z0-9_-]{1,100}$/.test(String(id ?? ""))) throw new Error(`Media submission did not return a task ID; do not resubmit automatically${data?.msg ? `: ${data.msg}` : ""}`);
     return String(id);
   }
   async status(taskId: string, signal = AbortSignal.timeout(20000)): Promise<MediaTask> {
@@ -65,3 +70,7 @@ export async function downloadMediaResult(task: MediaTask, signal = AbortSignal.
   return fetchPublicAsset(task.result_url, signal, 0, true, resolver);
 }
 export * from "./presets";
+export * from "./comfyui";
+export * from "./fal";
+export * from "./replicate";
+export { downloadCloudOutput, CloudProviderError, type CloudOptions, type ExecutionConfirmation } from "./cloud-provider-http";

@@ -16,12 +16,19 @@ export function wrapText(value: string, width: number, size: number): string[] {
   return lines;
 }
 
-export function textBlock(value: string, x: number, y: number, width: number, size: number, color: string, options: { height?: number; weight?: number; anchor?: string; family?: string } = {}): string {
+/** Shared measurement for placements that need to follow the rendered lines. */
+export function fitText(value: string, width: number, size: number, height?: number): { lines: string[]; size: number } {
   let lines = wrapText(value, width, size);
-  while (options.height && lines.length * size * 1.45 > options.height && size > 14) {
+  while (height && lines.length * size * 1.45 > height && size > 14) {
     size -= 2; lines = wrapText(value, width, size);
   }
-  return `<text fill="${xml(color)}" font-size="${size}" font-weight="${options.weight ?? 400}" text-anchor="${options.anchor ?? "start"}"${options.family ? ` font-family="${xml(options.family)}"` : ""}>${lines.map((line, i) => `<tspan x="${x}" y="${y + i * size * 1.45}">${xml(line)}</tspan>`).join("")}</text>`;
+  return { lines, size };
+}
+
+export function textBlock(value: string, x: number, y: number, width: number, size: number, color: string, options: { height?: number; weight?: number; anchor?: string; family?: string; stroke?: string; strokeWidth?: number } = {}): string {
+  const fitted = fitText(value, width, size, options.height);
+  const lines = fitted.lines; size = fitted.size;
+  return `<text fill="${xml(color)}" font-size="${size}" font-weight="${options.weight ?? 400}" text-anchor="${options.anchor ?? "start"}"${options.family ? ` font-family="${xml(options.family)}"` : ""}${options.stroke ? ` paint-order="stroke fill" stroke="${xml(options.stroke)}" stroke-width="${options.strokeWidth ?? 1}" stroke-linejoin="round"` : ""}>${lines.map((line, i) => `<tspan x="${x}" y="${y + i * size * 1.45}">${xml(line)}</tspan>`).join("")}</text>`;
 }
 
 export const mix = (a: number, b: number, p: number) => a + (b - a) * p;

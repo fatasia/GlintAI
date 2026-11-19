@@ -59,7 +59,9 @@ function buildGlueSnippet(generation: string, mode = "gsap"): string {
           if(asset.u || !new RegExp("^data:image/(png|jpeg|webp);base64,").test(asset.p))throw new Error("Only embedded Lottie PNG/JPEG/WebP images are allowed");
           var image=new Image();image.src=asset.p;await image.decode();
         }));
-        timeline = lottie.loadAnimation({container:document.getElementById("glint-root") || document.body,renderer:"canvas",rendererSettings:{clearCanvas:true},loop:false,autoplay:false,animationData:window.__glintLottie});
+        var hasText = function(layers) { return Array.isArray(layers) && layers.some(function(layer) { return layer && layer.ty === 5; }); };
+        var useSvg = hasText(window.__glintLottie.layers) || (window.__glintLottie.assets || []).some(function(asset) { return hasText(asset.layers); });
+        timeline = lottie.loadAnimation({container:document.getElementById("glint-root") || document.body,renderer:useSvg ? "svg" : "canvas",rendererSettings:{clearCanvas:true},loop:false,autoplay:false,animationData:window.__glintLottie});
         timeline.setSubframe(false);
         timeline.addEventListener("error",function(){runtimeError=new Error("Lottie render failed");});
         await new Promise(function(resolve,reject){ if(timeline.isLoaded) return resolve(); timeline.addEventListener("DOMLoaded",resolve); timeline.addEventListener("data_failed",function(){reject(new Error("Lottie data failed"));}); });

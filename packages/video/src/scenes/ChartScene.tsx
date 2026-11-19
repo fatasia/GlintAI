@@ -142,7 +142,7 @@ export function ChartSceneView({ scene }: { scene: ChartScene }) {
         {data.map((item, index) => {
           const pop = interpolate(progress, [index / data.length, Math.min(1, (index + 1.6) / data.length)], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
           return <g key={index}>
-            <title>{item.label}: ({item.value}, {item.value2})</title>
+            <title>{`${item.label}: (${item.value}, ${item.value2})`}</title>
             <circle cx={x2(item.value)} cy={y2(item.value2 ?? 0)} r={7 + 9 * (1 - pop)} fill="var(--glint-color-accent)" opacity={pop} />
             <text x={x2(item.value)} y={y2(item.value2 ?? 0) - 16} textAnchor="middle" fill="currentColor" fontSize={16} opacity={pop}>{item.label}</text>
           </g>;
@@ -165,7 +165,7 @@ export function ChartSceneView({ scene }: { scene: ChartScene }) {
         {data.map((item, index) => {
           const currentY = y(item.value * progress), zero = y(0), barW = Math.min(100, graphW / data.length * 0.5);
           return <g key={index}>
-            <title>{item.label}: {item.value}{scene.unit}</title>
+            <title>{`${item.label}: ${item.value}${scene.unit ?? ""}`}</title>
             <rect x={x(index) - barW / 2} y={Math.min(currentY, zero)} width={barW} height={Math.max(0.5, Math.abs(zero - currentY))} rx={5} fill="var(--glint-color-accent)" opacity={0.85} />
           </g>;
         })}
@@ -187,7 +187,7 @@ export function ChartSceneView({ scene }: { scene: ChartScene }) {
         const currentY = y(item.value * progress), zero = y(0), barW = Math.min(100, graphW / data.length * 0.58);
         const labels = Array.from(item.label).join("").match(/.{1,6}/gu) ?? [];
         return <g key={index}>
-          <title>{item.label}: {item.value}{scene.unit}</title>
+          <title>{`${item.label}: ${item.value}${scene.unit ?? ""}`}</title>
           {scene.chartType === "bar" ? <rect x={x(index) - barW / 2} y={Math.min(currentY, zero)} width={barW} height={Math.max(0.5, Math.abs(zero - currentY))} rx={5} fill="var(--glint-color-accent)" /> : <circle cx={x(index)} cy={currentY} r={6} fill="var(--glint-color-accent)" />}
           <text x={x(index)} y={currentY + (item.value < 0 ? 28 : -12)} textAnchor="middle" fill="currentColor" fontSize={scene.data.length > 12 ? 14 : 22}>{percent(item.value)}{scene.unit}</text>
           <text x={x(index)} y={H - bottom + 30} textAnchor="middle" fill="currentColor" fontSize={16}>{labels.map((label, line) => <tspan key={line} x={x(index)} dy={line ? 19 : 0}>{label}</tspan>)}</text>

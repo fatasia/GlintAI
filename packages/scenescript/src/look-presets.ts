@@ -54,6 +54,13 @@ function preset(id: string, label: string, summary: string, effects: LookPrimiti
 
 /** JSON-serializable local recipes. Brand simulations and proprietary LUT data are intentionally absent. */
 export const LOOK_PRESETS: readonly LookPreset[] = Object.freeze([
+  preset("watercolor-soft", "水彩柔和", "水彩审美启发的近似：轻度降饱和、提亮与极轻 blur 柔化边缘；没有纸纹、颜料扩散或真正的水彩模拟。", [
+    { kind: "saturate", value: 0.82 },
+    { kind: "brightness", value: 1.06 },
+    { kind: "contrast", value: 0.92 },
+    { kind: "sepia", value: 0.06 },
+    { kind: "blur", value: 0.6 },
+  ]),
   preset("restrained-print", "克制印色", "印刷感启发的近似：轻度降对比、降饱和与暖棕混合；不是胶片模拟。", [
     { kind: "contrast", value: 0.94 },
     { kind: "saturate", value: 0.86 },

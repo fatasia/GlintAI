@@ -1,4 +1,6 @@
+import { appFetch as fetch } from "./app-url";
 import { useEffect, useState } from "react";
+import "./ConnectionSettings.css";
 
 interface Skill { id: string; name: string; description: string; path: string; source: string }
 
@@ -25,17 +27,38 @@ export function SkillCatalog() {
     try { await navigator.clipboard.writeText(skill.path); setNotice(`已复制 ${skill.path}`); }
     catch { setNotice(`路径：${skill.path}`); }
   };
-  return <section aria-label="Skills 目录" style={{ display: "grid", gap: 12, padding: 22 }}>
-    <div style={{ display: "grid", gap: 4 }}><strong style={{ fontSize: 15 }}>Skills 市场 · 本机已安装</strong><small style={{ color: "#8b8b95", fontSize: 12 }}>只列出本项目 <code>skills/</code> 下真实存在的技能；远程安装、签名与权限预览未开放。</small></div>
-    {loading && <p role="status" style={{ color: "#8b8b95", fontSize: 13 }}>正在读取本机 Skills…</p>}
-    {error && <p role="alert" style={{ color: "#fca5a5", fontSize: 13 }}>{error}</p>}
-    {notice && <p role="status" style={{ color: "#8b8b95", fontSize: 12 }}>{notice}</p>}
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 260px), 1fr))", gap: 10 }}>
-      {skills.map(skill => <article key={skill.id} style={{ display: "grid", gap: 7, padding: 12, border: "1px solid #26262b", borderRadius: 12, background: "#101013", minWidth: 0 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}><strong style={{ fontSize: 13, color: "#e4e4e7" }}>{skill.name}</strong><small style={{ color: "#8b8b95", fontSize: 10 }}>{skill.source}</small></div>
-        <p style={{ margin: 0, color: "#a1a1aa", fontSize: 12, lineHeight: 1.55, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{skill.description || "无描述"}</p>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}><code style={{ color: "#6f6f78", fontSize: 10, overflowWrap: "anywhere" }}>{skill.path}</code><button type="button" style={{ border: "1px solid #2b2b31", borderRadius: 999, background: "#1c1c21", color: "#a1a1aa", padding: "4px 9px", font: "inherit", fontSize: 11, cursor: "pointer" }} onClick={() => void copyPath(skill)}>复制路径</button></div>
-      </article>)}
-    </div>
+  return <section aria-label="Skills 目录" className="tool-page">
+    <header className="tool-page-head">
+      <span className="g-label">技能 · 本机</span>
+      <h2 className="g-title" style={{ margin: 0 }}>Skills 目录</h2>
+      <p className="g-sub">只列出本项目 <code>skills/</code> 下真实存在的技能；远程安装与签名校验未开放。</p>
+    </header>
+
+    <section className="tool-block" aria-label="已安装技能">
+      <div className="tool-block-head">
+        <h3>已安装</h3>
+        <span className="g-label g-num">{loading ? "读取中" : `${skills.length} 项`}</span>
+      </div>
+      {loading && <p role="status" className="g-loading" style={{ padding: 0 }}>正在读取本机 Skills…</p>}
+      {error && <p role="alert" className="tool-alert">{error}</p>}
+      {notice && <p role="status" className="tool-note">{notice}</p>}
+      {!loading && !error && !skills.length && <div className="g-empty">
+        <strong>本机还没有技能</strong>
+        <p>把技能目录放进项目的 skills/ 后重新加载。</p>
+      </div>}
+      {!!skills.length && <ul className="tool-list">
+        {skills.map(skill => <li key={skill.id} className="tool-list-row" aria-label={skill.name}>
+          <div className="tool-row-head">
+            <span className="tool-row-name">{skill.name}</span>
+            <span className="g-label">{skill.source}</span>
+          </div>
+          <p className="tool-note" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{skill.description || "无描述"}</p>
+          <div className="tool-row-action">
+            <code className="tool-path">{skill.path}</code>
+            <button type="button" className="g-btn g-btn--sm g-btn--quiet" onClick={() => void copyPath(skill)}>复制路径</button>
+          </div>
+        </li>)}
+      </ul>}
+    </section>
   </section>;
 }

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "datasetKind": "synthetic-rendered",
+  "description": "仓库已有的 Glint 原创渲染成片；逐帧人工核对场景切换及固定时刻主要标题，仅作小样本评估，不代表真实摄像画面。",
+  "annotation": "前三片各有两个场景，在 2000ms 硬切；固定抽帧仅标注可见主标题。Lottie 成片来自原创单镜矩形动画，500ms 标注可见文字；不标注其他文字。",
+  "cases": [
+    { "id": "whiteboard", "path": "evidence/SKILL-01/grammars-20261028/whiteboard.mp4", "sha256": "139fc0752b9b2613616aa9d6e5140930471f9f83fe2ce535b6fbc4efad756419", "cutsMs": [2000], "frames": [{"atMs": 1000, "targets": ["把想法画出来"]}, {"atMs": 3000, "targets": ["三个要点"]}] },
+    { "id": "blackboard", "path": "evidence/SKILL-01/grammars-20261028/blackboard.mp4", "sha256": "3877854745097f49a3f6be5f4b2e8865bbb148af54b1774f2c057f73abc178ea", "cutsMs": [2000], "frames": [{"atMs": 1000, "targets": ["缓存"]}, {"atMs": 3000, "targets": ["过早优化是万恶之源"]}] },
+    { "id": "dark", "path": "evidence/SKILL-01/grammars-20261028/dark.mp4", "sha256": "060e188afc7b31110529c808587cd46448b01a7b04f639fe99dfde78606e248b", "cutsMs": [2000], "frames": [{"atMs": 1000, "targets": ["缓存命中"]}, {"atMs": 3000, "targets": ["有无缓存"]}] },
+    { "id": "lottie-single-shot", "path": "evidence/MOTION-05/lottie-import-20261027/lottie.mp4", "sha256": "87e78a8b41b6b02b8ed3dc62b61794b5973407f0cb844c5c8ec4cd2c2558f2d6", "cutsMs": [], "frames": [{"atMs": 500, "targets": ["Lottie 动画素材"]}] }
+  ]
+}

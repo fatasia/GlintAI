@@ -1,3 +1,4 @@
+import { transitionDocument, type DocumentTransition } from "./document-transition";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,14 +11,15 @@ type Projection = { file: string; digest: string; pending?: boolean };
 interface StoredState extends SessionState { projection?: Projection }
 type Envelope = { version: 1; checksum: string; state: StoredState };
 export class SessionStoreError extends Error {
-  constructor(readonly code: "not-found" | "busy" | "corrupt" | "external-change" | "project-conflict", message: string) { super(message); this.name = "SessionStoreError"; }
+  constructor(readonly code: "not-found" | "busy" | "corrupt" | "external-change" | "project-conflict" | "untrusted-import", message: string) { super(message); this.name = "SessionStoreError"; }
 }
 /** One authoritative JSON commit, guarded by an OS-exclusive per-project file lock.
  * Project files are recoverable projections; the journal is always committed first.
- */
+ * The checksum detects accidental corruption, not a writer who can alter the journal
+ * and recompute it. The session directory and in-process approval callback are trusted. */
 export class FileSessionStore {
   readonly directory: string;
-  constructor(directory = process.env.GLINT_SESSION_DIR ?? DEFAULT_SESSION_DIRECTORY, private readonly validate?: (document: Record<string, unknown>) => void, private readonly afterCommit?: () => void) {
+  constructor(directory = process.env.GLINT_SESSION_DIR ?? DEFAULT_SESSION_DIRECTORY, private readonly validate?: (document: Record<string, unknown>) => void, private readonly afterCommit?: () => void, private readonly transition?: DocumentTransition) {
     this.directory = path.resolve(directory); fs.mkdirSync(this.directory, { recursive: true });
   }
   private file(id: string): string {
@@ -74,9 +76,9 @@ export class FileSessionStore {
       this.session(state); return state;
     } catch { throw new SessionStoreError("corrupt", "Session checksum, history or document validation failed"); }
   }
-  private session(state: StoredState): ProjectSession {
+  private session(state: StoredState, allowNewApprovals = false): ProjectSession {
     if (state.document.id !== undefined && state.document.id !== state.projectId) throw new Error("Project document id does not match session id");
-    return new ProjectSession(state.projectId, state.document, state.revision, state.history, state.selection, this.validate);
+    return new ProjectSession(state.projectId, state.document, state.revision, state.history, state.selection, this.validate, allowNewApprovals, this.transition);
   }
   private projectionDigest(file: string): string {
     try { const document = JSON.parse(fs.readFileSync(file, "utf8")); assertJson(document); return sha(canonicalJson(document)); }
@@ -93,17 +95,24 @@ export class FileSessionStore {
     }
   }
   private result(state: StoredState) { const session = this.session(state); return { snapshot: session.snapshot(), look: session.look() }; }
-  open(projectId: string, document: Record<string, unknown>, projectFile?: string) {
+  open(projectId: string, document: Record<string, unknown>, projectFile?: string, createOnly = false) {
     return this.lock(projectId, () => {
       assertJson(document);
       if (!document || typeof document !== "object" || Array.isArray(document)) throw new Error("A project document is required");
       let state: StoredState;
       if (fs.existsSync(this.file(projectId))) {
+        if (createOnly) throw new SessionStoreError("project-conflict", "Project ID already exists; choose a new ID");
         state = this.read(projectId); this.recoverProjection(state);
         const conflict = canonicalJson(state.document) !== canonicalJson(document);
         // Opening never overwrites a newer durable revision with a browser/local draft.
         if (conflict) return { ...this.result(state), conflict: true };
       } else {
+        // New imports are untrusted: approvals are established only by the dedicated path.
+        document = transitionDocument(this.transition, undefined, document, { action: "import" }); assertJson(document);
+        const assets = document.assets;
+        if (Array.isArray(assets) && assets.some(asset => asset && typeof asset === "object" && ["character", "product"].includes(asset.kind) && asset.approval)) {
+          throw new SessionStoreError("untrusted-import", "Imported approvals are not trusted; remove approvals and reapprove the asset");
+        }
         state = { projectId, document, revision: 0, history: [], selection: [] }; this.session(state);
       }
       if (projectFile) {
@@ -127,34 +136,52 @@ export class FileSessionStore {
     return this.lock(projectId, () => { const state = this.read(projectId); this.recoverProjection(state); const session = this.session(state); session.select(handles); state.selection = session.look().selection; this.write(state); return this.result(state); });
   }
   apply(projectId: string, transaction: EditTransaction) { return this.mutate(projectId, session => session.submit(transaction)); }
+  /** Dedicated in-process approval path. The caller must pin and verify the referenced bytes. */
+  approveAsset(projectId: string, request: Omit<EditTransaction, "projectId" | "operations">, transform: (document: Record<string, unknown>) => EditTransaction["operations"]) {
+    return this.transform(projectId, request, transform, true);
+  }
   /** Evaluate semantic edits under the same lock/CAS as persistence. Retries never run the edit twice. */
   applyTransform(
     projectId: string,
     request: Omit<EditTransaction, "projectId" | "operations">,
     transform: (document: Record<string, unknown>) => EditTransaction["operations"],
+  ) { return this.transform(projectId, request, transform, false); }
+  private transform(
+    projectId: string,
+    request: Omit<EditTransaction, "projectId" | "operations">,
+    transform: (document: Record<string, unknown>) => EditTransaction["operations"],
+    allowNewApprovals: boolean,
   ) {
     return this.mutate(projectId, session => {
       const prior = session.exportState().history.find(entry => entry.transaction.id === request.id);
-      if (prior) return session.submit({ ...prior.transaction, ...request, projectId });
+      if (prior) {
+        if (allowNewApprovals && prior.approvalOrigin !== "trusted-approval" || !allowNewApprovals && prior.approvalOrigin === "trusted-approval") {
+          return { transactionId: request.id, projectId, baseRevision: request.baseRevision, stage: "refused", changed: false, affectedPaths: [], affectedHandles: [], reason: "Transaction id belongs to a different operation" };
+        }
+        return session.submit({ ...prior.transaction, ...request, projectId });
+      }
       if (session.snapshot().revision !== request.baseRevision) {
         return session.submit({ ...request, projectId, operations: [] });
       }
       const operations = transform(session.snapshot().document);
       return session.submit({ ...request, projectId, operations });
-    });
+    }, allowNewApprovals);
   }
   historyEdit(projectId: string, action: "undo" | "redo", id: string, baseRevision: number, actor: SessionActor) {
     return this.mutate(projectId, session => session.historyEdit(action, id, baseRevision, actor));
   }
-  private mutate(projectId: string, edit: (session: ProjectSession) => TaskReceipt) {
+  private mutate(projectId: string, edit: (session: ProjectSession) => TaskReceipt, allowNewApprovals = false) {
     return this.lock(projectId, () => {
       const state = this.read(projectId); this.recoverProjection(state);
-      const session = this.session(state), receipt = edit(session);
+      const session = this.session(state, allowNewApprovals), receipt = edit(session);
       if (receipt.stage === "refused") return { ...this.result(state), receipt };
       const next: StoredState = { ...session.exportState(), ...(state.projection ? { projection: { ...state.projection, pending: true } } : {}) };
-      if (next.revision !== state.revision) next.history.at(-1)!.documentSha256 = sha(canonicalJson(next.document));
+      if (next.revision !== state.revision) {
+        const entry = next.history.at(-1)!;
+        entry.documentSha256 = sha(canonicalJson(next.document));
+        if (allowNewApprovals) entry.approvalOrigin = "trusted-approval";
+      }
       this.write(next); this.afterCommit?.(); this.recoverProjection(next);
-      // New file handle, checksum and document readback, after the atomic rename.
       const readback = this.read(projectId);
       return { ...this.result(readback), receipt: this.verifyState(readback, receipt.transactionId) };
     });

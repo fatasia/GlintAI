@@ -1,0 +1,18 @@
+/* This region occupies workspace flow; it must never float over authoring controls. */
+.offline-status {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--g-sp-2) var(--g-sp-4);
+  padding: var(--g-sp-2) var(--g-sp-3);
+  margin-bottom: var(--g-sp-2);
+  border: 1px solid var(--g-line-2);
+  border-radius: var(--g-r-2);
+  background: var(--g-bg-2);
+  color: var(--g-fg-2);
+  font-size: var(--g-fs-2);
+  min-width: 0;
+}
+.offline-status-message { margin: 0; flex: 1 1 100%; overflow-wrap: anywhere; }
+.offline-status-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--g-sp-2); min-width: 0; }

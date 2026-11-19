@@ -1,5 +1,15 @@
 # QA 门禁:阈值与修法
 
+## 先看实际画面
+
+`pnpm glint look --video=成片.mp4 --out=新的检查目录 --samples=8 --at=8.5 --start=5 --end=8` 生成联系表、指定时刻单帧、区间 MP4 和 `look.json`。时间单位为秒，省略 `--at`、`--start/--end` 可只生成联系表；区间最多 30 秒，成片最多 10 分钟、2 GiB。输出目录必须不存在，失败后保留诊断产物，重试换新目录。
+
+先查看 `contact.png`，再对疑点时间调用单帧或区间检查。报告中的黑场和静音是阈值检测，暗底字卡或停顿也可能触发；`nearFullScale` 是采样峰值风险，不是已经发生削波的结论。仅检查首条视频和音轨，抽帧不替代完整观看，响度与真峰值继续用 `delivery-check`。
+
+外部 Agent 以 `node <skill目录>/scripts/glint.mjs --root=<Glint仓库> look ...` 调用同一实现，无模型调用。
+
+## 视觉统计门禁
+
 `pnpm glint qa --video=成片.mp4 [--strict] [--out=报告.json]`。五道门,基于每 2.5s 抽帧(192px 缩略)的像素统计;阈值是 2026-10 起始值,对真实坏片校准后可调(`DEFAULT_QA_THRESHOLDS`)。
 
 | 门 | 红灯 | 黄灯 | 修法 |

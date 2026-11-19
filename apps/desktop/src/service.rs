@@ -1,10 +1,10 @@
-use crate::{job::ProcessJob, protocol};
+use crate::{agent_bridge::AgentBridge, job::ProcessJob, protocol};
 use std::{
     io::{BufReader, Write},
     os::windows::process::CommandExt,
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
-    sync::mpsc::{self, Receiver, RecvTimeoutError},
+    process::{Child, ChildStdin, Command, Stdio},
+    sync::{mpsc::{self, Receiver, RecvTimeoutError}, Arc, Mutex},
     thread,
     time::{Duration, Instant},
 };
@@ -18,6 +18,8 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 pub struct Service {
     child: Child,
     nonce: String,
+    input: Arc<Mutex<ChildStdin>>,
+    pub bridge: Arc<AgentBridge>,
     _job: ProcessJob,
 }
 
@@ -49,6 +51,22 @@ fn repository() -> Result<PathBuf, String> {
         return Err("Development service/UI missing. Build apps/web and run node apps/desktop/scripts/dev.mjs.".into());
     }
     Ok(repo)
+}
+
+fn read_responses(reader: &mut impl std::io::BufRead, mut handle: impl FnMut(protocol::Response)) {
+    loop {
+        match protocol::read_response(reader) {
+            Ok(protocol::Response::Eof) => {
+                handle(protocol::Response::Rejected("桌面服务连接已关闭，请重试。"));
+                break;
+            }
+            Ok(response) => handle(response),
+            Err(_) => {
+                handle(protocol::Response::Rejected("无法读取桌面服务连接，请重试。"));
+                break;
+            }
+        }
+    }
 }
 
 impl Service {
@@ -118,9 +136,13 @@ impl Service {
                 "Cannot supervise service process; refusing unsupervised startup: {error}"
             ));
         }
+        let input = Arc::new(Mutex::new(child.stdin.take().ok_or("Node stdin unavailable")?));
+        let bridge = AgentBridge::new(input.clone(), nonce.clone());
         let mut service = Self {
             child,
             nonce: nonce.clone(),
+            input,
+            bridge: bridge.clone(),
             _job: job,
         };
         let stdout = service
@@ -137,7 +159,13 @@ impl Service {
         thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
             let _ = tx.send(protocol::read_ready(&mut reader, &nonce));
-            protocol::drain(&mut reader);
+            read_responses(&mut reader, |response| match response {
+                protocol::Response::Message(message) => bridge.response(message),
+                protocol::Response::Rejected(error) => bridge.fail_pending(error),
+                protocol::Response::RequestRejected { id, error } => bridge.response(
+                    serde_json::json!({"type":"agent-result", "id":id, "error":error})),
+                protocol::Response::Eof => unreachable!(),
+            });
         });
         thread::spawn(move || protocol::drain(&mut BufReader::new(stderr)));
         Ok((service, rx))
@@ -191,10 +219,10 @@ impl Service {
 
 impl Drop for Service {
     fn drop(&mut self) {
-        if let Some(mut stdin) = self.child.stdin.take() {
+        self.bridge.invalidate();
+        if let Ok(mut stdin) = self.input.lock() {
             let message = serde_json::json!({"type":"shutdown", "nonce":self.nonce});
             let _ = writeln!(stdin, "{message}");
-            // Closing stdin is a second independent shutdown signal.
         }
         let deadline = Instant::now() + SHUTDOWN_TIMEOUT;
         while Instant::now() < deadline {
@@ -205,5 +233,24 @@ impl Drop for Service {
         }
         let _ = self.child.kill();
         // Job RAII closes immediately after this function, killing remaining descendants.
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{BufReader, Cursor, Read};
+
+    #[test]
+    fn response_loop_reports_oversize_then_delivers_following_receipt() {
+        let input = std::io::repeat(b'x').take((protocol::MAX_RESPONSE_BYTES + 100) as u64)
+            .chain(Cursor::new(b"\n{\"type\":\"agent-result\",\"id\":2,\"result\":true}\n"));
+        let mut events = Vec::new();
+        read_responses(&mut BufReader::new(input), |response| events.push(response));
+        assert_eq!(events.len(), 3);
+        assert!(matches!(events[0], protocol::Response::Rejected(protocol::RESPONSE_TOO_LARGE)));
+        let protocol::Response::Message(value) = &events[1] else { panic!("后续回执未送达"); };
+        assert_eq!(value["id"], 2);
+        assert!(matches!(events[2], protocol::Response::Rejected(_)));
     }
 }

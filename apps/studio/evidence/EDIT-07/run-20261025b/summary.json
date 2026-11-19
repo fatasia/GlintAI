@@ -1,0 +1,50 @@
+{
+  "ranAt": "2026-10-26T01:20:17.390Z",
+  "matrix": [
+    {
+      "run": "base",
+      "probes": [
+        "centre is source red"
+      ]
+    },
+    {
+      "run": "silver-mono",
+      "probes": [
+        "preset frame is channel-flat (grayscale)",
+        "preset differs from base red (red channel collapses)"
+      ]
+    },
+    {
+      "run": "mask-circle-screen",
+      "probes": [
+        "circle centre shows screen(red,blue)=magenta",
+        "circle corner keeps base red"
+      ]
+    },
+    {
+      "run": "mask-rect-feather-multiply",
+      "probes": [
+        "rect centre shows multiply=black",
+        "feather-clear left edge keeps base red"
+      ]
+    },
+    {
+      "run": "transition-in-fade",
+      "probes": [
+        "fade-in start still shows mostly base red",
+        "after fade the overlay is fully blue"
+      ]
+    }
+  ],
+  "evidenceScreenshots": [
+    "evidence\\EDIT-07\\run-20261025b\\base-500ms.png",
+    "evidence\\EDIT-07\\run-20261025b\\silver-mono-500ms.png",
+    "evidence\\EDIT-07\\run-20261025b\\mask-circle-screen-500ms.png",
+    "evidence\\EDIT-07\\run-20261025b\\mask-rect-feather-multiply-500ms.png",
+    "evidence\\EDIT-07\\run-20261025b\\transition-in-fade-50ms.png",
+    "evidence\\EDIT-07\\run-20261025b\\transition-in-fade-500ms.png"
+  ],
+  "failures": [],
+  "verdict": "PASS: silver-mono preset, circle+screen and feathered-rect+multiply masks, and fade-in transitions all land as analytically expected pixels through the full NLE export",
+  "instrument": "ffmpeg solid-colour fixtures (red base, blue overlay); full renderNle export per matrix cell; RGB24 frame probes at fixed coordinates against analytic expectations"
+}

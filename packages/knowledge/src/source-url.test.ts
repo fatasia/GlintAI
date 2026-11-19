@@ -10,7 +10,7 @@ import { readSourceText } from "./source";
 vi.mock("node:dns/promises", () => ({ lookup: vi.fn() }));
 const dns = vi.mocked(lookup);
 
-afterEach(() => { vi.restoreAllMocks(); dns.mockReset(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); dns.mockReset(); });
 it("requires HTTPS on catalog entry URLs and redirect hops",async()=>{
   await expect(fetchSource('http://public.example/a',new AbortController().signal,0,true)).rejects.toThrow('HTTPS');
   publicDns();respond(302,{location:'http://public.example/downgrade'});
@@ -35,6 +35,20 @@ function respond(status: number, headers: Record<string, string>, chunks: Buffer
 function publicDns() { dns.mockResolvedValue([{ address: "8.8.8.8", family: 4 }] as never); }
 
 describe("public URL source boundary (offline transports)", () => {
+  it("validates public DNS answers before connecting and still blocks private answers", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ Answer: [{ type: 1, data: "127.0.0.1" }] })));
+    const get = vi.spyOn(https, "get");
+    await expect(readSourceText({ url: "https://public.example/a" }, { httpsOnly: true, publicDns: true })).rejects.toThrow(/Private/);
+    expect(get).not.toHaveBeenCalled();
+  });
+  it("pins a checked public DNS result when explicitly enabled", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ Answer: [{ type: 1, data: "8.8.8.8" }] })));
+    respond(200, { "content-type": "text/plain" }, [Buffer.from("可读取")]);
+    const get = vi.spyOn(https, "get").mockImplementation(vi.mocked(http.get).getMockImplementation() as typeof https.get);
+    expect(await readSourceText({ url: "https://public.example/a" }, { httpsOnly: true, publicDns: true })).toBe("可读取");
+    const callback = vi.fn(); ((get.mock.calls[0]![1] as http.RequestOptions).lookup as Function)("public.example", {}, callback);
+    expect(callback).toHaveBeenCalledWith(null, "8.8.8.8", 4);
+  });
   it.each(["192.0.2.1", "198.51.100.1", "203.0.113.1", "2001:db8::1", "2001:0:1::1", "2001:20::1", "2002:7f00:1::", "3fff::1", "::ffff:8.8.8.8"])("blocks reserved/transition %s", (ip) => {
     expect(isPublicAddress(ip)).toBe(false);
   });

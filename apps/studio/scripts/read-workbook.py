@@ -18,7 +18,8 @@ with zipfile.ZipFile(sys.argv[1]) as z:
     shared = [texts(n) for n in xml('xl/sharedStrings.xml')] if 'xl/sharedStrings.xml' in z.namelist() else []
     rels = {n.attrib.get('Id'): n.attrib.get('Target') for n in xml('xl/_rels/workbook.xml.rels') if n.attrib.get('TargetMode') != 'External'}
     book = xml('xl/workbook.xml')
-    epoch = datetime.datetime(1904, 1, 1) if any(local(n) == 'workbookPr' and n.attrib.get('date1904') in ('1', 'true') for n in book.iter()) else datetime.datetime(1899, 12, 30)
+    date1904 = any(local(n) == 'workbookPr' and n.attrib.get('date1904') in ('1', 'true') for n in book.iter())
+    epoch = datetime.datetime(1904, 1, 1) if date1904 else datetime.datetime(1899, 12, 30)
     formats = {}; styles = []
     if 'xl/styles.xml' in z.namelist():
         style = xml('xl/styles.xml')
@@ -30,6 +31,17 @@ with zipfile.ZipFile(sys.argv[1]) as z:
         fmt = styles[idx] if idx < len(styles) else 0
         code = re.sub(r'"[^"]*"|\\.|\[[^\]]*\]', '', formats.get(fmt, '')).lower()
         return 14 <= fmt <= 22 or 27 <= fmt <= 36 or 50 <= fmt <= 58 or bool(re.search(r'[yd]', code))
+    def excel_date(value):
+        number = float(value)
+        if not date1904 and 60 <= number < 61:
+            # Excel preserves the fictitious leap day for compatibility.
+            millis = round((number - 60) * 86400000)
+            if millis == 0: return '1900-02-29'
+            if millis >= 86400000: return '1900-03-01'
+            return '1900-02-29T' + (datetime.datetime.min + datetime.timedelta(milliseconds=millis)).time().isoformat(timespec='milliseconds')
+        origin = epoch + datetime.timedelta(days=1) if not date1904 and 0 < number < 60 else epoch
+        result = origin + datetime.timedelta(milliseconds=round(number * 86400000))
+        return result.date().isoformat() if result.time() == datetime.time() else result.isoformat(timespec='milliseconds')
     out = []
     for sheet in book.iter():
         if local(sheet) != 'sheet': continue
@@ -51,11 +63,16 @@ with zipfile.ZipFile(sys.argv[1]) as z:
                 if col > 256: raise ValueError('Sheet exceeds 256 columns')
                 while len(row) < col: row.append('')
                 value = next((n.text or '' for n in cell if local(n) == 'v'), '')
+                if any(local(n) == 'f' for n in cell) and not value:
+                    raise ValueError('Formula has no cached value; recalculate and save workbook first')
                 kind = cell.attrib.get('t')
                 if kind == 's': value = shared[int(value)] if value else ''
                 elif kind == 'inlineStr': value = texts(cell)
-                elif kind in ('e', 'b'): raise ValueError('Error or boolean cell; clean the table first')
-                elif value and is_date(cell): value = (epoch + datetime.timedelta(days=float(value))).date().isoformat()
+                elif kind == 'e': raise ValueError('Error cell; clean the table first')
+                elif kind == 'b':
+                    if value not in ('0', '1'): raise ValueError('Invalid boolean cell')
+                    value = 'TRUE' if value == '1' else 'FALSE'
+                elif kind in (None, 'n') and value and is_date(cell): value = excel_date(value)
                 row[col - 1] = value
             if any(row): rows.append(row)
             if len(rows) > 10001: raise ValueError('Sheet exceeds 10000 rows')

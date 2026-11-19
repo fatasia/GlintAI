@@ -26,6 +26,7 @@ export interface DeliveryStream {
   width?: number;
   height?: number;
   duration?: number;
+  fps?: number;
   channels?: number;
   sampleRate?: number;
   loudness?: DeliveryLoudness;
@@ -49,6 +50,13 @@ const finite = (value: unknown): number | undefined => {
   if (typeof value !== "number" && typeof value !== "string" || value === "") return undefined;
   const number = Number(value);
   return Number.isFinite(number) ? number : undefined;
+};
+/** ffprobe rates arrive as "num/den" ("24000/1001", "0/0" for unknown). */
+const rate = (value: unknown): number | undefined => {
+  const match = typeof value === "string" ? /^(-?\d+)\/(-?\d+)$/.exec(value.trim()) : null;
+  if (!match) return finite(value);
+  const denominator = Number(match[2]);
+  return denominator > 0 ? Number(match[1]) / denominator : undefined;
 };
 function range(name: string, value: number, min: number, max: number): void {
   if (!Number.isFinite(value) || value < min || value > max) throw new Error(`${name} must be a finite number in ${min}..${max}`);
@@ -77,7 +85,7 @@ function captureLoudness(args: string[], signal: AbortSignal): Promise<string> {
 
 interface ProbeStream {
   index: number; codec_type: string; codec_name?: string; width?: number; height?: number;
-  duration?: string; channels?: number; sample_rate?: string;
+  duration?: string; avg_frame_rate?: string; channels?: number; sample_rate?: string;
 }
 
 /** Technical delivery checks only: decoding says nothing about visual or editorial quality. */
@@ -113,13 +121,14 @@ export async function checkDelivery(input: DeliveryCheckInput): Promise<Delivery
     for await (const chunk of fs.createReadStream(file, { signal: controller.signal })) hash.update(chunk);
     report.sha256 = hash.digest("hex");
     stage = "probe";
-    const raw = await captureProcess("ffprobe", ["-v", "error", ...LOCAL_INPUT, "-show_entries", "format=duration:stream=index,codec_type,codec_name,width,height,duration,channels,sample_rate", "-of", "json", file], { signal: controller.signal, timeoutMs: TIMEOUT_MS });
+    const raw = await captureProcess("ffprobe", ["-v", "error", ...LOCAL_INPUT, "-show_entries", "format=duration:stream=index,codec_type,codec_name,width,height,duration,avg_frame_rate,channels,sample_rate", "-of", "json", file], { signal: controller.signal, timeoutMs: TIMEOUT_MS });
     const probe = JSON.parse(raw.toString("utf8")) as { streams?: ProbeStream[]; format?: { duration?: string } };
     if (!Array.isArray(probe.streams)) throw new Error("ffprobe returned no stream metadata");
     const formatDuration = finite(probe.format?.duration);
     report.streams = probe.streams.map(stream => ({
       index: stream.index, type: stream.codec_type, codec: stream.codec_name,
       width: stream.width, height: stream.height, duration: finite(stream.duration) ?? formatDuration,
+      fps: rate(stream.avg_frame_rate),
       channels: stream.channels, sampleRate: finite(stream.sample_rate),
     }));
     check("probe", true, `${report.streams.length} actual stream(s) found`);

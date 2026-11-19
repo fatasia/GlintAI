@@ -1,0 +1,61 @@
+.registry-settings {
+  display: grid;
+  gap: var(--g-sp-6);
+  min-width: 0;
+}
+.registry-settings h3,
+.registry-settings p {
+  margin: 0;
+}
+.registry-settings header,
+.registry-import {
+  display: grid;
+  gap: var(--g-sp-5);
+}
+.registry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--g-sp-4);
+}
+.registry-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.registry-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: var(--g-sp-5);
+  padding: var(--g-sp-5) 0;
+  border-bottom: 1px solid var(--g-line-1);
+  overflow-wrap: anywhere;
+}
+.registry-list small {
+  display: block;
+  color: var(--g-fg-3);
+  font-size: var(--g-fs-2);
+  margin-top: var(--g-sp-2);
+}
+.registry-state {
+  color: var(--g-fg-2);
+  font-size: var(--g-fs-2);
+}
+.registry-json {
+  min-height: 12rem;
+  resize: vertical;
+  width: 100%;
+  font-family: var(--g-font-mono);
+}
+.registry-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--g-sp-4);
+}
+.registry-error {
+  color: var(--g-danger);
+}
+@media (max-width: 640px) {
+  .registry-list li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

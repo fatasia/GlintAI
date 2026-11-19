@@ -1,7 +1,8 @@
 import { createInterface } from "node:readline";
-import { applyProjectChanges, buildProject, planProject, verifyReceipt, type BuildInput, type PlanInput } from "./build";
+import { applySessionChanges, buildProject, planProject, verifyReceipt, type BuildInput, type PlanInput } from "./build";
 import { proveProject } from "./prove";
-
+import { taskTools } from "./task-mcp";
+import { containerTools } from "./container-mcp";
 /**
  * Minimal MCP (Model Context Protocol) server over stdio: newline-delimited
  * JSON-RPC 2.0. Glint exposes the four verbs agents actually need (plan, apply,
@@ -9,7 +10,6 @@ import { proveProject } from "./prove";
  *
  * stdout carries protocol messages only; tool logs go to stderr.
  */
-
 export interface McpTool {
   name: string;
   description: string;
@@ -53,23 +53,25 @@ function boolArg(args: Record<string, unknown>, name: string): boolean | undefin
   return value;
 }
 
-export function defaultTools(): McpTool[] {
+export function defaultTools(options: { sessionDirectory?: string } = {}): McpTool[] {
   const log = (message: string) => console.error(message);
   return [
+    ...containerTools(),
+    ...taskTools(),
     {
       name: "glint_plan",
       description: "Predict which build nodes a change will execute, what it costs and how long it takes. Does not render.",
       inputSchema: { type: "object", properties: { project: PROJECT, changes: CHANGES, tts: { type: "string" }, music: { type: "string" }, fast: { type: "boolean" } }, required: ["project"] },
       call: async (args) => {
         const report = planProject({ projectPath: stringArg(args, "project")!, changes: changesArg(args), tts: stringArg(args, "tts", false), music: stringArg(args, "music", false), fast: boolArg(args, "fast") });
-        return { project: report.projectId, revision: report.revision, exact: report.exact, predicted: report.plan.predicted, changed: report.plan.changed, forced: report.plan.forced, reused: report.plan.reused, costCny: report.plan.costCny, estimatedMs: report.plan.estimatedMs, notes: report.notes };
+        return { project: report.projectId, revision: report.revision, exact: report.exact, predicted: report.plan.predicted, changed: report.plan.changed, forced: report.plan.forced, reused: report.plan.reused, costCny: report.plan.costCny, modelCalls: report.modelCalls, estimatedMs: report.plan.estimatedMs, notes: report.notes };
       },
     },
     {
       name: "glint_apply",
-      description: "Apply path=value edits to the project with compare-and-swap on the project revision.",
+      description: "Apply path=value edits through the shared session domain (same undo history as the studio) and write the project back, with compare-and-swap on the revision.",
       inputSchema: { type: "object", properties: { project: PROJECT, changes: CHANGES, expectedRevision: { type: "string" } }, required: ["project", "changes"] },
-      call: (args) => applyProjectChanges({ projectPath: stringArg(args, "project")!, changes: changesArg(args), expectedRevision: stringArg(args, "expectedRevision", false) }),
+      call: (args) => applySessionChanges({ projectPath: stringArg(args, "project")!, changes: changesArg(args), expectedRevision: stringArg(args, "expectedRevision", false), sessionDirectory: options.sessionDirectory }),
     },
     {
       name: "glint_build",
@@ -79,7 +81,7 @@ export function defaultTools(): McpTool[] {
         const input: BuildInput = {
           projectPath: stringArg(args, "project")!, output: stringArg(args, "out")!, changes: changesArg(args),
           tts: stringArg(args, "tts", false), music: stringArg(args, "music", false),
-          fast: boolArg(args, "fast"), plate: boolArg(args, "plate"), log,
+          fast: boolArg(args, "fast"), plate: boolArg(args, "plate"), assertBudget: boolArg(args, "assertBudget"), log,
         };
         const report = await buildProject(input);
         if (boolArg(args, "assertBudget") && !report.budget.matches) throw new Error(`Build exceeded its predicted change set: missing=${report.budget.missing.join(",") || "-"} extra=${report.budget.extra.join(",") || "-"}`);

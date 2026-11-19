@@ -5,9 +5,15 @@ export * from "./timeline";
 export * from "./timeline-edits";
 export * from "./frame-rate";
 export * from "./elements";
+export * from "./stroke-path";
+export * from "./character-identity";
 export * from "./effects";
 export * from "./look-presets";
 export * from "./parse";
 
 export * from "./motion";
 export * from "./nle";
+export * from "./bridge";
+export * from "./interactive";
+export * from "./translations";
+export * from "./project-workspace";

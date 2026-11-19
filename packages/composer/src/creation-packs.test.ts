@@ -8,7 +8,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("creation pack discovery", () => {
   it("exposes one JSON-only catalog of versioned results with explicit empty permissions", () => {
     const packs = listCreationPacks();
-    expect(packs.map(pack => pack.id)).toEqual(["product-launch", "brand-quote", "data-insight", "how-to"]);
+    expect(packs.map(pack => pack.id)).toEqual(["product-launch", "brand-quote", "data-insight", "how-to", "beat-showcase"]);
     expect(JSON.parse(JSON.stringify(packs))).toEqual(packs);
     for (const pack of packs) {
       expect(pack).toMatchObject({ author: "Glint", license: "Apache-2.0", version: "1.0.0", permissions: [] });
@@ -28,8 +28,8 @@ describe("creation pack discovery", () => {
     expect(listCreationPacks("数据").map(pack => pack.id)).toEqual(["data-insight"]);
     expect(listCreationPacks("图表 报告").map(pack => pack.id)).toEqual(["data-insight"]);
     expect(listCreationPacks("关键帧").map(pack => pack.id)).toEqual(["brand-quote"]);
-    expect(listCreationPacks("1.0.0")).toHaveLength(4);
-    expect(listCreationPacks("   ")).toHaveLength(4);
+    expect(listCreationPacks("1.0.0")).toHaveLength(5);
+    expect(listCreationPacks("   ")).toHaveLength(5);
     expect(listCreationPacks("不存在")).toEqual([]);
     expect(getCreationPack("__proto__")).toBeUndefined();
     expect(getCreationPack("missing")).toBeUndefined();
@@ -73,7 +73,7 @@ describe("creation pack materialization", () => {
     expect(preview.music).toBeUndefined();
     expect(preview.assets).toBeUndefined();
     for (const scene of preview.scenes) {
-      expect(["title", "bullets", "comparison", "chart"]).toContain(scene.kind);
+      expect(["title", "bullets", "comparison", "chart", "code"]).toContain(scene.kind);
       expect(scene).not.toHaveProperty("src");
       expect(scene).not.toHaveProperty("html");
       expect(scene.narration.audioRef).toBeUndefined();

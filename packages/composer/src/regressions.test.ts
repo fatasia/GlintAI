@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { composeFromMarkdown } from "./heuristic";
 import { composeWithLlm } from "./llm";
 import { MockLlmProvider } from "@glintai/llm";
-import { splitSentences } from "./parsing";
+import { splitSentences, narration } from "./parsing";
 const base = '# Topic\n## Same\n- First item\n- Second item\n## Same\n- Another item\n- Last item';
 describe("composer regressions", () => {
   it("handles list-only input and duplicate headings with nonempty unique scenes", () => {
@@ -14,6 +14,18 @@ describe("composer regressions", () => {
   it("splits English sentences but not decimal numbers", () => {
     expect(splitSentences('Rate is 3.5 percent. Save the result. Try again!')).toEqual(['Rate is 3.5 percent.', 'Save the result.', 'Try again!']);
     expect(splitSentences('first sentence. second sentence.')).toEqual(['first sentence.', 'second sentence.']);
+  });
+  it("marks incomplete long narration instead of silently cutting it mid-claim", () => {
+    const long = "用水调查".repeat(15) + "，" + "此数据不能代表所有社区".repeat(8) + "。";
+    expect(narration([long])).toBe("用水调查".repeat(15) + "…");
+    expect(narration(["甲".repeat(120)])).toBe("甲".repeat(109) + "…");
+    expect(narration(["完成的句子。", long])).toBe("完成的句子。");
+    const project = composeFromMarkdown(`# 数据\n## 说明\n${long}`);
+    expect(project.scenes[1]!.narration.text.endsWith("…")).toBe(true);
+    const bullets = composeFromMarkdown(`# 数据\n## 说明\n${long}\n短句。`).scenes[1]!;
+    expect(bullets.kind === "bullets" && bullets.items[0]!.endsWith("…")).toBe(true);
+    const intro = project.scenes[0]!;
+    expect(intro.kind === "title" && intro.subtitle?.endsWith("…")).toBe(true);
   });
   it("retains multiple code blocks and respects the opening fence length", () => {
     const project = composeFromMarkdown('# Code\n## Examples\n````md\n```ts\nconst a = 1;\n```\n````\n\n```c++\nint b = 2;\n```', { template: 'code-walkthrough' });

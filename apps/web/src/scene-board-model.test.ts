@@ -91,7 +91,7 @@ describe("library material nodes", () => {
   it("lays references on a fixed shelf with stable ids and never mutates validated input", () => {
     const visuals = libraryVisuals(assets), snapshot = JSON.stringify(visuals), nodes = materialNodes(visuals, { x: 960, y: 0 });
     expect(nodes).toHaveLength(12);
-    expect(nodes[0]).toMatchObject({ id: "material:clip.mp4", type: "materialCard", draggable: false, deletable: false,
+    expect(nodes[0]).toMatchObject({ id: "material:clip.mp4", type: "materialCard", draggable: true, deletable: false,
       position: { x: 960, y: 0 }, data: { name: "clip.mp4", kind: "video" } });
     expect(nodes[3]!.position).toEqual({ x: 960, y: 146 });
     expect(JSON.stringify(visuals)).toBe(snapshot);
@@ -178,4 +178,12 @@ describe("scene board library interactions", () => {
     expect(nodes[1]!.data).toMatchObject({ thumbnail: "/api/media/assets/clip.mp4" });
     expect((nodes[2]!.data as { thumbnail?: string }).thumbnail).toBeUndefined();
   });
+});
+it("restores independent material positions without changing the source media", () => {
+  const positions = readBoardPositions(JSON.stringify({ "material:photo.png": { x: -320, y: 420 }, "material:../bad.png": { x: 1, y: 2 } }));
+  expect(Object.keys(positions)).toEqual(["material:photo.png"]);
+  const visuals = libraryVisuals([{ name: "photo.png" }]);
+  const before = JSON.stringify(visuals);
+  expect(materialNodes(visuals, { x: 900, y: 0 }, positions)[0]).toMatchObject({ draggable: true, position: { x: -320, y: 420 } });
+  expect(JSON.stringify(visuals)).toBe(before);
 });

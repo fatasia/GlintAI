@@ -1,0 +1,14 @@
+{
+  "ranAt": "2026-10-26T01:14:11.051Z",
+  "checks": [
+    "bar pixel ratio == data ratio (0.5 ±0.06)",
+    "tall bar >= 80px at frame 90",
+    "markup deterministic per frame",
+    "bar grows with frame",
+    "table update moves geometry",
+    "long series pages"
+  ],
+  "failures": [],
+  "verdict": "PASS: ChartScene pixels equal the data ratios in a real Chrome, grow with the frame, move when the table moves, and page long series",
+  "instrument": "esbuild bundle of ChartSceneView with remotion aliased to a frame-injected stub; real Chrome SVG raster; ffmpeg RGB24 decode counting pure-red bar pixels per column"
+}

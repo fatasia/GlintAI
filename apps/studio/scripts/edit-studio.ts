@@ -56,8 +56,11 @@ export function startEditStudio(dir: string, port: number | undefined, apiKey = 
       finally { atomic(queueFile, queue); unlock(); running = undefined; }
     })();
   }
-  const source = fs.readFileSync(fileURLToPath(new URL("./edit-studio/runtime.ts", import.meta.url)), "utf8");
-  const runtime = ts.transpileModule(source.replace("export function editRuntime", "function editRuntime"), { compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.None } }).outputText + "\neditRuntime();";
+  const builtRuntime = fileURLToPath(new URL("./edit-studio/runtime.js", import.meta.url));
+  const runtime = fs.existsSync(builtRuntime) ? fs.readFileSync(builtRuntime, "utf8") : ts.transpileModule(
+    fs.readFileSync(fileURLToPath(new URL("./edit-studio/runtime.ts", import.meta.url)), "utf8").replace("export function editRuntime", "function editRuntime"),
+    { compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.None } }
+  ).outputText + "\neditRuntime();";
   const server = createServer(async (request, response) => {
     const json = (status: number, body: unknown) => response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }).end(JSON.stringify(body));
     try {

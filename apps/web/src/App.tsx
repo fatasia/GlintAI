@@ -1,255 +1,268 @@
+import { Component, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useHashLocation } from "wouter/use-hash-location";
+import { appFetch as fetch } from "./app-url";
 import { IdeaStudio } from "./IdeaStudio";
+import { AuthoringVisibility } from "./authoring-visibility";
 import { OfflineStatus } from "./OfflineStatus";
-import { AmbientBackdrop } from "./AmbientBackdrop";
-import { PreviewBoundary } from "./PreviewBoundary";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { consumeAnswerStream, type GroundedAnswer } from "./answer-stream";
-import entropyProject from "../../../examples/entropy-lecture/project.scenescript.json";
-import uncertaintyProject from "../../../examples/uncertainty-principle/project.scenescript.json";
+import { assertAllAuthoringCanLeave } from "./authoring-leave";
+import { Rail, type Theme } from "./shell/Rail";
+import type { PaletteCommand } from "./shell/command-filter";
+import { readSavedProjects } from "./project-history";
+import { AUTOMATION_TABS, LIBRARY_TABS, formatRoute, parseRoute, railArea, type AppRoute, type AutomationTab, type LibraryTab, type RailArea } from "./shell/routes";
+import type { StudioLocation, StudioRequest } from "./shell/use-studio-route";
+import { t, type MessageId } from "./ui/i18n";
+import "./app-navigation.css";
 
-// The shared component tree pulls in Remotion's player runtime and Three.js;
-// lazy-loading keeps the question panel usable before the player is needed.
-const ProjectPreview = lazy(() => import("./ProjectPreview"));
-// Tool panels stay out of the first paint; the disclosure loads them on open.
+// Keep tool dependencies out of the initial, immediately editable project view.
+const ContainerWorkspace = lazy(() => import("./ContainerWorkspace"));
 const ModelSettings = lazy(() => import("./ModelSettings").then(module => ({ default: module.ModelSettings })));
+const BrandStudio = lazy(() => import("./BrandStudio").then(module => ({ default: module.BrandStudio })));
+const GenCanvasBoard = lazy(() => import("./GenCanvasBoard").then(module => ({ default: module.GenCanvasBoard })));
 const MediaWorkshop = lazy(() => import("./MediaWorkshop").then(module => ({ default: module.MediaWorkshop })));
-const PersonaLibrary = lazy(() => import("./PersonaLibrary").then(module => ({ default: module.PersonaLibrary })));
 const VoiceReview = lazy(() => import("./VoiceReview").then(module => ({ default: module.VoiceReview })));
-const UnderstandingCheck = lazy(() => import("./UnderstandingCheck").then(module => ({ default: module.UnderstandingCheck })));
 const SkillCatalog = lazy(() => import("./SkillCatalog").then(module => ({ default: module.SkillCatalog })));
 const NleEditor = lazy(() => import("./NleEditor").then(module => ({ default: module.NleEditor })));
+const BatchWorkshop = lazy(() => import("./BatchWorkshop").then(module => ({ default: module.BatchWorkshop })));
+const ExampleTools = lazy(() => import("./ExampleTools").then(module => ({ default: module.ExampleTools })));
+const DocsPage = lazy(() => import("./DocsPage"));
+const CommandPalette = lazy(() => import("./shell/CommandPalette"));
+const TaskCenter = lazy(() =>
+  import("./TaskCenter").then((module) => ({ default: module.TaskCenter })),
+);
 
-const EXAMPLES: Array<{
-  key: string;
-  label: string;
-  project: unknown;
-}> = [
-  { key: "entropy", label: "熵与生命 · 中文", project: entropyProject },
-  { key: "uncertainty", label: "Uncertainty Principle · English", project: uncertaintyProject },
-];
-
-const pageStyle: React.CSSProperties = {
-  minHeight: "100dvh",
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  background: "radial-gradient(900px 520px at 50% -12%, rgba(96, 116, 255, 0.10), transparent 66%), #08090b",
+type ToolTab = LibraryTab | AutomationTab;
+type ToolArea = "library" | "automation";
+const TOOL_GROUPS: Record<ToolArea, { tabs: readonly ToolTab[]; title: MessageId; tablist: MessageId; region: string }> = {
+  library: { tabs: LIBRARY_TABS, title: "area.library", tablist: "tabs.library", region: "素材工作区" },
+  automation: { tabs: AUTOMATION_TABS, title: "area.automation", tablist: "tabs.automation", region: "自动化工作区" },
 };
+const cardStyle: CSSProperties = { border: "1px solid var(--line-1)", borderRadius: "var(--r-md)", background: "var(--ink-2)", overflow: "hidden" };
+const toolCardStyle: CSSProperties = { ...cardStyle, padding: 22, display: "grid", gap: 14 };
 
-const cardStyle: React.CSSProperties = {
-  width: "100%",
-  borderRadius: 14,
-  overflow: "hidden",
-  border: "1px solid #26262b",
-  background: "#101013",
-};
+class WorkspaceBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    return this.state.failed
+      ? <div role="alert" className="workspace-error">{t("workspace.failed")}<button type="button" className="app-ghost" onClick={() => window.location.reload()}>{t("workspace.reload")}</button></div>
+      : this.props.children;
+  }
+}
+function LoadWorkspace({ children }: { children: ReactNode }) {
+  return <WorkspaceBoundary><Suspense fallback={<p role="status" className="workspace-loading">{t("workspace.loading")}</p>}>{children}</Suspense></WorkspaceBoundary>;
+}
 
-const tabStyle = (active: boolean): React.CSSProperties => ({
-  padding: "9px 18px",
-  borderRadius: 999,
-  border: "1px solid",
-  borderColor: active ? "#3f3f46" : "#26262b",
-  background: active ? "#1c1c21" : "transparent",
-  color: active ? "#f4f4f5" : "#8b8b95",
-  cursor: "pointer",
-  fontSize: 13,
-  fontFamily: "inherit",
-});
+function toolContent(tab: ToolTab) {
+  switch (tab) {
+    case "create":
+      return <MediaWorkshop />;
+    case "brand":
+      return (
+        <div className="tool-grid">
+          <BrandStudio />
+          <VoiceReview cardStyle={toolCardStyle} />
+        </div>
+      );
+    case "examples":
+      return <ExampleTools />;
+    case "canvas":
+      return <GenCanvasBoard />;
+    case "skills":
+      return <SkillCatalog />;
+    case "batch":
+      return <BatchWorkshop />;
+    case "tasks":
+      return <TaskCenter />;
+  }
+}
 
-const moreSummary: React.CSSProperties = {
-  width: "100%",
-  cursor: "pointer",
-  color: "#8b8b95",
-  fontSize: 13,
-  padding: "16px 0",
-  borderTop: "1px solid rgba(255, 255, 255, 0.07)",
-  display: "flex",
-  justifyContent: "center",
-  gap: 8,
-};
+const studioOf = (route: AppRoute): StudioLocation | undefined => route.area !== "studio" ? undefined
+  : route.view === "workspace" ? { view: "workspace", ...(route.projectId ? { projectId: route.projectId } : {}) } : { view: route.view };
+const studioRoute = (location: StudioLocation): AppRoute => location.view === "workspace"
+  ? { area: "studio", view: "workspace", ...(location.projectId ? { projectId: location.projectId } : {}) }
+  : { area: "studio", view: location.view };
+const sameStudio = (a: StudioLocation, b: StudioLocation) => formatRoute(studioRoute(a)) === formatRoute(studioRoute(b));
+
+function readTheme(): Theme {
+  try { return localStorage.getItem("glint:theme") === "light" ? "light" : "dark"; } catch { return "dark"; }
+}
 
 export const App: React.FC = () => {
-  const [nleOpen, setNleOpen] = useState(false);
-  const [selected, setSelected] = useState(EXAMPLES[0]!);
-  const [showPreview, setShowPreview] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
-  const [question, setQuestion] = useState("");
-  const [asking, setAsking] = useState(false);
-  const [result, setResult] = useState<GroundedAnswer | null>(null);
-  const activeRequest = useRef<AbortController | null>(null);
-  useEffect(() => () => {
-    activeRequest.current?.abort();
-    activeRequest.current = null;
-  }, []);
+  const [location, setLocation] = useHashLocation();
+  const route = useMemo(() => parseRoute(location), [location]);
+  const routeRef = useRef(route); routeRef.current = route;
+  const [navigationError, setNavigationError] = useState("");
+  const [studioMounted, setStudioMounted] = useState(route.area !== "container");
+  const [containerLocation, setContainerLocation] = useState<Extract<AppRoute, { area: "container" }> | undefined>(() => route.area === "container" ? route : undefined);
+  const go = useCallback((next: AppRoute, replace = false) => {
+    try { if (routeRef.current.area === "container") assertAllAuthoringCanLeave(); setNavigationError(""); if (formatRoute(next) !== formatRoute(routeRef.current)) setLocation(formatRoute(next), { replace }); } catch (error) { setNavigationError((error as Error).message); }
+  }, [setLocation]);
 
-  const cancelAsk = () => {
-    activeRequest.current?.abort();
-    activeRequest.current = null;
-    setAsking(false);
-  };
-  const selectExample = (example: typeof EXAMPLES[number]) => {
-    cancelAsk();
-    setSelected(example);
-    setResult(null);
-  };
-  const ask = async () => {
-    if (!question.trim() || activeRequest.current) return;
-    const controller = new AbortController();
-    activeRequest.current = controller;
-    const timer = setTimeout(() => controller.abort(new DOMException("提问超时，请重试。", "TimeoutError")), 70_000);
-    setAsking(true);
-    setResult(null);
-    try {
-      const response = await fetch("/api/ask", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question, project: selected.key }),
-        signal: controller.signal,
-      });
-      const answer = await consumeAnswerStream(response, controller.signal);
-      if (activeRequest.current === controller) setResult(answer);
-    } catch (error) {
-      if (activeRequest.current === controller) {
-        setResult({ answer: null, refused: true, refusalReason: null, citations: [], error: error instanceof Error ? error.message : "提问失败，请重试。" });
-      }
-    } finally {
-      clearTimeout(timer);
-      if (activeRequest.current === controller) {
-        activeRequest.current = null;
-        setAsking(false);
-      }
+  useEffect(() => {
+    if (route.area === "studio") setStudioMounted(true);
+    if (route.area !== "container" || formatRoute(route) === (containerLocation ? formatRoute(containerLocation) : "")) return;
+    try { assertAllAuthoringCanLeave(); setContainerLocation(route); setNavigationError(""); }
+    catch (error) { setNavigationError((error as Error).message); if (containerLocation) setLocation(formatRoute(containerLocation), { replace: true }); }
+  }, [route, containerLocation, setLocation]);
+
+  // Studio location: the hash asks, IdeaStudio answers with where it really is.
+  const lastStudio = useRef<StudioLocation>({ view: "home" });
+  const nonce = useRef(0);
+  const [studioRequest, setStudioRequest] = useState<StudioRequest | undefined>(() => {
+    const target = studioOf(route);
+    return target && !sameStudio(target, lastStudio.current) ? { ...target, nonce: ++nonce.current } : undefined;
+  });
+  useEffect(() => {
+    const target = studioOf(route);
+    if (!target || sameStudio(target, lastStudio.current)) return;
+    setStudioRequest(current => current && sameStudio(current, target) ? current : { ...target, nonce: ++nonce.current });
+  }, [route]);
+  const onStudioLocation = useCallback((next: StudioLocation) => {
+    const previous = lastStudio.current;
+    lastStudio.current = next;
+    if (routeRef.current.area !== "studio") return;
+    go(studioRoute(next), previous.view === "workspace" && next.view === "workspace");
+  }, [go]);
+
+  // Areas mount on first visit and then stay mounted, so drafts survive navigation.
+  const [visitedTools, setVisitedTools] = useState<Set<ToolTab>>(() => new Set());
+  const [lastTab, setLastTab] = useState<Record<ToolArea, ToolTab>>({ library: "create", automation: "canvas" });
+  const [settingsMounted, setSettingsMounted] = useState(route.area === "settings");
+  const [nleMounted, setNleMounted] = useState(route.area === "edit");
+  const [nleRequest, setNleRequest] = useState<{ sourceId: string; nonce: number }>();
+  const beforeEdit = useRef<AppRoute>({ area: "studio", view: "home" });
+  useEffect(() => {
+    if (route.area === "library" || route.area === "automation") {
+      const tab = route.tab;
+      setVisitedTools(current => current.has(tab) ? current : new Set([...current, tab]));
+      setLastTab(current => current[route.area as ToolArea] === tab ? current : { ...current, [route.area]: tab });
     }
+    if (route.area === "settings") setSettingsMounted(true);
+    if (route.area === "edit") setNleMounted(true);
+    else if (route.area !== "docs") beforeEdit.current = route;
+  }, [route]);
+
+  const openArea = (area: RailArea) => {
+    if (area === "studio") go(studioRoute(lastStudio.current));
+    else if (area === "library" || area === "automation") go({ area, tab: lastTab[area] } as AppRoute);
+    else go({ area } as AppRoute);
   };
 
-  if (nleOpen) return <Suspense fallback={<div style={{ minHeight: "100dvh", display: "grid", placeItems: "center", color: "#a1a1aa", background: "#08090b" }}>打开剪辑台…</div>}><NleEditor onClose={() => setNleOpen(false)} /></Suspense>;
-  return (
-    <div style={pageStyle}>
-      <style>{`#more-tools > summary { list-style: none; } #more-tools > summary::-webkit-details-marker { display: none; } @media (max-width: 640px) { #more-tools > summary { justify-content: flex-start; } }`}</style>
-      <AmbientBackdrop />
-      <OfflineStatus />
-      <div style={{ position: "relative", zIndex: 1, width: "100%", display: "flex", flexDirection: "column", alignItems: "center" }}>
-      <header style={{ width: "100%", borderBottom: "1px solid rgba(255,255,255,.07)", background: "rgba(8,9,11,.74)" }}>
-        <div style={{ width: "min(94vw, 1180px)", margin: "0 auto", height: 60, display: "flex", alignItems: "center", gap: 14 }}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 17, fontWeight: 700, letterSpacing: "-0.01em", color: "#f7f7f8" }}>
-            Glint
-            <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", background: "linear-gradient(135deg, #7c8cff, #c084fc)" }} />
-          </span>
-          <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 12 }}>
-            <button type="button" onClick={() => setNleOpen(true)} style={{ color: "#f4f4f5", fontSize: 12, border: "1px solid #3f3f46", borderRadius: 999, padding: "6px 12px", background: "#1c1c21", font: "inherit", cursor: "pointer" }}>剪辑台</button>
-            <a href="#more-tools" onClick={() => setToolsOpen(true)} style={{ color: "#a1a1aa", fontSize: 12, textDecoration: "none", border: "1px solid #26262b", borderRadius: 999, padding: "6px 12px" }}>工具与设置</a>
-          </span>
+  const [recoveryError, setRecoveryError] = useState("");
+  const [localDownload, setLocalDownload] = useState(false);
+  const [theme, setTheme] = useState<Theme>(readTheme);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/download/client/status", { signal: controller.signal }).then(response => response.ok ? response.json() : null)
+      .then(value => { if (!controller.signal.aborted) setLocalDownload(value?.available === true); })
+      .catch(() => { /* Keep the public release link when the local download is unavailable. */ });
+    return () => controller.abort();
+  }, []);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem("glint:theme", theme); } catch { /* Editing works without storage. */ }
+  }, [theme]);
+
+  const docsOpen = route.area === "docs";
+  const area = route.area;
+  const toolArea: ToolArea | undefined = area === "library" || area === "automation" ? area : undefined;
+  const bleed = area === "studio" || area === "edit" || area === "container";
+
+  // Command palette: opened from the rail or Ctrl/⌘+K; commands are built when it opens so
+  // the recent-works list is always current.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "k" || !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.isComposing) return;
+      event.preventDefault();
+      setPaletteOpen(open => !open);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  const paletteCommands = useMemo<PaletteCommand[]>(() => {
+    if (!paletteOpen) return [];
+    const go_ = t("palette.group.go");
+    const commands: PaletteCommand[] = [
+      { id: "go-project", label: t("nav.project"), group: go_, keywords: "project home 工程 作品", run: () => openArea("studio") },
+      { id: "go-library", label: t("nav.library"), group: go_, keywords: "assets media 素材", run: () => go({ area: "library", tab: lastTab.library } as AppRoute) },
+      { id: "go-automation", label: t("nav.automation"), group: go_, keywords: "automation", run: () => go({ area: "automation", tab: lastTab.automation } as AppRoute) },
+      { id: "go-edit", label: t("nav.edit"), group: go_, keywords: "timeline nle editor 时间线 剪辑", run: () => go({ area: "edit" }) },
+      { id: "go-settings", label: t("nav.settings"), group: go_, keywords: "settings model 模型 连接", run: () => go({ area: "settings" }) },
+      ...LIBRARY_TABS.map(tab => ({ id: `tab-${tab}`, label: t(`tab.${tab}` as MessageId), group: go_, keywords: t("nav.library"), run: () => go({ area: "library", tab }) })),
+      ...AUTOMATION_TABS.map(tab => ({ id: `tab-${tab}`, label: t(`tab.${tab}` as MessageId), group: go_, keywords: t("nav.automation"), run: () => go({ area: "automation", tab }) })),
+    ];
+    let recent: PaletteCommand[] = [];
+    try {
+      recent = readSavedProjects().slice(0, 8).map(saved => ({ id: `recent-${saved.id}`, label: saved.name, group: t("palette.group.recent"), keywords: "作品 工程 recent",
+        run: () => go(saved.project ? { area: "studio", view: "workspace", projectId: saved.project.id } : { area: "studio", view: "home" }) }));
+    } catch { /* A broken saved-work list must not block navigation commands. */ }
+    return [...commands, ...recent,
+      { id: "action-new", label: t("palette.action.home"), group: t("palette.group.action"), keywords: "new create 创作 开始", run: () => go({ area: "studio", view: "home" }) },
+      { id: "action-docs", label: t("palette.action.docs"), group: t("palette.group.action"), keywords: "help docs 帮助 文档", run: () => go({ area: "docs", rest: "" }) },
+      { id: "action-theme", label: t(theme === "dark" ? "palette.action.theme.light" : "palette.action.theme.dark"), group: t("palette.group.action"), keywords: "theme dark light 主题 外观 深色 浅色", run: () => setTheme(theme === "dark" ? "light" : "dark") },
+    ];
+    // The list is rebuilt on every open (see the paletteOpen guard), so these closures are fresh.
+  }, [paletteOpen, theme, lastTab]);
+
+  return <>
+    <a className="g-skip-link" href="#app-main" onClick={event => { event.preventDefault(); document.getElementById("app-main")?.focus(); }}>{t("nav.skip")}</a>
+    {docsOpen && <LoadWorkspace><DocsPage localDownload={localDownload} /></LoadWorkspace>}
+    <div className="app-shell app-navigation" data-area={area} hidden={docsOpen}>
+      <Rail active={railArea(route)} theme={theme} localDownload={localDownload}
+        onHome={() => go({ area: "studio", view: "home" })} onArea={openArea} onTheme={setTheme} onSearch={() => setPaletteOpen(true)} />
+      <div className="workspace-body">
+        <OfflineStatus />
+        {toolArea && <header className="workspace-bar">
+          <h1 className="workspace-bar-title">{t(TOOL_GROUPS[toolArea].title)}</h1>
+          <ToolTabs area={toolArea} active={route.area === toolArea ? route.tab : lastTab[toolArea]} onSelect={tab => go({ area: toolArea, tab } as AppRoute)} />
+        </header>}
+        {area === "settings" && <header className="workspace-bar"><h1 className="workspace-bar-title">{t("area.settings")}</h1></header>}
+        <main className="workspace-main" id="app-main" tabIndex={-1} data-bleed={bleed} hidden={area === "edit"}>
+          <section className="workspace-page workspace-page--studio" aria-label="项目工作区" hidden={area !== "studio"}>
+            <button className="g-btn g-btn--quiet" type="button" onClick={() => go({ area: "container" })}>{t("container.open")}</button>
+            <AuthoringVisibility active={area === "studio"}>
+              {studioMounted && <>
+              <IdeaStudio cardStyle={cardStyle} location={studioRequest} onLocationChange={onStudioLocation}
+                onOpenTimeline={sourceId => { setNleRequest({ sourceId, nonce: Date.now() }); setNleMounted(true); go({ area: "edit" }); }}
+                onOpenSettings={() => go({ area: "settings" })} /></>}
+            </AuthoringVisibility>
+          </section>
+          {navigationError && <p role="alert">{navigationError}</p>}
+          <section className="workspace-page workspace-page--studio" hidden={area !== "container"}>
+            {containerLocation && <LoadWorkspace><ContainerWorkspace projectId={containerLocation.projectId} objectId={containerLocation.objectId} active={area === "container"} onOpen={(projectId, objectId) => go({ area: "container", projectId, objectId })} /></LoadWorkspace>}
+          </section>
+          {(Object.keys(TOOL_GROUPS) as ToolArea[]).map(group => <section key={group} className="workspace-page workspace-page--tools" aria-label={TOOL_GROUPS[group].region} hidden={area !== group}>
+            {TOOL_GROUPS[group].tabs.map(tab => <div key={tab} className="workspace-tool-panel" role="tabpanel" id={`tool-panel-${tab}`} aria-labelledby={`tool-tab-${tab}`} tabIndex={0} hidden={lastTab[group] !== tab}>
+              {visitedTools.has(tab) && <LoadWorkspace>{toolContent(tab)}</LoadWorkspace>}
+            </div>)}
+          </section>)}
+          <section className="workspace-page workspace-page--settings" aria-label="设置工作区" hidden={area !== "settings"}>
+            {settingsMounted && <LoadWorkspace><ModelSettings /></LoadWorkspace>}
+            <div className="settings-legacy">
+              <button className="g-btn" type="button" onClick={() => { try { assertAllAuthoringCanLeave(); window.location.hash = "/recovery"; window.location.reload(); } catch (error) { setRecoveryError(error instanceof Error ? error.message : t("settings.legacy.blocked")); } }}>{t("settings.legacy")}</button>
+              {recoveryError && <p role="alert">{recoveryError}</p>}
+            </div>
+          </section>
+        </main>
+        <div className="workspace-nle" aria-label="剪辑工作区" hidden={area !== "edit"}>
+          {nleMounted && <LoadWorkspace><NleEditor openRequest={nleRequest} active={area === "edit"} onClose={() => go(beforeEdit.current)} /></LoadWorkspace>}
         </div>
-      </header>
-
-      <main style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 40, padding: "52px 0 64px" }}>
-        <IdeaStudio cardStyle={cardStyle} />
-
-        <details id="more-tools" style={{ width: "min(94vw, 1180px)" }} onToggle={event => { if (event.currentTarget.open) setToolsOpen(true); }}>
-          <summary style={moreSummary}>工具与设置<span style={{ color: "#8b8b95" }}>示例 · 素材 · 模型 · 审阅</span></summary>
-          {toolsOpen && <Suspense fallback={<p role="status" style={{ padding: 22, color: "#8b8b95" }}>正在加载工具…</p>}><div style={{ display: "grid", gap: 16, marginTop: 16 }}>
-            <div style={cardStyle}><ModelSettings /></div>
-            <div style={cardStyle}><MediaWorkshop /></div>
-            <div style={cardStyle}><Suspense fallback={<p role="status" style={{ padding: 22 }}>正在读取 Skills…</p>}><SkillCatalog /></Suspense></div>
-
-            <section style={{ display: "grid", gap: 12, justifyItems: "center", paddingTop: 8 }}>
-              <h2 style={{ fontSize: 15, color: "#a1a1aa", margin: 0 }}>看看示例，或对画面问一句</h2>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
-                {EXAMPLES.map((example) => (
-                  <button key={example.key} style={tabStyle(selected.key === example.key)} onClick={() => selectExample(example)}>
-                    {example.label}
-                  </button>
-                ))}
-              </div>
-              <div style={cardStyle}>
-                {showPreview ? <PreviewBoundary><Suspense fallback={<p style={{ padding: 24 }} role="status">正在加载播放器…</p>}>
-                  <ProjectPreview project={selected.project} />
-                </Suspense></PreviewBoundary> : <button onClick={() => setShowPreview(true)} style={{ width: "100%", padding: 28, background: "#151518", color: "#c7c7cf", border: 0, font: "inherit", cursor: "pointer" }}>▶ 预览示例 · 按需加载播放器</button>}
-              </div>
-              <div style={{ ...cardStyle, padding: 22, display: "flex", flexDirection: "column", gap: 14 }}>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                  <input
-                    aria-label="对示例提问"
-                    value={question}
-                    onChange={(event) => setQuestion(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") void ask();
-                    }}
-                    placeholder={`看不懂？问一句「${selected.key === "entropy" ? "熵增原理的前提是什么" : "Why doesn't an electron fall in?"}」`}
-                    style={{
-                      flex: 1, minWidth: 0,
-                      padding: "12px 16px",
-                      borderRadius: 10,
-                      border: "1px solid #2b2b31",
-                      background: "#151518",
-                      color: "#f4f4f5",
-                      fontSize: 14,
-                      fontFamily: "inherit",
-                    }}
-                  />
-                  <button
-                    onClick={() => void ask()}
-                    disabled={asking || !question.trim()}
-                    style={{
-                      padding: "12px 22px",
-                      borderRadius: 10,
-                      border: "none",
-                      background: asking ? "#3f3f46" : "#f4f4f5",
-                      color: asking ? "#a1a1aa" : "#09090b",
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: asking ? "wait" : "pointer",
-                      fontFamily: "inherit",
-                    }}
-                  >
-                    {asking ? "思考中…" : "问"}
-                  </button>
-                </div>
-                {asking ? (
-                  <div role="status" style={{ color: "#8b8b95", fontSize: 13 }}>
-                    正在检索并核对回答，判定完成后显示正文。
-                    <button onClick={cancelAsk} style={{ marginLeft: 12 }}>取消</button>
-                  </div>
-                ) : null}
-                {result ? (
-                  <div style={{ fontSize: 14, lineHeight: 1.75, color: "#d4d4d8" }}>
-                    {result.error ? (
-                      <span style={{ color: "#fca5a5" }}>{result.error}</span>
-                    ) : result.refused ? (
-                      <span style={{ color: "#8b8b95" }}>
-                        资料未检索到相关内容，或模型判定资料不足，未提供回答。
-                        {result.refusalReason === "no_relevant_context" ? "(检索层未命中)" : ""}
-                      </span>
-                    ) : (
-                      <>
-                        <div>{result.answer}</div>
-                        {result.citations.length > 0 ? (
-                          <div style={{ marginTop: 10, color: "#8b8b95", fontSize: 12 }}>
-                            检索参考（不代表逐项事实核验）:
-                            {result.citations.map((citation, index) => (
-                              <span key={index} style={{ marginRight: 14 }}>
-                                [{citation.docId}] {citation.headingPath.join(" › ")}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
-                      </>
-                    )}
-                  </div>
-                ) : null}
-              </div>
-            </section>
-
-            <PersonaLibrary cardStyle={cardStyle} />
-            <VoiceReview cardStyle={cardStyle} />
-            <UnderstandingCheck key={selected.key} project={selected.key} cardStyle={cardStyle} />
-          </div></Suspense>}
-        </details>
-
-        <p style={{ color: "#8b8b95", fontSize: 12, margin: 0, textAlign: "center" }}>
-          预览与导出同源。
-        </p>
-      </main>
       </div>
     </div>
-  );
+    {paletteOpen && <Suspense fallback={null}><CommandPalette commands={paletteCommands} onClose={() => setPaletteOpen(false)} /></Suspense>}
+  </>;
 };
+
+function ToolTabs({ area, active, onSelect }: { area: ToolArea; active: ToolTab; onSelect(tab: ToolTab): void }) {
+  const tabs = TOOL_GROUPS[area].tabs;
+  return <div className="tool-tabs workspace-tabs" role="tablist" aria-label={t(TOOL_GROUPS[area].tablist)}>
+    {tabs.map((tab, index) => <button key={tab} type="button" role="tab" className="tool-tab" id={`tool-tab-${tab}`} aria-selected={active === tab} aria-controls={`tool-panel-${tab}`} tabIndex={active === tab ? 0 : -1}
+      onKeyDown={event => {
+        const next = event.key === "Home" ? tabs[0] : event.key === "End" ? tabs[tabs.length - 1]
+          : event.key === "ArrowRight" ? tabs[(index + 1) % tabs.length] : event.key === "ArrowLeft" ? tabs[(index + tabs.length - 1) % tabs.length] : undefined;
+        if (next) { event.preventDefault(); document.getElementById(`tool-tab-${next}`)?.focus(); }
+      }}
+      onClick={() => onSelect(tab)}>{t(`tab.${tab}` as MessageId)}</button>)}
+  </div>;
+}

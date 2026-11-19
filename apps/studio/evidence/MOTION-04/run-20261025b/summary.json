@@ -1,0 +1,22 @@
+{
+  "ranAt": "2026-10-26T00:57:59.861Z",
+  "generation": "motion04",
+  "sandboxAttr": "allow-scripts",
+  "probeAtT08": {
+    "cubeMean": 112,
+    "bandBright": 1648,
+    "bandDiffMax": 215
+  },
+  "repeatSeekMaxDiff": 0,
+  "distinctSeekMaxDiff": 215,
+  "thresholds": {
+    "cubeMeanMin": 20,
+    "bandBrightMin": 30,
+    "bandDiffMaxMin": 8,
+    "stableMax": 2,
+    "distinctMin": 20
+  },
+  "failures": [],
+  "verdict": "PASS: WebGL canvas renders through the sandbox seek protocol, stays pixel-stable on repeat seeks, differs across times, and the 2D overlay caption updates with t (observed via decoded screenshots; the wrapper relay forwards only protocol messages)",
+  "instrument": "real three.runtime.js + MeshNormalMaterial cube; region statistics from decoded screenshots (cube mean gray, overlay bright-pixel count, caption band diff); pairwise decoded-gray comparison"
+}

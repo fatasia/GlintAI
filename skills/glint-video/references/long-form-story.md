@@ -15,4 +15,4 @@ intent → story bible → character passports → shot cards → storyboard key
 
 LoomArt 和 LibTV 仅作为竞品参考，不接入为执行器或 provider。LoomArt 本机已观察到章节、导演与视频节点入口；未执行生成，不能声称效果已验证。
 
-完整设计见 `docs/design/long-form-story-workflow.md`。
+完整流程：资料 → 结构规划 → 逐页生成与校验 → 整稿确认，在工作台「资料生成整稿」入口操作。

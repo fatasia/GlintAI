@@ -4,7 +4,12 @@ node_modules/
 # Builds
 dist/
 build/
+# Authored Vite plugin, not generated build output.
+!apps/web/build/
+apps/web/build/*
+!apps/web/build/frozen-prototype.mjs
 apps/desktop/target/
+apps/desktop/secure-assets/target/
 *.tsbuildinfo
 quality-report.json*
 __pycache__/
@@ -43,3 +48,12 @@ dist-portable/
 .smoke-data/
 .tmp-*
 *.local.md
+
+# Local verification evidence stays out of the published tree
+/evidence/
+
+# Agent tool mirrors and locally installed skills; only the bundled skill is tracked
+/.agents/
+/.claude/
+/skills/*
+!/skills/glint-video/

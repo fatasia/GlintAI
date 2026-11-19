@@ -17,6 +17,7 @@ vi.mock("remotion", () => ({ delayRender: mocks.delay, continueRender: mocks.rel
 vi.mock("./gltf", () => ({
   loadLocalGltf: mocks.load, seekGltfAnimation: mocks.seek, disposeGltf: mocks.dispose,
   createGltfMixer: () => mocks.mixer, fitGltf: () => ({ scale: 1, position: [0, 0, 0] }), attachGltfDecoders: vi.fn(),
+  captureGltfMorphs: () => ({ reset: vi.fn(), apply: vi.fn() }),
 }));
 const cleanups: (() => void)[] = [];
 beforeAll(() => { (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true; });

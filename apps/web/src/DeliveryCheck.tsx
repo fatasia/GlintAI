@@ -1,3 +1,4 @@
+import { appFetch as fetch } from "./app-url";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 type Report = {

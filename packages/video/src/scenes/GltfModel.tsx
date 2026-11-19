@@ -4,16 +4,16 @@ import type { GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { GltfAssetPath } from "@glintai/scenescript";
 import { cancelRender, continueRender, delayRender, staticFile } from "remotion";
 import {
-  attachGltfDecoders, createGltfMixer, disposeGltf, fitGltf, loadLocalGltf, seekGltfAnimation,
+  attachGltfDecoders, captureGltfMorphs, createGltfMixer, disposeGltf, fitGltf, loadLocalGltf, seekGltfAnimation,
 } from "./gltf";
 
-export const GltfModel: React.FC<{ src: string; frame: number; fps: number }> = ({ src, frame, fps }) => {
+export const GltfModel: React.FC<{ src: string; frame: number; fps: number; animationClip?: string; morphTargets?: Record<string, number> }> = ({ src, frame, fps, animationClip, morphTargets }) => {
   // KTX2Loader.detectSupport inspects the renderer's compressed-texture support.
   const gl = useThree((state) => state.gl);
   const rootScene = useThree((state) => state.scene);
   const camera = useThree((state) => state.camera);
   const [loaded, setLoaded] = useState<{
-    src: string; gltf: GLTF; mixer: ReturnType<typeof createGltfMixer>; fit: ReturnType<typeof fitGltf>;
+    src: string; animationClip?: string; gltf: GLTF; mixer: ReturnType<typeof createGltfMixer>; fit: ReturnType<typeof fitGltf>; morphs: ReturnType<typeof captureGltfMorphs>;
   } | null>(null);
   const pending = useRef<{ handle: number; failed: boolean } | null>(null);
 
@@ -38,10 +38,12 @@ export const GltfModel: React.FC<{ src: string; frame: number; fps: number }> = 
           setupDecoders: (loader, needs) => attachGltfDecoders(loader, needs, gl, undefined, staticFile),
         });
         if (!active || gate.failed) { disposeGltf(gltf); return; }
-        const mixer = createGltfMixer(gltf);
+        let mixer: ReturnType<typeof createGltfMixer>;
+        try { mixer = createGltfMixer(gltf, animationClip); }
+        catch (error) { disposeGltf(gltf); throw error; }
         dispose = () => { mixer.stopAllAction(); mixer.uncacheRoot(gltf.scene); disposeGltf(gltf); };
         const fit = fitGltf(gltf.scene);
-        setLoaded({ src, gltf, mixer, fit });
+        setLoaded({ src, animationClip, gltf, mixer, fit, morphs: captureGltfMorphs(gltf.scene) });
       } catch (error) {
         dispose?.();
         dispose = undefined;
@@ -61,18 +63,20 @@ export const GltfModel: React.FC<{ src: string; frame: number; fps: number }> = 
         if (!gate.failed) continueRender(handle);
       }
     };
-  }, [src, gl]);
+  }, [src, gl, animationClip]);
 
   useLayoutEffect(() => {
-    if (!loaded || loaded.src !== src) return;
+    if (!loaded || loaded.src !== src || loaded.animationClip !== animationClip) return;
     const gate = pending.current;
     try {
+      loaded.morphs.reset();
       seekGltfAnimation(loaded.mixer, frame, fps);
+      loaded.morphs.apply(morphTargets);
+      gl.render(rootScene, camera);
       if (gate !== null && !gate.failed) {
         // ThreeCanvas uses frameloop="never" during export. Its frame effect
         // has already drawn the empty scene before this async model commits;
         // loading state alone does not schedule another draw at the same frame.
-        gl.render(rootScene, camera);
         gl.getContext().finish();
         continueRender(gate.handle);
         pending.current = null;
@@ -81,9 +85,9 @@ export const GltfModel: React.FC<{ src: string; frame: number; fps: number }> = 
       if (gate) gate.failed = true;
       cancelRender(new Error(`Cannot draw model ${src}: ${String(error)}`));
     }
-  }, [loaded, frame, fps, gl, rootScene, camera, src]);
+  }, [loaded, frame, fps, gl, rootScene, camera, src, animationClip, morphTargets]);
 
-  return loaded?.src === src ? (
+  return loaded?.src === src && loaded.animationClip === animationClip ? (
     <group scale={loaded.fit.scale} position={loaded.fit.position} dispose={null}>
       <primitive object={loaded.gltf.scene} dispose={null} />
     </group>

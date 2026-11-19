@@ -3,6 +3,52 @@ use std::io::{self, BufRead, Read};
 use url::Url;
 
 pub const MAX_READY_LINE: usize = 4096;
+pub const MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024;
+// 完整 NDJSON envelope（含换行）；不改变 Git host 的 12MiB 输出契约。
+pub const MAX_RESPONSE_BYTES: usize = 12 * 1024 * 1024 + 64 * 1024;
+pub const RESPONSE_TOO_LARGE: &str = "桌面服务响应过大，请缩小查询范围后重试。";
+
+pub enum Response {
+    Message(serde_json::Value),
+    Rejected(&'static str),
+    RequestRejected { id: u64, error: &'static str },
+    Eof,
+}
+
+pub fn read_response(reader: &mut impl BufRead) -> io::Result<Response> {
+    let mut line = Vec::with_capacity(MAX_RESPONSE_BYTES + 1);
+    reader.by_ref().take((MAX_RESPONSE_BYTES + 1) as u64).read_until(b'\n', &mut line)?;
+    if line.len() > MAX_RESPONSE_BYTES {
+        // 只有完整 JSON 才能安全取 id；不从截断前缀猜测，以免完成错误请求。
+        if line.ends_with(b"\n") {
+            if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&line) {
+                if value.get("type").and_then(serde_json::Value::as_str) == Some("agent-result") {
+                    if let Some(id) = value.get("id").and_then(serde_json::Value::as_u64) {
+                        return Ok(Response::RequestRejected { id, error: RESPONSE_TOO_LARGE });
+                    }
+                }
+            }
+        } else {
+            loop {
+                let chunk = reader.fill_buf()?;
+                if chunk.is_empty() { break; }
+                let end = chunk.iter().position(|byte| *byte == b'\n');
+                let consumed = end.map_or(chunk.len(), |end| end + 1);
+                reader.consume(consumed);
+                if end.is_some() { break; }
+            }
+        }
+        return Ok(Response::Rejected(RESPONSE_TOO_LARGE));
+    }
+    if line.is_empty() { return Ok(Response::Eof); }
+    if !line.ends_with(b"\n") {
+        return Ok(Response::Rejected("桌面服务响应不完整，请重试。"));
+    }
+    Ok(match serde_json::from_slice(&line) {
+        Ok(value) => Response::Message(value),
+        Err(_) => Response::Rejected("无法读取桌面服务响应，请重试。"),
+    })
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -70,6 +116,58 @@ mod tests {
             serde_json::json!({"type":"ready", "url":url, "nonce":nonce})
         )
         .into_bytes()
+    }
+
+    #[test]
+    fn accepts_git_like_response_larger_than_request_limit() {
+        let text = "差分".repeat(900_000);
+        let value = serde_json::json!({"type":"agent-result", "id":7,
+            "result":{"files":[{"path":"project.json", "before":text, "after":"next"}]}});
+        let mut line = serde_json::to_vec(&value).unwrap();
+        line.push(b'\n');
+        assert!(line.len() > MAX_REQUEST_BYTES);
+        let Response::Message(actual) = read_response(&mut Cursor::new(line)).unwrap() else { panic!("合法大响应被拒绝"); };
+        assert_eq!(actual, value);
+    }
+
+    #[test]
+    fn response_limit_counts_entire_envelope_and_newline() {
+        let prefix = b"{\"type\":\"agent-result\",\"id\":1,\"result\":\"";
+        let mut line = prefix.to_vec();
+        line.resize(MAX_RESPONSE_BYTES - 3, b'x');
+        line.extend_from_slice(b"\"}\n");
+        assert_eq!(line.len(), MAX_RESPONSE_BYTES);
+        assert!(matches!(read_response(&mut Cursor::new(&line)).unwrap(), Response::Message(_)));
+        line.insert(prefix.len(), b'x');
+        assert!(matches!(read_response(&mut Cursor::new(line)).unwrap(),
+            Response::RequestRejected { id: 1, error: RESPONSE_TOO_LARGE }));
+    }
+
+    #[test]
+    fn drains_oversized_line_and_resumes_at_next_record() {
+        let oversized = std::io::repeat(b'x').take((MAX_RESPONSE_BYTES * 3) as u64);
+        let next = Cursor::new(b"\n{\"type\":\"agent-result\",\"id\":2,\"result\":true}\n");
+        let mut reader = std::io::BufReader::with_capacity(127, oversized.chain(next));
+        assert!(matches!(read_response(&mut reader).unwrap(), Response::Rejected(RESPONSE_TOO_LARGE)));
+        let Response::Message(value) = read_response(&mut reader).unwrap() else { panic!("后续响应丢失"); };
+        assert_eq!(value["id"], 2);
+        assert!(matches!(read_response(&mut reader).unwrap(), Response::Eof));
+    }
+
+    #[test]
+    fn rejects_unterminated_and_invalid_records_without_leaking_content() {
+        for size in [0, 50, MAX_RESPONSE_BYTES, MAX_RESPONSE_BYTES + 1] {
+            let mut reader = std::io::BufReader::new(std::io::repeat(b'x').take(size as u64));
+            match read_response(&mut reader).unwrap() {
+                Response::Eof => assert_eq!(size, 0),
+                Response::Rejected(error) => assert!(!error.contains('x')),
+                Response::Message(_) | Response::RequestRejected { .. } => panic!("接受了未终止响应"),
+            }
+            assert!(matches!(read_response(&mut reader).unwrap(), Response::Eof));
+        }
+        let mut reader = Cursor::new(b"SECRET-PROVIDER-OUTPUT\n{\"id\":2}\n");
+        assert!(matches!(read_response(&mut reader).unwrap(), Response::Rejected(_)));
+        assert!(matches!(read_response(&mut reader).unwrap(), Response::Message(_)));
     }
 
     #[test]

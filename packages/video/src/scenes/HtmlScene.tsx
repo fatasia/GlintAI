@@ -16,6 +16,9 @@ export const HtmlSceneView: React.FC<{ scene: HtmlScene }> = ({ scene }) => {
 };
 
 const HtmlDocument: React.FC<{ scene: HtmlScene; frame: number; fps: number }> = ({ scene, frame, fps }) => {
+  const { width, height } = useVideoConfig();
+  const slide = scene.presentation === "slide";
+  const slideScale = Math.min(width / 1280, height / 720);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const loaded = useRef(false);
   const sendSeek = useRef<(() => void) | null>(null);
@@ -92,10 +95,11 @@ const HtmlDocument: React.FC<{ scene: HtmlScene; frame: number; fps: number }> =
   return (
     <AbsoluteFill
       style={{
-        padding: "150px 170px 330px",
+        padding: slide ? 0 : "150px 170px 330px",
         display: "flex",
         flexDirection: "column",
-        gap: 44,
+        gap: slide ? 0 : 44,
+        overflow: "hidden",
       }}
     >
       <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
@@ -111,13 +115,17 @@ const HtmlDocument: React.FC<{ scene: HtmlScene; frame: number; fps: number }> =
           }}
           style={{
             position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
+            inset: slide ? undefined : 0,
+            left: slide ? (width - 1280 * slideScale) / 2 : undefined,
+            top: slide ? (height - 720 * slideScale) / 2 : undefined,
+            width: slide ? 1280 : "100%",
+            height: slide ? 720 : "100%",
+            transform: slide ? `scale(${slideScale})` : undefined,
+            transformOrigin: slide ? "top left" : undefined,
             border: "none",
-            borderRadius: "var(--glint-radius)",
+            borderRadius: slide ? 0 : "var(--glint-radius)",
             background: scene.background ?? "transparent",
-            boxShadow: "var(--glint-shadow-card)",
+            boxShadow: slide ? "none" : "var(--glint-shadow-card)",
           }}
         />
       </div>

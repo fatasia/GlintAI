@@ -1,0 +1,21 @@
+{
+  "backend": "native-svg",
+  "remotionLoaded": false,
+  "chromiumLaunched": false,
+  "width": 1920,
+  "height": 1080,
+  "fps": 24,
+  "frames": 179,
+  "renderedFrames": 179,
+  "cacheHits": 0,
+  "overlaps": [
+    0,
+    0
+  ],
+  "sceneCount": 2,
+  "rasterMs": 13836,
+  "encodeMs": 0,
+  "muxMs": 324,
+  "totalMs": 17772,
+  "bytes": 293888
+}

@@ -16,6 +16,13 @@ export function detectLanguage(text: string): string {
 export function slugify(text: string, fallback: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || fallback;
 }
+export function excerpt(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  const prefix = Array.from(text).slice(0, Math.max(0, limit - 1)).join("");
+  const boundary = Math.max(prefix.lastIndexOf("，"), prefix.lastIndexOf("；"), prefix.lastIndexOf(","), prefix.lastIndexOf(";"));
+  const result = boundary >= Math.floor(limit / 2) ? prefix.slice(0, boundary) : prefix;
+  return `${result.trimEnd()}…`;
+}
 export function narration(parts: string[], limit = 110): string {
   const clean = parts.map((s) => s.trim()).filter(Boolean);
   const selected: string[] = [];
@@ -23,7 +30,11 @@ export function narration(parts: string[], limit = 110): string {
     if (selected.join(" ").length + part.length + 1 > limit) break;
     selected.push(part);
   }
-  return selected.join(" ") || clean[0]?.slice(0, limit) || "";
+  if (selected.length) return selected.join(" ");
+  const first = clean[0];
+  if (!first) return "";
+  // Mark incomplete extracts so a cut qualification is not presented as a complete claim.
+  return excerpt(first, limit);
 }
 export function content(section: Section): string[] {
   return [...section.sentences, ...section.listItems, ...section.quotes.map((q) => q.text)];

@@ -1,0 +1,98 @@
+.timeline-panel {
+  display: grid;
+  gap: var(--g-sp-3);
+  min-width: 0;
+  padding: var(--g-sp-3) var(--g-sp-4);
+  color: var(--g-fg-1);
+  font-size: var(--g-fs-3);
+  font-variant-numeric: tabular-nums;
+}
+.scene-timeline-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--g-sp-2);
+  min-width: 0;
+}
+.scene-timeline-row > strong {
+  margin-right: auto;
+  overflow-wrap: anywhere;
+}
+.scene-timeline-row > span,
+.timeline-panel small {
+  color: var(--g-fg-3);
+}
+.scene-timeline-scroll {
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: var(--g-sp-2);
+}
+.scene-timeline-strip {
+  display: flex;
+  gap: var(--g-sp-1);
+}
+.scene-timeline-clip {
+  min-width: 0;
+  overflow: hidden;
+  padding: var(--g-sp-2);
+  color: var(--g-fg-2);
+  background: var(--g-bg-2);
+  border: 1px solid var(--g-line-2);
+  border-top: 2px solid var(--g-track-scene);
+  border-radius: var(--g-r-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.scene-timeline-clip:hover {
+  background: var(--g-bg-3);
+}
+.scene-timeline-clip[aria-pressed="true"] {
+  color: var(--g-fg-1);
+  background: var(--g-accent-soft);
+  outline: 2px solid var(--g-accent);
+  outline-offset: -2px;
+}
+.scene-timeline-clip:focus-visible {
+  outline: 2px solid var(--g-accent-text);
+}
+.scene-timeline-clip > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scene-timeline-clip > small {
+  display: block;
+  margin-top: var(--g-sp-1);
+}
+.scene-timeline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--g-sp-2);
+  min-width: 0;
+  margin: 0;
+  padding: var(--g-sp-2) 0;
+  border: 0;
+}
+.scene-timeline-actions:disabled {
+  opacity: 0.5;
+}
+.scene-timeline-position {
+  display: grid;
+  gap: var(--g-sp-1);
+}
+.scene-timeline-position input {
+  width: 8rem;
+}
+.scene-timeline-check {
+  display: flex;
+  align-items: center;
+  gap: var(--g-sp-2);
+  min-height: var(--g-control-h);
+}
+.scene-timeline-feedback {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

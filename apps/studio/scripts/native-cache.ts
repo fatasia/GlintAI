@@ -1,7 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { PROJECT_ASSET_LIMITS } from "./assets";
+import { isSafeRelativeAssetPath } from "@glintai/scenescript";
 import { createRequire } from "node:module";
 import type { Scene, SceneScriptProject } from "@glintai/scenescript";
 import { resolveMediaPath } from "./native-process";
@@ -11,18 +15,43 @@ export const fingerprintBytes = (value: string | Uint8Array) => createHash("sha2
 
 /** Hash file contents, not just names: replacing a reference image must invalidate its scene. */
 export function assetFingerprint(projectDir: string): string {
-  const root = path.join(projectDir, "assets");
-  if (!fs.existsSync(root)) return "no-assets";
+  const root = path.resolve(projectDir, "assets");
+  let current = path.parse(root).root;
+  for (const part of root.slice(current.length).split(path.sep).filter(Boolean)) {
+    current = path.join(current, part);
+    try {
+      const stat = fs.lstatSync(current);
+      if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`Asset directory must not be a symlink or non-directory: ${current}`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return "no-assets";
+      throw error;
+    }
+  }
   const files: { path: string; sha256: string }[] = [];
-  const visit = (directory: string) => {
+  const names = new Set<string>();
+  let entries = 0, totalBytes = 0;
+  const visit = (directory: string, depth: number) => {
+    if (depth > PROJECT_ASSET_LIMITS.maxDepth) throw new Error(`Asset directory depth exceeds ${PROJECT_ASSET_LIMITS.maxDepth}`);
     for (const name of fs.readdirSync(directory).sort()) {
-      const file = path.join(directory, name), stat = fs.lstatSync(file);
-      if (stat.isSymbolicLink()) throw new Error("Asset symlinks are forbidden");
-      if (stat.isDirectory()) visit(file);
-      else if (stat.isFile()) files.push({ path: path.relative(root, file).split(path.sep).join("/"), sha256: fingerprintBytes(fs.readFileSync(file)) });
+      if (++entries > PROJECT_ASSET_LIMITS.maxFiles) throw new Error(`Asset entry count exceeds ${PROJECT_ASSET_LIMITS.maxFiles}`);
+      const file = path.join(directory, name), relative = path.relative(root, file).split(path.sep).join("/");
+      if (!isSafeRelativeAssetPath(relative)) throw new Error(`Unsafe asset filename: ${relative}`);
+      if (names.has(relative.toLowerCase())) throw new Error(`Case-colliding asset filename: ${relative}`);
+      names.add(relative.toLowerCase());
+      const stat = fs.lstatSync(file);
+      if (stat.isSymbolicLink()) throw new Error(`Asset symlinks are forbidden: ${relative}`);
+      if (stat.isDirectory()) visit(file, depth + 1);
+      else if (stat.isFile()) {
+        if (stat.size > PROJECT_ASSET_LIMITS.maxFileBytes) throw new Error(`Asset exceeds per-file byte limit: ${relative}`);
+        totalBytes += stat.size;
+        if (totalBytes > PROJECT_ASSET_LIMITS.maxTotalBytes) throw new Error("Project assets exceed total byte limit");
+        const bytes = fs.readFileSync(file);
+        if (bytes.length !== stat.size) throw new Error(`Asset changed while hashing; retry: ${relative}`);
+        files.push({ path: relative, sha256: fingerprintBytes(bytes) });
+      } else throw new Error(`Asset must be a regular file: ${relative}`);
     }
   };
-  visit(root);
+  visit(root, 0);
   return fingerprintBytes(JSON.stringify(files));
 }
 
@@ -36,10 +65,21 @@ export function sceneMediaFingerprint(scene: Scene, root: string, assets: string
  * Everything that can change pixels without touching the project file.
  * Kept in one place so the builder and the renderer cannot disagree.
  */
-const IMPLEMENTATION_FILES = [
+export const IMPLEMENTATION_FILES = [
   "native-render.ts",
   "native-stitch.ts",
   "native-cache.ts",
+  "native-process.ts",
+  "native-audio.ts",
+  "assets.ts",
+  "decoders.ts",
+  "../../../packages/scenescript/src/index.ts",
+  "../../../packages/scenescript/src/frame-rate.ts",
+  "../../../packages/scenescript/src/timing.ts",
+  "../../../packages/scenescript/src/timeline.ts",
+  "../../../packages/scenescript/src/parse.ts",
+  "../../../packages/scenescript/src/types.ts",
+  "../../../packages/scenescript/src/assets.ts",
   "native-svg/text.ts",
   "native-svg/charts.ts",
   "native-svg/index.ts",
@@ -48,18 +88,32 @@ const IMPLEMENTATION_FILES = [
   "direct-browser/index.ts",
   "direct-browser/page.ts",
   "../../../packages/scenescript/src/motion.ts",
+  "../../../packages/scenescript/src/elements.ts",
+  "../../../packages/scenescript/src/stroke-path.ts",
   "../../../packages/scenescript/src/effects.ts",
   "../../../packages/design-tokens/src/index.ts",
   // The browser runtime renders HTML scenes; editing it changes pixels too.
   "../../../packages/video/src/scenes/html-runtime.ts",
   "../../../packages/video/src/scenes/html-policy.ts",
+  "../../../packages/video/src/scenes/gltf.ts",
+  "../../../packages/video/src/scenes/image-layout.ts",
 ];
 
 export function renderImplementationFingerprint(scriptDir: string): string {
   const resolved = IMPLEMENTATION_FILES.map(file => [file, path.resolve(scriptDir, file)] as const);
   if (resolved.some(([, file]) => !fs.existsSync(file))) {
-    // Packaged builds carry no TypeScript sources; the build id stands in for them.
-    return fingerprintBytes(JSON.stringify({ bundled: process.env.GLINT_BUILD_ID ?? "bundled", files: IMPLEMENTATION_FILES.length }));
+    // A complete packaged bundle is identifiable by its own bytes, not a default build label.
+    const bundle = fileURLToPath(import.meta.url);
+    const harness = process.env.GLINT_DIRECT_BROWSER_HARNESS;
+    if (/\.mjs$/i.test(bundle) && fs.existsSync(bundle) && (!harness || fs.existsSync(harness))) {
+      return fingerprintBytes(JSON.stringify({ bundle: fingerprintBytes(fs.readFileSync(bundle)), harness: harness ? fingerprintBytes(fs.readFileSync(harness)) : null }));
+    }
+    // Incomplete source cannot safely share a cache, even within this process.
+    return `unverified:${randomUUID()}`;
+  }
+  if (process.env.GLINT_DIRECT_BROWSER_HARNESS) {
+    try { return fingerprintBytes(JSON.stringify({ sources: resolved.map(([file, pathname]) => [file, fingerprintBytes(fs.readFileSync(pathname))]), harness: fileContentIdentity(process.env.GLINT_DIRECT_BROWSER_HARNESS) })); }
+    catch { return `unverified:${randomUUID()}`; }
   }
   return fingerprintBytes(JSON.stringify(resolved.map(([file, pathname]) => [file, fingerprintBytes(fs.readFileSync(pathname))])));
 }
@@ -90,13 +144,11 @@ const SYSTEM_FONT_DIRS: Record<string, string[]> = {
 };
 
 /**
- * Font identity used to invalidate caches.
- * Pinned fonts hash name+size+mtime. System fonts hash a bounded directory scan,
- * so a font change on Linux/macOS no longer reuses a stale glyph cache (it used
- * to be an empty array, which silently matched every machine).
+ * Explicit SVG font files are identified by their bytes; system fonts remain a
+ * bounded inventory and do not guarantee browser or cross-machine equivalence.
  */
 export function fontFingerprint(files: readonly string[], options: { systemFonts: boolean }): unknown {
-  if (files.length) return { mode: "pinned", files: files.map(file => ({ name: path.basename(file), size: fs.statSync(file).size, mtime: fs.statSync(file).mtimeMs })) };
+  if (files.length) return { mode: "explicit-svg-files", files: files.map(file => ({ name: path.basename(file), sha256: fingerprintBytes(fs.readFileSync(file)) })) };
   if (!options.systemFonts) return { mode: "none" };
   const roots = SYSTEM_FONT_DIRS[process.platform] ?? [];
   const entries: string[] = [];
@@ -122,8 +174,27 @@ export interface NativeCacheEnvironment {
   platform: string;
   resvg: string;
   browser: string;
+  ffmpeg: string;
   sourceFingerprint: string;
   fontIdentity: unknown;
+}
+
+export function fileContentIdentity(file: string): string {
+  const hash = createHash("sha256"), fd = fs.openSync(file, "r"), buffer = Buffer.allocUnsafe(1024 * 1024);
+  try {
+    let count: number;
+    while ((count = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) hash.update(buffer.subarray(0, count));
+    return hash.digest("hex");
+  } finally { fs.closeSync(fd); }
+}
+
+/** Resolve the executable as invoked by the renderer and hash its bytes. */
+export function ffmpegIdentity(): string | undefined {
+  try {
+    const lookup = spawnSync(process.platform === "win32" ? "where" : "which", ["ffmpeg"], { encoding: "utf8", windowsHide: true });
+    const file = lookup.status === 0 ? lookup.stdout.split(/\r?\n/).find(line => line.trim())?.trim() : undefined;
+    return file ? fileContentIdentity(file) : undefined;
+  } catch { return undefined; }
 }
 
 /** One immutable description of the host that rendered a frame. */
@@ -131,8 +202,9 @@ export function nativeCacheEnvironment(scriptDir: string, options: { browserRequ
   return {
     renderer: 2,
     platform: process.platform,
-    resvg: packageVersion("@resvg/resvg-js") ?? "unknown",
-    browser: options.browserRequired ? browserIdentity() ?? "missing" : "none",
+    resvg: packageVersion("@resvg/resvg-js") ?? `unverified:${randomUUID()}`,
+    browser: options.browserRequired ? browserIdentity() ?? `unverified:${randomUUID()}` : "none",
+    ffmpeg: ffmpegIdentity() || `unverified:${randomUUID()}`,
     sourceFingerprint: renderImplementationFingerprint(scriptDir),
     fontIdentity: fontFingerprint(options.fontFiles, { systemFonts: options.fontFiles.length === 0 }),
   };
@@ -147,6 +219,10 @@ export function sceneAssetFingerprint(project: Pick<SceneScriptProject, "assets"
   })));
 }
 
+export function sceneEncoding(fast?: boolean): { crf: number; preset: string } {
+  return fast ? { crf: 24, preset: "veryfast" } : { crf: 20, preset: "medium" };
+}
+
 export function sceneCacheKey(input: {
   environment: NativeCacheEnvironment;
   scene: Scene;
@@ -159,6 +235,7 @@ export function sceneCacheKey(input: {
   fps: number;
   duration: number;
   plate: boolean;
+  encoding: { crf: number; preset: string };
 }): string {
   return fingerprintBytes(JSON.stringify({
     environment: input.environment,
@@ -172,6 +249,7 @@ export function sceneCacheKey(input: {
     fps: input.fps,
     duration: input.duration,
     plate: input.plate,
+    encoding: input.encoding,
   }));
 }
 

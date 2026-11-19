@@ -15,11 +15,12 @@ const spec = { width: 1920, height: 1080, fps: 30, durationSec: 3 };
 
 describe("FCPXML timeline", () => {
   it("cuts one master into scene-aligned asset clips with exact rational time", () => {
-    const xml = buildFcpxml(project, "D:/render/master.mp4", "D:/render/edit.fcpxml");
+    const renderRoot = process.platform === "win32" ? "D:/render" : "/render";
+    const xml = buildFcpxml(project, `${renderRoot}/master.mp4`, `${renderRoot}/edit.fcpxml`);
     expect(xml).toContain('<fcpxml version="1.9">');
     expect(xml).toContain('frameDuration="1/30s"');
     expect(xml).toContain('width="1920" height="1080"');
-    expect(xml).toContain("file://localhost/D:/render/master.mp4");
+    expect(xml).toContain(`file://localhost${process.platform === "win32" ? "/D:" : ""}/render/master.mp4`);
     expect(xml).toContain('hasAudio="0"');
     expect(xml).toContain('offset="0s" start="0s" duration="1s"');
     expect(xml).toContain('offset="1s" start="1s" duration="2s"');
@@ -70,8 +71,15 @@ const nle = parseNleProject({
 });
 
 describe("NLE timeline export", () => {
+  it("refuses unsupported retiming rather than silently exporting a different edit", () => {
+    expect(() => buildNleFcpxml(nle)).toThrow(/变速/);
+    const curved = structuredClone(nle); curved.tracks[0]!.clips[0]!.speedCurve = "in";
+    expect(() => buildNleEdl(curved)).toThrow(/NLE JSON/);
+    expect(() => buildNleFcpxml(curved)).toThrow(/NLE JSON/);
+  });
   it("writes per-clip FCPXML events with lanes, trims and exact rationals", () => {
-    const result = buildNleFcpxml(nle, name => `D:/media/${name}`);
+    const compatible = structuredClone(nle); compatible.tracks[0]!.clips[0]!.speed = 1;
+    const result = buildNleFcpxml(compatible, name => `D:/media/${name}`);
     expect(result.clips).toBe(4);
     expect(result.textClips).toBe(1);
     expect(result.audioClips).toBe(1);
@@ -98,7 +106,8 @@ describe("NLE timeline export", () => {
     expect(result.text).toContain("* TEXT CLIPS OMITTED FROM CMX3600: 1");
   });
   it("writes the file and reports text clips as a warning", () => {
-    const result = exportNleProjectTimeline({ project: nle, format: "fcpxml", outPath: path.join(os.tmpdir(), "glint-nle-test", "timeline.fcpxml"), assetPath: name => `D:/media/${name}` });
+    const compatible = structuredClone(nle); compatible.tracks[0]!.clips[0]!.speed = 1;
+    const result = exportNleProjectTimeline({ project: compatible, format: "fcpxml", outPath: path.join(os.tmpdir(), "glint-nle-test", "timeline.fcpxml"), assetPath: name => `D:/media/${name}` });
     expect(result.bytes).toBeGreaterThan(200);
     expect(result.warning).toMatch(/文字片段/);
   });

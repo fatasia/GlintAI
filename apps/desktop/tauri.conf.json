@@ -11,10 +11,14 @@
     "withGlobalTauri": false,
     "security": {
       "capabilities": [],
-      "freezePrototype": true
+      "freezePrototype": false
     }
   },
   "bundle": {
-    "active": false
+    "active": false,
+    "targets": [
+      "nsis"
+    ],
+    "category": "Productivity"
   }
 }

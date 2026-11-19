@@ -10,7 +10,7 @@ describe("independently authored local look registry", () => {
   it("is JSON-serializable and declares rights, input domain, approximation and scope per recipe", () => {
     expect(JSON.parse(JSON.stringify(LOOK_PRESETS))).toEqual(LOOK_PRESETS);
     expect(new Set(LOOK_PRESETS.map(look => look.id)).size).toBe(LOOK_PRESETS.length);
-    expect(LOOK_PRESETS).toHaveLength(4);
+    expect(LOOK_PRESETS).toHaveLength(5);
     for (const look of LOOK_PRESETS) {
       expect(look.label.length).toBeGreaterThan(1);
       expect(look.summary).toContain("近似");
@@ -81,7 +81,8 @@ describe("look preset instantiation", () => {
     expect(new Set(combined.map(effect => effect.id)).size).toBe(combined.length);
     first[0]!.value = 0;
     expect(makeLookPreset("restrained-print", 1, "scene-a-take-1")[0]!.value).toBe(0.94);
-    expect(LOOK_PRESETS[0]!.effects[0]!.value).toBe(0.94);
+    const restrained = LOOK_PRESETS.find(preset => preset.id === "restrained-print")!;
+    expect(restrained.effects[0]!.value).toBe(0.94);
   });
 
   it.each([-0.01, 1.01, NaN, Infinity, -Infinity])("rejects invalid strength %s rather than silently clamping", strength => {

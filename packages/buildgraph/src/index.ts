@@ -198,7 +198,7 @@ export interface BuildPlan {
   /** Nodes forced to run even when their digest is unchanged (cache miss, opaque node). */
   forced: string[];
   digests: Record<string, string>;
-  costCny: number;
+  costCny: number | null;
   estimatedMs: number;
 }
 
@@ -278,7 +278,7 @@ export interface ReceiptNode {
   digest: string;
   executability: Executability;
   reused: boolean;
-  costCny: number;
+  costCny: number | null;
   wallMs?: number;
 }
 
@@ -312,7 +312,7 @@ export interface Receipt {
   provenance?: ProvenanceRange[];
   output?: { path: string; sha256: string; bytes: number; frames?: number };
   verification: ReceiptVerification[];
-  totals: { modelCalls: number; costCny: number; wallMs: number; executed: number; reused: number };
+  totals: { modelCalls: number; costCny: number | null; wallMs: number; executed: number; reused: number };
 }
 
 function receiptInvalid(message: string): never {
@@ -353,7 +353,7 @@ export function validateReceipt(value: unknown): Receipt {
     }
   }
   if (!Array.isArray(receipt.verification)) receiptInvalid("verification missing");
-  if (!receipt.totals || !Number.isFinite(receipt.totals.costCny) || !Number.isInteger(receipt.totals.executed)) receiptInvalid("totals missing");
+  if (!receipt.totals || (receipt.totals.costCny !== null && !Number.isFinite(receipt.totals.costCny)) || !Number.isInteger(receipt.totals.modelCalls) || receipt.totals.modelCalls < 0 || !Number.isInteger(receipt.totals.executed)) receiptInvalid("totals missing");
   return receipt;
 }
 

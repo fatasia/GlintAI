@@ -5,10 +5,12 @@ import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import type { Scene } from "@glintai/scenescript";
 import { renderSceneSvg } from "../native-svg";
 import type { SceneScriptProject } from "@glintai/scenescript";
-import { resolveTheme } from "@glintai/design-tokens";
+import { resolveTheme, tokensToCssVariablesRecord } from "@glintai/design-tokens";
 import { cameraTransform, beatPulseScale, sceneDurationMs, transitionStyle, flashOverlayOpacity, sourceTimeForFrame, effectFilterSvg, DEFAULT_TRANSITION_MS } from "@glintai/scenescript";
 import { buildHtmlSceneDocument } from "../../../../packages/video/src/scenes/html-runtime";
 import { isolatedHtmlFrame, staticHtmlDocument } from "../../../../packages/video/src/scenes/html-policy";
+import { captureGltfMorphs, createGltfMixer } from "../../../../packages/video/src/scenes/gltf";
+import { imageSceneLayout, shouldShowImageCaption, showcaseForegroundTransform } from "../../../../packages/video/src/scenes/image-layout";
 
 type Runtime = { seek(frame: number): Promise<void>; dispose(): void };
 const state = window as unknown as { __glintInit(project: SceneScriptProject, scene: Scene, plate?: boolean): Promise<void>; __glintSeek(frame: number): Promise<void>; __glintReady?: boolean };
@@ -76,6 +78,7 @@ async function threeRuntime(value: Extract<Scene, { kind: "three" }>): Promise<R
   const rim = new THREE.DirectionalLight(c.accent2, 2); rim.position.set(-6, -2, -4); root.add(rim);
   const group = new THREE.Group(); root.add(group);
   let mixer: THREE.AnimationMixer | undefined;
+  let morphs: ReturnType<typeof captureGltfMorphs> | undefined;
   const draco = new DRACOLoader().setDecoderPath(`${location.origin}/decoders/draco/`);
   const ktx = new KTX2Loader().setTranscoderPath(`${location.origin}/decoders/basis/`).detectSupport(renderer);
   if (value.model === "gltf") {
@@ -85,13 +88,14 @@ async function threeRuntime(value: Extract<Scene, { kind: "three" }>): Promise<R
     const extent = Math.max(size.x, size.y, size.z);
     if (!Number.isFinite(extent) || extent <= 0) throw new Error("glTF has no finite visible bounds");
     gltf.scene.position.sub(center); group.scale.setScalar(3 / extent); group.add(gltf.scene);
-    mixer = new THREE.AnimationMixer(gltf.scene); for (const clip of gltf.animations) mixer.clipAction(clip).play();
+    mixer = createGltfMixer(gltf, value.animationClip);
+    morphs = captureGltfMorphs(gltf.scene);
   } else {
     const geometry = value.model === "sphere" ? new THREE.SphereGeometry(1.5, 64, 48) : value.model === "icosahedron" ? new THREE.IcosahedronGeometry(1.5, 0) : new THREE.TorusKnotGeometry(1.02, 0.32, 192, 32);
     group.add(new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: c.accent, metalness: 0.82, roughness: 0.18, emissive: c.accent2, emissiveIntensity: 0.08, flatShading: value.model === "icosahedron" })));
   }
   return {
-    async seek(f) { const t = f / (project.fps ?? 30); if (mixer) mixer.setTime(t); else group.rotation.set(t * 0.32, t * 0.52, 0); renderer.render(root, camera); renderer.getContext().finish(); },
+    async seek(f) { const t = f / (project.fps ?? 30); if (mixer) { morphs?.reset(); mixer.setTime(t); morphs?.apply(value.model === "gltf" ? value.morphTargets : undefined); } else group.rotation.set(t * 0.32, t * 0.52, 0); renderer.render(root, camera); renderer.getContext().finish(); },
     dispose() { draco.dispose(); ktx.dispose(); mixer?.stopAllAction(); root.traverse((object: THREE.Object3D) => { const mesh = object as THREE.Mesh; mesh.geometry?.dispose?.(); const material = mesh.material as THREE.Material | THREE.Material[] | undefined; const list = Array.isArray(material) ? material : material ? [material] : []; for (const item of list) { for (const texture of Object.values(item).filter((entry): entry is THREE.Texture => entry instanceof THREE.Texture)) texture.dispose(); item.dispose(); } }); renderer.dispose(); renderer.domElement.remove(); },
   };
 }
@@ -99,6 +103,8 @@ async function threeRuntime(value: Extract<Scene, { kind: "three" }>): Promise<R
 state.__glintInit = async (p, s, cleanPlate = false) => {
   runtime?.dispose(); runtime = undefined; project = p; scene = s; plate = cleanPlate;
   document.body.replaceChildren(); document.body.style.cssText = `margin:0;overflow:hidden;background:${resolveTheme(p.theme).colors.bg}`;
+  for (const [key, value] of Object.entries(tokensToCssVariablesRecord(resolveTheme(p.theme)))) document.body.style.setProperty(key, String(value));
+  document.body.style.fontFamily = resolveTheme(p.theme).fonts.body;
   visual = document.createElement("div"); visual.style.cssText = "position:absolute;inset:0;transform-origin:center;overflow:hidden";
   overlay = document.createElement("div"); overlay.style.cssText = "position:absolute;inset:0;pointer-events:none";
   flash = document.createElement("div"); flash.style.cssText = "position:absolute;inset:0;background:white;pointer-events:none;opacity:0";
@@ -113,9 +119,17 @@ state.__glintInit = async (p, s, cleanPlate = false) => {
   if (s.kind === "html") runtime = await htmlRuntime(s);
   else if (s.kind === "three") runtime = await threeRuntime(s);
   else if (s.kind === "image") {
-    const image = new Image(); image.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:contain";
-    const ready = waitMedia(image, "load"); image.src = `${location.origin}/${s.src}`; visual.append(image); await ready;
-    runtime = { async seek() {}, dispose() { image.remove(); } };
+    const styles = imageSceneLayout(s, innerWidth, innerHeight), container = document.createElement("div");
+    Object.assign(container.style, styles.container);
+    const image = new Image(); Object.assign(image.style, styles.image);
+    const ready = waitMedia(image, "load"); image.src = `${location.origin}/${s.src}`;
+    let background: HTMLImageElement | undefined;
+    if (styles.background) { background = new Image(); Object.assign(background.style, styles.background); background.src = image.src; container.append(background); }
+    if (styles.veil) { const veil = document.createElement("div"); Object.assign(veil.style, styles.veil); container.append(veil); }
+    const frame = document.createElement("div"); Object.assign(frame.style, styles.frame); frame.append(image); container.append(frame);
+    if (shouldShowImageCaption(s)) { const caption = document.createElement("p"); Object.assign(caption.style, styles.caption); caption.textContent = s.caption ?? ""; container.append(caption); }
+    visual.append(container); await ready; if (background) await background.decode();
+    runtime = { async seek(f) { frame.style.transform = showcaseForegroundTransform(s, f, Math.max(1, Math.round(sceneDurationMs(s) / 1000 * (p.fps ?? 30))), Math.min(innerWidth, innerHeight) / 1080); }, dispose() { container.remove(); } };
   } else if (s.kind === "video") {
     const video = document.createElement("video"); video.muted = true; video.preload = "auto"; video.style.cssText = "width:100%;height:100%;object-fit:cover";
     const ready = waitMedia(video, "loadeddata"); video.src = `${location.origin}/${s.src}`; visual.append(video); await ready;
@@ -127,7 +141,7 @@ state.__glintInit = async (p, s, cleanPlate = false) => {
   } else {
     const image = new Image(); image.style.cssText = "width:100%;height:100%;position:absolute;inset:0"; document.body.append(image);
     let url = "";
-    runtime = { async seek(f) { if (url) URL.revokeObjectURL(url); url = URL.createObjectURL(new Blob([renderSceneSvg(p, s, f, { width: innerWidth, height: innerHeight })], { type: "image/svg+xml" })); image.src = url; await image.decode(); }, dispose() { if (url) URL.revokeObjectURL(url); image.remove(); } };
+    runtime = { async seek(f) { if (url) URL.revokeObjectURL(url); url = URL.createObjectURL(new Blob([renderSceneSvg(p, s, f, { width: innerWidth, height: innerHeight, previousScene: p.scenes[p.scenes.findIndex(item => item.id === s.id) - 1] })], { type: "image/svg+xml" })); image.src = url; await image.decode(); }, dispose() { if (url) URL.revokeObjectURL(url); image.remove(); } };
   }
 };
 state.__glintSeek = async frame => {
@@ -139,11 +153,15 @@ state.__glintSeek = async frame => {
     const scale = camera.scale * beatPulseScale(scene.beatPulse, frame / fps * 1000);
     const p = Math.min(1, frame / fps * 1000 / (scene.transition?.durationMs ?? DEFAULT_TRANSITION_MS));
     const entrance = scene.transition ? transitionStyle(scene.transition.in, p) : { opacity: 1, transform: "none", filter: "none", clipPath: "none" };
-    visual.style.transform = `${entrance.transform === "none" ? "" : entrance.transform} translate(${camera.translateX}px,${camera.translateY}px) scale(${scale})`;
+    // Camera offsets are authored in the 1080px composition coordinate space.
+    // Native captures may use another resolution, so scale the offsets with the
+    // viewport and preserve the preview's scale-then-translate ordering.
+    const unit = Math.min(innerWidth, innerHeight) / 1080;
+    visual.style.transform = `${entrance.transform === "none" ? "" : entrance.transform} scale(${scale}) translate(${camera.translateX * unit}px,${camera.translateY * unit}px)`;
     visual.style.opacity = String(entrance.opacity); visual.style.filter = entrance.filter; visual.style.clipPath = entrance.clipPath;
     flash.style.opacity = String(scene.transition ? flashOverlayOpacity(scene.transition.in, p) : 0);
     const captionScene = { id: scene.id, kind: "title" as const, title: "", narration: scene.narration, sharedElements: scene.sharedElements };
-    overlay.innerHTML = renderSceneSvg(project, captionScene, frame, { width: innerWidth, height: innerHeight, plate, overlayOnly: true });
+    overlay.innerHTML = renderSceneSvg(project, captionScene, frame, { width: innerWidth, height: innerHeight, plate, overlayOnly: true, contrastCaption: scene.kind === "image" && (scene.presentation === "showcase" || scene.presentation === "slide") });
     const filter = effectFilterSvg(scene.effects ?? [], frame / fps * 1000, "direct-scene");
     effectDefinitions.innerHTML = filter.defs;
     // Chromium skips reference filters on opaque-origin iframe descendants.

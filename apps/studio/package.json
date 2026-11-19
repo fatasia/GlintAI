@@ -50,6 +50,6 @@
     "@remotion/cli": "^4.0.0",
     "@types/react": "^19.0.0",
     "@types/three": "0.180.0",
-    "three": "^0.180.0"
+    "three": "0.180.0"
   }
 }

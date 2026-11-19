@@ -1,4 +1,4 @@
-import { nleSampleMotion, nleTransitionProgress, sampleEffects, type NleClip, type NleProject } from "@glintai/scenescript";
+import { nleSampleMotion, nleTransitionProgress, nleSourceTimeMs, nleSpeedAt, sampleEffects, type NleClip, type NleProject } from "@glintai/scenescript";
 
 /**
  * The NLE frame contract: one function draws the complete picture at t.
@@ -63,7 +63,16 @@ function wrapLines(context: CanvasRenderingContext2D, text: string, maxWidth: nu
   return lines.length ? lines : [''];
 }
 
-function drawTextCanvas(canvas: HTMLCanvasElement, clip: Extract<NleClip, { kind: "text" }>, referenceHeight: number): void {
+/** AUDIO-05/07 karaoke: character-ratio progress across the whole clip text.
+ * Declared approximation — captions are timed per segment/cue, not acoustically. */
+export function karaokeCharStates(text: string, progress: number): Array<{ char: string; sung: boolean; active: boolean }> {
+  const chars = [...text];
+  const clamped = Math.max(0, Math.min(1, progress));
+  const sungCount = Math.round(chars.length * clamped);
+  return chars.map((char, index) => ({ char, sung: index < sungCount, active: index === sungCount }));
+}
+
+function drawTextCanvas(canvas: HTMLCanvasElement, clip: Extract<NleClip, { kind: "text" }>, referenceHeight: number, localMs: number): void {
   // clientWidth ignores CSS transforms, so the backing store stays at project
   // resolution even when the preview root is scaled down to fit its panel.
   const targetWidth = Math.max(16, Math.round(canvas.clientWidth || canvas.parentElement?.clientWidth || 1920));
@@ -75,17 +84,39 @@ function drawTextCanvas(canvas: HTMLCanvasElement, clip: Extract<NleClip, { kind
   const weight = clip.weight ?? 700;
   context.clearRect(0, 0, targetWidth, targetHeight);
   context.font = `${weight} ${size}px ${FONT_STACK}`;
-  context.fillStyle = clip.color ?? "#f4f4f5";
   context.textBaseline = "middle";
   const padding = targetWidth * 0.08;
   const lines = wrapLines(context, clip.text, targetWidth - padding * 2);
   const lineHeight = size * 1.35;
   const startY = targetHeight / 2 - (lines.length - 1) * lineHeight / 2;
+  const karaoke = clip.karaoke === true;
+  const baseColor = clip.color ?? "#f4f4f5";
+  if (!karaoke) context.fillStyle = baseColor;
+  // Character-ratio progress across the WHOLE text; sung chars keep the base
+  // color, the active char is amber, upcoming chars are dimmed.
+  const states = karaoke ? karaokeCharStates(clip.text, clip.durationMs ? localMs / clip.durationMs : 1) : null;
+  let charCursor = 0;
   lines.forEach((line, index) => {
     const y = startY + index * lineHeight;
-    if (clip.align === "left") { context.textAlign = "left"; context.fillText(line, padding, y); }
-    else if (clip.align === "right") { context.textAlign = "right"; context.fillText(line, targetWidth - padding, y); }
-    else { context.textAlign = "center"; context.fillText(line, targetWidth / 2, y); }
+    const startX = clip.align === "left" ? padding : clip.align === "right" ? targetWidth - padding : targetWidth / 2;
+    if (!states) {
+      if (clip.align === "left") { context.textAlign = "left"; context.fillText(line, padding, y); }
+      else if (clip.align === "right") { context.textAlign = "right"; context.fillText(line, targetWidth - padding, y); }
+      else { context.textAlign = "center"; context.fillText(line, targetWidth / 2, y); }
+      return;
+    }
+    context.textAlign = "left";
+    const slice = [...line];
+    const lineChars = states.slice(charCursor, charCursor + slice.length);
+    charCursor += slice.length;
+    let x = clip.align === "right" ? targetWidth - padding - context.measureText(line).width : clip.align === "center" ? targetWidth / 2 - context.measureText(line).width / 2 : startX;
+    for (const state of lineChars) {
+      context.globalAlpha = state.sung ? 1 : 0.4;
+      context.fillStyle = state.active ? "#fbbf24" : baseColor;
+      context.fillText(state.char, x, y);
+      x += context.measureText(state.char).width;
+    }
+    context.globalAlpha = 1;
   });
 }
 
@@ -166,10 +197,10 @@ function drawVisualClip(host: NleFrameHost, trackIndex: number, clip: NleClip, l
       layer.append(element);
       return element as unknown as HTMLImageElement;
     }) as unknown as HTMLCanvasElement;
-    const signature = [clip.text, clip.fontSize ?? 64, clip.color ?? "#f4f4f5", clip.weight ?? 700, clip.align ?? "center", referenceHeight].join("|");
+    const signature = [clip.text, clip.fontSize ?? 64, clip.color ?? "#f4f4f5", clip.weight ?? 700, clip.align ?? "center", referenceHeight, clip.karaoke === true ? Math.round(localMs) : ""].join("|");
     if (canvas.dataset.signature !== signature) {
       canvas.dataset.signature = signature;
-      drawTextCanvas(canvas, clip, referenceHeight);
+      drawTextCanvas(canvas, clip, referenceHeight, localMs);
     }
     return;
   }
@@ -198,9 +229,10 @@ function drawVisualClip(host: NleFrameHost, trackIndex: number, clip: NleClip, l
   const source = host.resolveAsset(clip.src);
   if (video.getAttribute("src") !== source) video.src = source;
   video.volume = clip.volume ?? 1;
-  video.playbackRate = clip.speed ?? 1;
+  video.playbackRate = nleSpeedAt(clip, localMs);
+  video.preservesPitch = !clip.speedCurve || clip.speedCurve === "linear";
   host.targets ??= new Map();
-  host.targets.set(`vid:${clip.id}`, (clip.trimStartMs ?? 0) / 1000 + localMs / 1000 * (clip.speed ?? 1));
+  host.targets.set(`vid:${clip.id}`, nleSourceTimeMs(clip, localMs) / 1000);
 }
 
 export interface NleFrameOptions {
@@ -208,6 +240,8 @@ export interface NleFrameOptions {
   playing?: boolean;
   /** Preview mutes everything (e.g. scrubbing) without touching element state. */
   muted?: boolean;
+  /** Export only: omit the project background for alpha overlays. */
+  transparentBackground?: boolean;
 }
 
 /**
@@ -218,10 +252,14 @@ export interface NleFrameOptions {
 export function renderNleFrame(host: NleFrameHost, project: NleProject, tMs: number, options: NleFrameOptions = {}): void {
   host.root.style.width = `${project.width}px`;
   host.root.style.height = `${project.height}px`;
-  host.root.style.backgroundColor = project.background ?? "#08090b";
+  host.root.style.backgroundColor = options.transparentBackground ? "transparent" : project.background ?? "#08090b";
   const active = new Set<string>();
   const audible = host.audible ??= new Set<string>();
   audible.clear();
+  // Solo audition must match the ffmpeg mixer (nle-render): when any track is
+  // solo, non-solo tracks stay silent in the preview too.
+  const soloActive = project.tracks.some(track => track.solo);
+  const audibleTrack = (track: NleProject["tracks"][number]) => !track.muted && (!soloActive || track.solo === true);
   project.tracks.forEach((track, trackIndex) => {
     if (track.kind === "audio" || track.muted) return;
     for (const clip of track.clips) {
@@ -237,11 +275,11 @@ export function renderNleFrame(host: NleFrameHost, project: NleProject, tMs: num
         continue;
       }
       drawVisualClip(host, trackIndex, clip, tMs - clip.startMs, active, project.height);
-      if (clip.kind === "video" && (clip.volume ?? 1) > 0 && !track.muted) audible.add(`vid:${clip.id}`);
+      if (clip.kind === "video" && (clip.volume ?? 1) > 0 && audibleTrack(track)) audible.add(`vid:${clip.id}`);
     }
   });
   for (const track of project.tracks) {
-    if (track.kind !== "audio" || track.muted) continue;
+    if (track.kind !== "audio" || !audibleTrack(track)) continue;
     const audioClips = track.clips.filter((clip): clip is Extract<NleClip, { kind: "audio" }> => clip.kind === "audio");
     for (const clip of audioClips) {
       const key = `aud:${track.id}:${clip.id}`;
@@ -255,10 +293,11 @@ export function renderNleFrame(host: NleFrameHost, project: NleProject, tMs: num
       const source = host.resolveAsset(clip.src);
       if (audio.getAttribute("src") !== source) audio.src = source;
       audio.volume = clip.volume ?? 1;
-      audio.playbackRate = clip.speed ?? 1;
+      audio.playbackRate = nleSpeedAt(clip, tMs - clip.startMs);
+      audio.preservesPitch = !clip.speedCurve || clip.speedCurve === "linear";
       host.targets ??= new Map();
       const activeAudio = tMs >= clip.startMs && tMs < clip.startMs + clip.durationMs;
-      host.targets.set(key, Math.max(0, (clip.trimStartMs ?? 0) / 1000 + (tMs - clip.startMs) / 1000 * (clip.speed ?? 1)));
+      host.targets.set(key, Math.max(0, nleSourceTimeMs(clip, tMs - clip.startMs) / 1000));
       if (!activeAudio) {
         if (!audio.paused) audio.pause();
         continue;
@@ -273,10 +312,15 @@ export function renderNleFrame(host: NleFrameHost, project: NleProject, tMs: num
     }
   }
   for (const [key, element] of host.media ?? []) {
+    if (key.startsWith("aud:")) {
+      if (!options.playing || options.muted || !audible.has(key)) element.pause();
+      continue;
+    }
     if (!key.startsWith("vid:")) continue;
     const target = host.targets?.get(key);
-    if (target === undefined) continue;
-    const playing = options.playing && !options.muted && audible.has(key);
+    element.muted = Boolean(options.muted || !audible.has(key));
+    if (target === undefined) { element.pause(); continue; }
+    const playing = options.playing && active.has(key.slice("vid:".length));
     if (playing) {
       if (Math.abs(element.currentTime - target) > 0.12) element.currentTime = target;
       if (element.paused) void (element as HTMLVideoElement).play().catch(() => { /* gesture-gated */ });
@@ -292,7 +336,9 @@ export function renderNleFrame(host: NleFrameHost, project: NleProject, tMs: num
 
 /**
  * Deterministic seek for the renderer: waits until every pooled media element
- * has arrived at the target written by the last renderNleFrame call.
+ * has arrived at the target written by the last renderNleFrame call — and,
+ * for video, until the sought frame is actually presented. "seeked" alone can
+ * resolve while the compositor still shows the previous frame (scrub race).
  */
 export function syncNleMedia(host: NleFrameHost, timeoutMs = 8000): Promise<void> {
   const pending: Promise<void>[] = [];
@@ -300,15 +346,36 @@ export function syncNleMedia(host: NleFrameHost, timeoutMs = 8000): Promise<void
     const target = host.targets?.get(key);
     if (target === undefined) continue;
     if (Math.abs(element.currentTime - target) <= 0.004) continue;
+    const destination = target;
+    let nudgeTimer: ReturnType<typeof setTimeout> | undefined;
     pending.push(new Promise<void>(resolve => {
       const timer = setTimeout(done, timeoutMs);
       function done() {
         clearTimeout(timer);
-        element.removeEventListener("seeked", done);
+        if (nudgeTimer !== undefined) clearTimeout(nudgeTimer);
+        element.removeEventListener("seeked", presented);
         element.removeEventListener("error", done);
         resolve();
       }
-      element.addEventListener("seeked", done, { once: true });
+      function presented() {
+        const video = element as HTMLVideoElement;
+        if (typeof video.requestVideoFrameCallback !== "function") return done();
+        // A frame queued before the seek can present first; only a frame whose
+        // mediaTime reached the target proves the sought content is on screen.
+        // Chromium occasionally stalls the present after a paused seek: nudge
+        // the same frame (+0.5ms stays inside it) to force a fresh present.
+        nudgeTimer = setTimeout(() => { video.currentTime = destination + 0.0005; }, 1200);
+        const deadline = Date.now() + 5000;
+        const awaitFrame = () => {
+          video.requestVideoFrameCallback((_now, metadata) => {
+            if (metadata.mediaTime >= destination - 0.045) return done();
+            if (Date.now() > deadline) return done();
+            awaitFrame();
+          });
+        };
+        awaitFrame();
+      }
+      element.addEventListener("seeked", presented, { once: true });
       element.addEventListener("error", done, { once: true });
       element.currentTime = target;
     }));

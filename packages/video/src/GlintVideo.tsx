@@ -98,10 +98,11 @@ export const GlintVideo: React.FC<GlintProps> = ({ project, plate, mediaAssetBas
           <TransitionIn transition={entry.scene.transition}>
             <CameraFrame camera={entry.scene.camera} durationFrames={entry.duration}>
               <SceneShell
+                showBrand={entry.scene.kind !== "image"}
                 fit={!["three", "html", "image", "video"].includes(entry.scene.kind)}
                 align={CENTERED_KINDS.has(entry.scene.kind) ? "center" : "start"}
                 kicker={
-                  entry.scene.kind === "title"
+                  entry.scene.kind === "title" || entry.scene.kind === "image"
                     ? undefined
                     : `${String(entry.index + 1).padStart(2, "0")} / ${String(entries.length).padStart(2, "0")}`
                 }
@@ -115,7 +116,7 @@ export const GlintVideo: React.FC<GlintProps> = ({ project, plate, mediaAssetBas
                   }}
                 />
               </SceneShell>
-              {plate ? null : <SceneElements scene={entry.scene} />}
+              {plate ? null : <SceneElements scene={entry.scene} previousScene={parsed.scenes[entry.index - 1]} />}
             </CameraFrame>
           </TransitionIn>
           {plate ? null : <Caption scene={entry.scene} sceneDurationFrames={entry.duration} />}

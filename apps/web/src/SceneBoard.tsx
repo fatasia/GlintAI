@@ -1,3 +1,5 @@
+import { applicationUrl } from "./app-url";
+import { appFetch as fetch } from "./app-url";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Background, Controls, Handle, Position, ReactFlow, applyNodeChanges, type NodeProps, type ReactFlowInstance } from "@xyflow/react";
 import type { SceneScriptProject } from "@glintai/scenescript";
@@ -7,12 +9,12 @@ import "@xyflow/react/dist/style.css";
 
 const card: CSSProperties = { width: "100%", height: "100%", boxSizing: "border-box", padding: 14, borderRadius: 12,
   border: "1px solid var(--line, currentColor)", background: "var(--surface-1, Canvas)", color: "var(--text, CanvasText)", textAlign: "left", overflow: "hidden" };
-const button: CSSProperties = { border: "1px solid #2b2b31", borderRadius: 8, color: "#e4e4e7", background: "#1c1c21", font: "inherit", padding: "7px 11px", cursor: "pointer", fontSize: 13 };
+const button: CSSProperties = { border: "1px solid var(--line-2)", borderRadius: 8, color: "var(--paper)", background: "var(--ink-3)", font: "inherit", padding: "7px 11px", cursor: "pointer", fontSize: 13 };
 function SceneCard({ data, selected }: NodeProps<SceneCardNode>) {
   return <div style={{ ...card, outline: selected ? "2px solid var(--accent, currentColor)" : undefined }}>
     <Handle type="target" position={Position.Left} style={{ opacity: 0, pointerEvents: "none" }} />
     <small style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span>镜头 {data.order}{data.locked ? " · 已锁定" : ""}</span><span>{data.duration}</span></small>
-    {data.thumbnail && <img alt="" src={data.thumbnail} style={{ width: "100%", height: 52, objectFit: "cover", borderRadius: 8, marginBottom: 8, display: "block" }} />}
+    {data.thumbnail && <img alt="" src={applicationUrl(data.thumbnail)} style={{ width: "100%", height: 52, objectFit: "cover", borderRadius: 8, marginBottom: 8, display: "block" }} />}
     <strong title={data.title} style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 8 }}>{data.title}</strong>
     <span title={data.description} style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", fontSize: 13, lineHeight: 1.6 }}>{data.description}</span>
     <Handle type="source" position={Position.Right} style={{ opacity: 0, pointerEvents: "none" }} />
@@ -69,7 +71,7 @@ function ProjectSceneBoard({ project, selectedSceneId, onSelect, onAdopt }: { pr
     if (!cards.length) return { x: 0, y: 0 };
     return { x: Math.max(...cards.map(node => node.position.x + (node.width ?? 240))) + 120, y: Math.min(...cards.map(node => node.position.y)) };
   });
-  const materialView = useMemo(() => materialNodes(materials, origin).map(node => ({ ...node, selected: node.data.name === selectedMaterial })), [materials, origin, selectedMaterial]);
+  const materialView = useMemo(() => materialNodes(materials, origin, positions).map(node => ({ ...node, selected: node.data.name === selectedMaterial })), [materials, origin, positions, selectedMaterial]);
   const allNodes = useMemo(() => [...graph.nodes, ...materialView], [graph.nodes, materialView]);
   useEffect(() => { setNodes(allNodes); }, [allNodes]);
   useEffect(() => {
@@ -112,7 +114,7 @@ function ProjectSceneBoard({ project, selectedSceneId, onSelect, onAdopt }: { pr
   const target = project.scenes.find(scene => scene.id === selectedSceneId);
   const canReplace = Boolean(target && replaceableKinds.includes(target.kind));
   return <section ref={container} aria-label="镜头画布" style={{ minWidth: 0, display: "grid", gap: 8,
-    "--surface-1": "#151518", "--text": "#e4e4e7", "--line": "#2b2b31", "--accent": "#7c8cff" } as CSSProperties}>
+    "--surface-1": "var(--ink-2)", "--text": "var(--paper)", "--line": "var(--line-2)" } as CSSProperties}>
     <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
       <strong style={{ marginRight: "auto" }}>镜头总览</strong>
       {!compact && <><button type="button" style={button} onClick={fit}>看全画布</button>
@@ -137,7 +139,7 @@ function ProjectSceneBoard({ project, selectedSceneId, onSelect, onAdopt }: { pr
           if (node.type === "materialCard") { setSelectedMaterial(node.data.name); return; }
           setSelectedMaterial(null); onSelect(node.id);
         }}
-        onNodeDragStop={(_, node) => persist({ ...positions, [node.id]: node.position })}
+        onNodeDragStop={(_, node, dragged) => persist({ ...positions, ...Object.fromEntries((dragged?.length ? dragged : [node]).map(item => [item.id, item.position])) })}
         onPaneClick={() => setSelectedMaterial(null)}
         nodesConnectable={false} edgesReconnectable={false} deleteKeyCode={null}
         minZoom={0.15} maxZoom={1.5} colorMode="dark" aria-label="镜头总览画布">
@@ -146,14 +148,14 @@ function ProjectSceneBoard({ project, selectedSceneId, onSelect, onAdopt }: { pr
       </ReactFlow>
     </div>}
     {!compact && material && <div aria-label="素材详情" style={{ display: "grid", gap: 10, padding: 12, borderRadius: 12,
-      border: "1px dashed var(--accent, currentColor)", background: "#151518", color: "var(--text)" }}>
+      border: "1px dashed var(--accent, currentColor)", background: "var(--ink-2)", color: "var(--text)" }}>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "baseline" }}>
         <strong style={{ marginRight: "auto", overflowWrap: "anywhere" }}>{material.name}</strong>
         <small>{material.kind === "video" ? "视频" : "图片"} · 来自素材库</small>
       </div>
       {material.kind === "video"
-        ? <video key={material.name} aria-label="素材视频预览" controls preload="metadata" src={`/api/media/assets/${encodeURIComponent(material.name)}`} style={{ width: "100%", maxHeight: 180, borderRadius: 8, background: "#0c141d" }} />
-        : <img alt="素材图片预览" src={`/api/media/assets/${encodeURIComponent(material.name)}`} style={{ width: "100%", maxHeight: 180, objectFit: "contain", borderRadius: 8, background: "#0c141d" }} />}
+        ? <video key={material.name} aria-label="素材视频预览" controls preload="metadata" src={applicationUrl(`/api/media/assets/${encodeURIComponent(material.name)}`)} style={{ width: "100%", maxHeight: 180, borderRadius: 8, background: "#0c141d" }} />
+        : <img alt="素材图片预览" src={applicationUrl(`/api/media/assets/${encodeURIComponent(material.name)}`)} style={{ width: "100%", maxHeight: 180, objectFit: "contain", borderRadius: 8, background: "#0c141d" }} />}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         <button type="button" style={button} disabled={!onAdopt || !target || !canReplace} onClick={() => { if (onAdopt) onAdopt(material.name, "replace"); }}>替换当前镜头素材</button>
         <button type="button" style={button} disabled={!onAdopt || !target} onClick={() => { if (onAdopt) onAdopt(material.name, "insert"); }}>添加为新镜头</button>

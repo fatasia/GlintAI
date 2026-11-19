@@ -1,0 +1,147 @@
+/* Media column (素材库) and the filter/transition catalog.
+   The column is a pane, not a card: one hairline on the right, rows divided by hairlines.
+   Children still carry inline token styles, so those are neutralised here rather than in JSX. */
+
+.nle-library {
+  display: grid;
+  align-content: start;
+  gap: var(--s-2);
+  min-width: 0;
+  min-height: 0;
+  padding: var(--s-3) var(--s-3) var(--s-5);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  border-right: 1px solid var(--hair);
+  background: var(--ink-1);
+  color: var(--paper);
+  font-size: var(--t-label);
+  font-variant-numeric: tabular-nums;
+}
+.nle-library-nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  margin-bottom: var(--s-1);
+  padding: 2px;
+  border: 1px solid var(--hair);
+  border-radius: var(--r-full);
+  background: var(--surface-sunken);
+}
+.nle-library-nav button {
+  min-height: 26px !important;
+  border: 0 !important;
+  border-radius: var(--r-full) !important;
+  background: transparent !important;
+  color: var(--muted) !important;
+  font-size: 12px !important;
+}
+.nle-library-nav button:hover { color: var(--paper) !important; }
+.nle-library-nav button[aria-pressed="true"] {
+  background: var(--wash-strong) !important;
+  color: var(--paper) !important;
+  box-shadow: inset 0 0 0 1px var(--hair-strong);
+}
+.nle-library button {
+  border-color: var(--hair-strong) !important;
+  border-radius: var(--r-sm) !important;
+  background: transparent !important;
+  color: var(--paper-dim) !important;
+  font: 500 var(--t-label)/1.2 var(--font-ui) !important;
+  transition: background 160ms var(--ease), color 160ms var(--ease), border-color 160ms var(--ease);
+}
+.nle-library button:hover:not(:disabled) { background: var(--wash-strong) !important; color: var(--paper) !important; }
+.nle-library button:disabled { opacity: .4 !important; cursor: not-allowed; }
+.nle-library p { margin: 0; color: var(--muted); font-size: var(--t-micro); line-height: 1.65; }
+.nle-library small { color: var(--faint); font-size: var(--t-micro); }
+
+/* Inline-styled asset rows become hairline list rows. */
+.nle-library > div[style] {
+  gap: var(--s-2) !important;
+  padding: 7px 0 !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--hair) !important;
+  border-radius: 0 !important;
+}
+.nle-library > div[style] > :is(img, video) {
+  height: 62px !important;
+  border-radius: 5px !important;
+  opacity: .92;
+  transition: opacity 160ms var(--ease);
+}
+.nle-library > div[style]:hover > :is(img, video) { opacity: 1; }
+.nle-library > div[style] > small { color: var(--paper-dim) !important; font-size: var(--t-label) !important; }
+.nle-library > div[style] > button { padding: 5px 8px !important; font-size: var(--t-micro) !important; }
+
+.nle-catalog {
+  display: grid;
+  gap: var(--s-3);
+  min-width: 0;
+  color: var(--paper-dim);
+  font-size: var(--t-label);
+  font-variant-numeric: tabular-nums;
+}
+.nle-catalog-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+.nle-catalog-tabs button { min-height: 28px !important; padding: 0 8px !important; }
+.nle-catalog-tabs button[aria-pressed="true"] {
+  border-color: var(--line-3) !important;
+  background: var(--wash-strong) !important;
+  color: var(--paper) !important;
+}
+.nle-catalog label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted) !important;
+  font-size: var(--t-label) !important;
+}
+.nle-catalog :is(input[type="search"], select) {
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid var(--hair-strong) !important;
+  border-radius: var(--r-sm) !important;
+  background: var(--surface-sunken) !important;
+  color: var(--paper) !important;
+  font: 400 12px/1.4 var(--font-ui) !important;
+  transition: border-color 160ms var(--ease);
+}
+.nle-catalog :is(input[type="search"], select):focus { outline: none; border-color: var(--accent) !important; }
+.nle-catalog input[type="range"] { width: 100%; accent-color: var(--accent); }
+.nle-catalog-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.nle-catalog-grid button {
+  display: grid !important;
+  align-content: center;
+  min-height: 36px;
+  padding: 6px 8px !important;
+  text-align: left;
+}
+.nle-catalog-grid button[aria-pressed="true"] {
+  border-color: var(--accent) !important;
+  background: var(--accent-soft) !important;
+  color: var(--paper) !important;
+}
+.nle-catalog-grid strong { font-size: var(--t-label); font-weight: 500; line-height: 1.35; }
+.nle-catalog-grid span { display: none; }
+.nle-catalog-preview {
+  display: grid;
+  place-items: center;
+  height: 116px;
+  overflow: hidden;
+  border: 1px solid var(--hair);
+  border-radius: var(--r-sm);
+  background: #0a0a0b;
+}
+.nle-catalog-preview > div { max-width: 100%; max-height: 100%; }
+.nle-catalog > strong { color: var(--paper) !important; font-size: var(--t-label); font-weight: 600; }
+.nle-catalog details > summary { color: var(--muted) !important; font-size: var(--t-micro) !important; cursor: pointer; }
+.nle-catalog > p, .nle-catalog details > p, .nle-catalog > small {
+  margin: 0;
+  color: var(--faint) !important;
+  font-size: var(--t-micro) !important;
+  line-height: 1.65;
+}
+.nle-catalog :is(button, input, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media (max-width: 1024px) {
+  .nle-library { border-right: 0; border-bottom: 1px solid var(--hair); }
+}

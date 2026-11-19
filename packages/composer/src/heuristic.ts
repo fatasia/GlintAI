@@ -1,6 +1,6 @@
 import { parseProject, type SceneScriptProject } from "@glintai/scenescript";
 import { ComposerError } from "./errors";
-import { parseMarkdown, detectLanguage, content, narration } from "./parsing";
+import { parseMarkdown, detectLanguage, content, excerpt, narration } from "./parsing";
 import { buildSectionScenes } from "./strategies";
 import { isTemplateId, THEME_IDS, type TemplateId } from "./templates";
 export { ComposerError };
@@ -27,7 +27,7 @@ export function composeFromMarkdown(markdown: string, options: ComposerOptions =
     theme: options.theme ?? "glint-dark",
     knowledgeSources: [{ id: "source", kind: "markdown", name: options.sourceName ?? "source.md" }],
     scenes: [{ id: "intro", kind: "title", title,
-      ...(first && first !== title ? { subtitle: first.slice(0, 48) } : {}),
+      ...(first && first !== title ? { subtitle: excerpt(first, 48) } : {}),
       narration: { text: narration([title, first ?? ""]) } },
       ...buildSectionScenes(sections, options.template ?? "explainer", max - 1, title)],
   });

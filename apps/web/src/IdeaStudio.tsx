@@ -1,24 +1,54 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { TEMPLATES, THEME_IDS } from "@glintai/composer/templates";
-import { jobRequest, parseJob, terminalJob, type IdeaJob } from "./jobs-client";
-import { readSavedProjects, removeProject, saveProject, type SavedProject } from "./project-history";
 import { type SceneScriptProject } from "@glintai/scenescript";
-import { SessionEditor } from "./SessionEditor";
-import { parseEditorProject } from "./editor-model";
-import { CreationLibrary } from "./CreationLibrary";
-import { DeliveryCheck } from "./DeliveryCheck";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { appFetch as fetch } from "./app-url";
+import { assertAuthoringCanLeave } from "./authoring-leave";
+import { downloadJson, parseEditorProject } from "./editor-model";
+import type { LocalGitSelection } from "./git-local-works";
+import "./home-workspace.css";
 import { HomeHero } from "./HomeHero";
+import { loadLocalGitVersion, recoverStudioWorkspace } from "./IdeaStudioStorage";
+import { jobRequest, parseJob, terminalJob, type IdeaJob } from "./jobs-client";
+import { prepareGitProjectRegistration, readSavedProjects, readSavedProjectsStrict, readSessionBackups, saveProject, type SavedProject, type SessionBackup } from "./project-history";
+import { branchRevision, readRevisions, recordRevision, restoreRevision, type ProjectRevision } from "./project-revisions";
+import { assertGitStorageReady, assertLocalWorkspaceCurrent, readGitProject, readWorkspace, sameGitProject, saveLocalWorkspace } from "./project-workspace-storage";
+import type { ComposeContext, ComposedWork } from "./ProjectComposer";
 import type { QuickVideoPreset } from "./QuickVideo";
-const RecipeGallery = lazy(() => import("./RecipeGallery").then(module => ({ default: module.RecipeGallery })));
-const CreationWizard = lazy(() => import("./CreationWizard").then(module => ({ default: module.CreationWizard })));
-import { ReferenceBuilder } from "./ReferenceBuilder";
-import { ENCODING_OPTIONS, RenderSummary, TTS_ENGINES, ttsCost } from "./RenderSummary";
+import { ttsCost } from "./tts-cost";
+import { useStudioRoute, type StudioLocation, type StudioRequest } from "./shell/use-studio-route";
+import { readStyleSnapshot } from "./style-snapshot";
+import { type StudioView, type WorkspaceTool } from "./workspace-navigation";
+const LocalGitWorks = lazy(() => import("./LocalGitWorks").then(module => ({ default: module.LocalGitWorks })));
+const IdeaStudioViews = lazy(() => import("./IdeaStudioViews"));
+const IdeaStudioWorkspace = lazy(() => import("./IdeaStudioWorkspace"));
 const labels: Record<string, string> = { recovering: "正在查询任务状态", queued: "排队中", compose: "整理资料", rehearse: "虚拟试讲", render: "渲染视频", stopping: "正在停止", done: "已完成", failed: "失败", cancelled: "已取消", interrupted: "任务已中断" };
-const themeLabels = ["Glint 深色", "Glint 浅色", "奶油编辑部", "薄荷清爽", "海报大字", "手绘笔记", "复古报刊", "黑板科技", "白板马克笔", "工程蓝图"];
+
+function themeForSelector(value: SceneScriptProject["theme"]): string | undefined {
+  const name = typeof value === "string" ? value : readStyleSnapshot(value)?.name;
+  return name && (THEME_IDS as readonly string[]).includes(name) ? name : undefined;
+}
+function unsupportedTheme(value: SceneScriptProject["theme"]): string | undefined {
+  if (typeof value === "string" && !themeForSelector(value)) return `工程使用未知风格「${value}」；原始主题已保留，生成前请选择可用风格。`;
+  if (value && typeof value === "object" && Object.hasOwn(value, "glintStyleSnapshot") && !readStyleSnapshot(value)) return "工程包含无法识别的风格快照版本或格式；原始快照已保留，生成前请确认并更换风格。";
+  return undefined;
+}
 const key = "glint.last-job";
-const field: CSSProperties = { width: "100%", minWidth: 0, border: "1px solid #35414e", borderRadius: 10, background: "#141b24", color: "#f2f6fa", padding: 12, font: "inherit" };
-const button: CSSProperties = { border: "1px solid #586579", borderRadius: 10, background: "#202d3d", color: "#f2f6fa", padding: "12px 18px", font: "inherit", cursor: "pointer" };
-export function IdeaStudio({ cardStyle }: { cardStyle: CSSProperties }) {
+export function IdeaStudio({ cardStyle, onViewChange, onOpenSettings, onOpenTimeline, location, onLocationChange }: { cardStyle: CSSProperties; onViewChange?(view: StudioView): void; onOpenSettings?(): void; onOpenTimeline?(sourceId:string):void; location?: StudioRequest; onLocationChange?(location: StudioLocation): void }) {
+  const [view, setView] = useState<StudioView>("home");
+  const [workspaceToolsVisited, setWorkspaceToolsVisited] = useState(false);
+  const [tool, setTool] = useState<WorkspaceTool | null>(null);
+  const [visited, setVisited] = useState({ plan: false, templates: false, create: false, reference: false });
+  const navigate = (next: StudioView) => {
+    setView(next); setTool(null);
+    if (next === "plan" || next === "templates") setVisited(current => ({ ...current, [next]: true }));
+  };
+  const openTool = (next: WorkspaceTool) => {
+    setWorkspaceToolsVisited(true);
+    setView("workspace"); setTool(next);
+    if (next === "create" || next === "reference") setVisited(current => ({ ...current, [next]: true }));
+    if (next === "history") refreshRevisions();
+  };
+  useEffect(() => { onViewChange?.(view); }, [view, onViewChange]);
   const [mode, setMode] = useState<"source" | "idea">("source");
   const [text, setText] = useState("");
   const [template, setTemplate] = useState("explainer");
@@ -31,8 +61,16 @@ export function IdeaStudio({ cardStyle }: { cardStyle: CSSProperties }) {
   const [retry, setRetry] = useState(0);
   const [recoveryRequest, setRecoveryRequest] = useState<string | null>(null);
   const [projects, setProjects] = useState<SavedProject[]>([]);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [recipesOpen, setRecipesOpen] = useState(false);
+  const [sessionBackups, setSessionBackups] = useState<SessionBackup[]>([]);
+  const [backupNotice, setBackupNotice] = useState("");
+  const [backupSelection, setBackupSelection] = useState<string | null>(null);
+  const [backupRecovering, setBackupRecovering] = useState(false);
+  const recoveryLock = useRef(false);
+  const refreshSessionBackups = () => {
+    try { setSessionBackups(readSessionBackups()); setBackupNotice(""); }
+    catch { setBackupNotice("无法读取本机备份，请检查浏览器存储权限。"); }
+  };
+  const [revisions, setRevisions] = useState<ProjectRevision[]>([]);
   const [recipePreset, setRecipePreset] = useState<QuickVideoPreset | undefined>(undefined);
   const [sharedProjects, setSharedProjects] = useState<Array<{ projectId: string; title: string; revision: number }>>([]);
   const [sharedMessage, setSharedMessage] = useState("");
@@ -42,9 +80,14 @@ export function IdeaStudio({ cardStyle }: { cardStyle: CSSProperties }) {
   };
   const openSharedProject = async (id: string) => {
     try {
+      const input = registrationInput.current, signature = JSON.stringify(input);
+      const guarded = [id, ...(input.project ? [input.project.id] : [])];
+      assertAuthoringCanLeave(guarded);
       const response = await fetch(`/api/session/snapshot?projectId=${encodeURIComponent(id)}`); const value = await response.json(); if (!response.ok) throw new Error(value.error);
       const next = parseEditorProject(value.snapshot.document);
-      setProject(next); setTheme(typeof next.theme === "string" ? next.theme : "glint-dark"); setAspect(next.aspect); setEditorVersion(value => value + 1); setProjectId(null); setReview(null); setEvidence(""); setError("");
+      if (JSON.stringify(registrationInput.current) !== signature) throw new Error("读取共享工程期间当前输入发生变化，未替换编辑区。");
+      assertAuthoringCanLeave(guarded);
+      setProject(next); syncProjectTheme(next); setAspect(next.aspect); setEditorVersion(value => value + 1); setProjectId(null); setReview(null); setEvidence(""); setError(""); navigate("workspace");
     } catch (error) { setError(error instanceof Error ? error.message : "打开共享工程失败"); }
   };
   const [project, setProject] = useState<SceneScriptProject | null>(null);
@@ -77,36 +120,144 @@ export function IdeaStudio({ cardStyle }: { cardStyle: CSSProperties }) {
   };
   useEffect(() => { void refreshMusic(); }, []);
   const [storageStatus, setStorageStatus] = useState("");
+  const [storageWarning, setStorageWarning] = useState(false);
+  const workspaceBaseline = useRef<string | null>(null);
   const [restored, setRestored] = useState(false);
+  const [storageRecoveryBlocked, setStorageRecoveryBlocked] = useState(false);
+  const [gitRegistration, setGitRegistration] = useState<SceneScriptProject | null>(null);
+  const [gitNotice, setGitNotice] = useState("");
+  const [gitWorksOpen, setGitWorksOpen] = useState(false);
+  const discoveredGit = useRef<LocalGitSelection | null>(null);
+  const [gitSourceNotice, setGitSourceNotice] = useState("");
+  const registrationInput = useRef({ project, aspect, mode, text, template, theme, evidence });
+  registrationInput.current = { project, aspect, mode, text, template, theme, evidence };
   const [projectId, setProjectId] = useState<string | null>(null);
+  const registerGitProject = (value: SceneScriptProject, context: { mode: "source" | "idea"; text: string; template: string; theme: string; evidence?: string }, automatic: boolean) => {
+    setGitRegistration(value);
+    try {
+      assertGitStorageReady(value.id);
+      const stored = readGitProject(value.id);
+      if (!stored || !sameGitProject(stored, value)) throw new Error("完整本机版本已变化，未登记过期工程；请先导出并核对。");
+      void import("./git-local-works").then(module => module.rememberLocalGitSource(value, context)).catch(cause => {
+        if (mounted.current) setGitSourceNotice(cause instanceof Error ? cause.message : "原资料记录未保存；本机主快照仍可找回。");
+      });
+      const registration = prepareGitProjectRegistration(value, context);
+      if ((!automatic && !registration.existing) || registration.requiresConfirmation) {
+        setGitNotice(registration.requiresConfirmation ? "完整本机版本与作品列表不同；确认后仅更新该作品入口，不更改 Git 历史。" : "已找到当前完整本机工程；可登记到作品列表，未自动恢复已删除的入口。");
+        return;
+      }
+      const saved = registration.commit();
+      setProjectId(saved.id); setProjects(readSavedProjectsStrict()); setGitRegistration(null);
+      setGitNotice("完整本机版本已登记到作品列表；共享服务端保存状态请查看工程同步栏。");
+    } catch (cause) { setGitNotice(`完整本机版本仍保留；作品列表登记未完成：${cause instanceof Error ? cause.message : "请检查本机存储权限。"}`); }
+  };
+  const retryGitRegistration = () => {
+    if (!gitRegistration) return;
+    try {
+      const input = registrationInput.current;
+      const verify = () => {
+        assertGitStorageReady(gitRegistration.id);
+        assertLocalWorkspaceCurrent(workspaceBaseline.current);
+        const current = registrationInput.current;
+        if (current !== input || !current.project || !sameGitProject({ ...current.project, aspect: current.aspect as SceneScriptProject["aspect"] }, gitRegistration))
+          throw new Error("编辑区已产生新修改；请先保存或导出当前草稿，未登记旧版本。");
+        const stored = readGitProject(gitRegistration.id);
+        if (!stored || !sameGitProject(stored, gitRegistration)) throw new Error("完整本机版本已变化，请先核对。");
+      };
+      verify();
+      const registration = prepareGitProjectRegistration(gitRegistration, { mode: input.mode, text: input.text, template: input.template, theme: input.theme, evidence: input.evidence });
+      if (registration.requiresConfirmation && !window.confirm("将作品列表中的该工程入口更新为当前完整本机版本？其他作品和 Git 历史不会更改。")) return;
+      // A confirmation dialog does not lock storage or React state in this or another tab.
+      verify();
+      const saved = registration.commit();
+      setProjectId(saved.id); setProjects(readSavedProjectsStrict()); setGitRegistration(null);
+      setGitNotice("完整本机版本已登记到作品列表。");
+    } catch (cause) { setGitNotice(cause instanceof Error ? cause.message : "作品列表登记未确认，请先导出备份。"); }
+  };
+  const openLocalGitVersion = async () => {
+    if (!gitRegistration || busy || submitting || composing) return;
+    try {
+      assertLocalWorkspaceCurrent(workspaceBaseline.current);
+      const input = registrationInput.current;
+      const guarded = [...new Set([gitRegistration.id, project?.id].filter((id): id is string => typeof id === "string"))];
+      assertAuthoringCanLeave(guarded);
+      const local = await loadLocalGitVersion(gitRegistration.id);
+      if (!mounted.current || registrationInput.current !== input) throw new Error("载入期间编辑区已变化，未替换当前输入。");
+      const listRaw = localStorage.getItem("glint.projects");
+      const matches = readSavedProjectsStrict().filter(item => item.id === local.project.id || item.project?.id === local.project.id);
+      if (matches.length > 1) throw new Error("多个作品匹配同一工程，请先核对列表，未替换当前输入。");
+      const discovered = discoveredGit.current?.project.id === local.project.id ? discoveredGit.current : null;
+      discovered?.assertCurrent();
+      const source = matches[0] ?? (project?.id === local.project.id ? { mode, text, template, theme, evidence } : discovered?.context);
+      if (!source && !discovered) throw new Error("当前工程不匹配且作品入口未记录原资料；请先从本机工程列表核对，未将其他作品资料混入本机版本。");
+      if (!window.confirm(`${!source ? "未找到匹配的原资料记录，将使用空资料与空凭据，不套用当前工程文字。" : ""}载入此工程上次接受的本机主快照及当前本机附件？这不是某次 Git 提交的还原；附件可能包含后续编辑。当前未保存输入会被替换，请先导出当前工程 JSON（不含脚本、设计或素材文件）。`)) return;
+      if (registrationInput.current !== input || localStorage.getItem("glint.projects") !== listRaw) throw new Error("确认期间编辑区或作品列表已变化，未替换当前输入。");
+      assertAuthoringCanLeave(guarded);
+      assertLocalWorkspaceCurrent(workspaceBaseline.current); local.assertCurrent();
+      discovered?.assertCurrent();
+      const context = { mode: source?.mode ?? "source" as const, text: source?.text ?? "", template: source?.template ?? "explainer", theme: themeForSelector(local.project.theme) ?? source?.theme ?? "glint-dark", evidence: source?.evidence ?? "" };
+      workspaceBaseline.current = saveLocalWorkspace({ ...context, aspect: local.project.aspect, project: local.project }, workspaceBaseline.current);
+      setMode(context.mode); setText(context.text); setTemplate(context.template); setEvidence(context.evidence);
+      setProject(local.project); syncProjectTheme(local.project); setAspect(local.project.aspect); setEditorVersion(value => value + 1);
+      setProjectId(null); setReview(null); setError(""); setGitRegistration(local.project); navigate("workspace");
+      setGitNotice("已载入上次接受的本机主快照和当前本机附件（可能含后续编辑），未还原 Git 提交；可继续核对并登记作品。");
+    } catch (cause) { setGitNotice(cause instanceof Error ? cause.message : "本机版本未载入，当前输入仍保留。"); }
+  };
+  useEffect(() => { setRevisions(projectId ? readRevisions(projectId) : []); }, [projectId]);
+  const refreshRevisions = (id: string | null = projectId) => setRevisions(id ? readRevisions(id) : []);
   const [editorVersion, setEditorVersion] = useState(0);
-  const editorProject = useMemo(() => project ? { ...project, aspect: aspect as SceneScriptProject["aspect"], theme: project.theme && typeof project.theme !== "string" ? project.theme : theme } : null, [project, aspect, theme]);
+  const editorProject = useMemo(() => project ? { ...project, aspect: aspect as SceneScriptProject["aspect"] } : null, [project, aspect]);
+  const themeWarning = project ? unsupportedTheme(project.theme) : undefined;
+  const selectorTheme = project?.theme !== undefined ? themeForSelector(project.theme) ?? "" : theme;
+  const syncProjectTheme = (next: SceneScriptProject, fallback = "glint-dark") => setTheme(themeForSelector(next.theme) ?? ((THEME_IDS as readonly string[]).includes(fallback) ? fallback : "glint-dark"));
   const useRecipe = (recipe: { title: string; sample: string; sampleMode: "source" | "idea"; template: string; theme: string; aspect: string }) => {
-    setTemplate(recipe.template); setTheme(recipe.theme);
-    setAspect(recipe.aspect === "9:16" || recipe.aspect === "1:1" ? recipe.aspect : "16:9");
-    setMode(recipe.sampleMode); setText(recipe.sample); setProject(null); setReview(null); setEvidence(""); setError("");
     setRecipePreset({ label: recipe.title, text: recipe.sample, aspect: recipe.aspect === "9:16" || recipe.aspect === "1:1" ? recipe.aspect : "16:9", template: recipe.template, theme: recipe.theme, nonce: Date.now() });
     setStorageStatus(`已套用模板：${recipe.title}`);
-    requestAnimationFrame(() => document.querySelector('[aria-label="快速成片"]')?.scrollIntoView({ block: "center", behavior: "smooth" }));
+    navigate("home");
   };
-  const receiveSessionProject = (next: SceneScriptProject) => { setProject(next); setTheme(typeof next.theme === "string" ? next.theme : "glint-dark"); setAspect(next.aspect); setReview(null); };
+  const receiveSessionProject = (next: SceneScriptProject) => {
+    // The session client echoes the editor project back after every connect/save
+    // (including failed connects); only a genuinely different project may drop
+    // the pending narration review.
+    if (editorProject && JSON.stringify(editorProject) === JSON.stringify(next)) return;
+    setProject(next); syncProjectTheme(next); setAspect(next.aspect); setReview(null);
+  };
   const importRef = useRef<HTMLInputElement>(null);
   const lock = useRef(false);
   const mounted = useRef(true);
   const submission = useRef<{ signature: string; requestId: string } | null>(null);
   const active = useRef<AbortController | null>(null);
-  const busy = Boolean(recoveryRequest || job && !terminalJob(job));
+  const busy = !restored || Boolean(recoveryRequest || job && !terminalJob(job));
   useEffect(() => {
     mounted.current = true;
-    try {
+    let cancelled = false;
+    void (async () => { try {
       setProjects(readSavedProjects());
-      const workspace = JSON.parse(localStorage.getItem("glint.workspace") ?? "null");
+      const workspace = await recoverStudioWorkspace();
+      if (cancelled) return;
+      if (JSON.stringify(readWorkspace(localStorage)) !== JSON.stringify(workspace)) throw new Error("恢复期间其他窗口更新了工作区，未载入过期草稿；请重新载入核对。");
+      workspaceBaseline.current = localStorage.getItem("glint.workspace");
       if (workspace && typeof workspace.text === "string" && workspace.text.length <= 12000) {
         setText(workspace.text); setMode(workspace.mode === "idea" ? "idea" : "source");
-        if (TEMPLATES.some(item => item.id === workspace.template)) setTemplate(workspace.template);
-        if (THEME_IDS.includes(workspace.theme)) setTheme(workspace.theme);
-        if (["16:9", "9:16", "1:1"].includes(workspace.aspect)) setAspect(workspace.aspect);
-        if (workspace.project) setProject(parseEditorProject(workspace.project));
+        if (typeof workspace.template === "string" && TEMPLATES.some(item => item.id === workspace.template)) setTemplate(workspace.template);
+        if (typeof workspace.theme === "string" && (THEME_IDS as readonly string[]).includes(workspace.theme)) setTheme(workspace.theme);
+        if (typeof workspace.aspect === "string" && ["16:9", "9:16", "1:1"].includes(workspace.aspect)) setAspect(workspace.aspect);
+        if (workspace.project) {
+          const restoredProject = parseEditorProject(workspace.project); setProject(restoredProject);
+          syncProjectTheme(restoredProject, typeof workspace.theme === "string" ? workspace.theme : undefined);
+          // A workspace may contain a newer, not-yet-applied aspect selection.
+          // Git restores persist the accepted project's aspect in the same transaction.
+          if (typeof workspace.aspect !== "string" || !["16:9", "9:16", "1:1"].includes(workspace.aspect)) setAspect(restoredProject.aspect);
+          try {
+            const complete = readGitProject(restoredProject.id);
+            if (complete && sameGitProject(complete, restoredProject)) registerGitProject(restoredProject, {
+              mode: workspace.mode === "idea" ? "idea" : "source", text: workspace.text,
+              template: typeof workspace.template === "string" ? workspace.template : "explainer",
+              theme: themeForSelector(restoredProject.theme) ?? (typeof workspace.theme === "string" ? workspace.theme : "glint-dark"),
+              ...(typeof workspace.evidence === "string" ? { evidence: workspace.evidence } : {}),
+            }, false);
+          } catch (cause) { setGitRegistration(restoredProject); setGitNotice(cause instanceof Error ? cause.message : "完整本机版本待核对。"); }
+        }
         if (typeof workspace.evidence === "string") setEvidence(workspace.evidence);
         setStorageStatus("已恢复本机草稿");
       }
@@ -114,40 +265,96 @@ export function IdeaStudio({ cardStyle }: { cardStyle: CSSProperties }) {
       const pending = localStorage.getItem(`${key}:request`);
       if(pending && /^[a-zA-Z0-9-]{8,80}$/.test(pending)) setRecoveryRequest(pending);
       else if (saved && /^idea-[a-z0-9-]+$/.test(saved)) setJob({ id: saved, status: "recovering", stage: "recovering", log: [] });
-    } catch { /* Storage can be disabled. */ }
-    setRestored(true);
-    return () => { mounted.current = false; active.current?.abort(); };
+    } catch (cause) {
+      if (cancelled) return;
+      setStorageWarning(true); setStorageRecoveryBlocked(true);
+      setStorageStatus(cause instanceof Error ? cause.message : "本机恢复未完成，未覆盖原始工作区；请先导出备份。");
+    }
+    if (!cancelled) setRestored(true);
+    })();
+    return () => { cancelled = true; mounted.current = false; active.current?.abort(); };
   }, []);
-  useEffect(() => { if (project) setAdvancedOpen(true); }, [project?.id]);
   useEffect(() => {
-    if (!restored) return;
+    if (!restored || storageRecoveryBlocked) return;
     const timer = setTimeout(() => {
-      try { localStorage.setItem("glint.workspace", JSON.stringify({ mode, text, template, theme, aspect, project, evidence })); setStorageStatus("已自动保存到本机"); }
-      catch { setStorageStatus("本机存储不可用，请导出 JSON 备份"); }
+      try {
+        workspaceBaseline.current = saveLocalWorkspace({ mode, text, template, theme, aspect, project, evidence }, workspaceBaseline.current);
+        setStorageStatus("已自动保存到本机"); }
+      catch (cause) { setStorageWarning(true); setStorageStatus(cause instanceof Error ? cause.message : "本机存储不可用，请导出 JSON 备份"); }
     }, 600);
     return () => clearTimeout(timer);
-  }, [restored, mode, text, template, theme, aspect, project, evidence]);
+  }, [restored, storageRecoveryBlocked, mode, text, template, theme, aspect, project, evidence]);
   const rememberProject = () => {
     if (!text.trim() && !project) return;
     try {
       const next = saveProject({ id: projectId ?? crypto.randomUUID(), name: project?.title ?? text.trim().split(/\r?\n/)[0]?.slice(0, 42) ?? "未命名项目", mode, text, template, theme, aspect, ...(project ? { project, evidence } : {}) });
+      recordRevision(next, { label: "手动保存", reason: "manual" }); refreshRevisions(next.id);
       setProjectId(next.id); setProjects(readSavedProjects()); setStorageStatus("项目已保存");
     } catch { setError("保存失败，请导出项目 JSON 备份。"); }
   };
   const restoreProject = (saved: SavedProject) => {
     if (busy || submitting || composing) return;
-    setMode(saved.mode); setText(saved.text); setTemplate(saved.template); setTheme(saved.theme); setAspect(saved.aspect);
-    setProject(saved.project ? parseEditorProject(saved.project) : null); setEditorVersion(value => value + 1); setEvidence(saved.evidence ?? ""); setReview(null); setProjectId(saved.id); setError("");
+    try {
+      if (storageRecoveryBlocked) throw new Error("本机恢复尚未完成；请先重试本机恢复，未打开旧作品快照。");
+      const targetId = saved.project?.id ?? saved.id;
+      const guarded = [targetId, ...(project ? [project.id] : [])];
+      assertAuthoringCanLeave(guarded);
+      assertGitStorageReady(targetId);
+      assertLocalWorkspaceCurrent(workspaceBaseline.current);
+      const current = readSavedProjectsStrict().find(item => item.id === saved.id);
+      if (!current || JSON.stringify(current) !== JSON.stringify(saved)) throw new Error("作品列表已变化；未打开过期快照，请刷新后核对。");
+      const next = saved.project ? parseEditorProject(saved.project) : null;
+      const complete = readGitProject(targetId);
+      if (complete && (!next || !sameGitProject(complete, next))) {
+        setGitRegistration(complete);
+        setGitNotice("该作品的列表分镜与上次 Git 完整版本不同。脚本、设计、品牌和素材不会随列表快照恢复；也可显式载入本机主快照与当前附件。");
+        const input = registrationInput.current;
+        if (!window.confirm(next ? "仅载入作品列表的分镜快照？脚本、设计、品牌及素材仍保留当前本机内容，不会执行 Git 完整恢复。取消可保留当前编辑区。"
+          : "该文本作品同编号下保留了完整本机主快照。仅载入列表文本草稿（不含分镜）？不会恢复脚本、设计、品牌或素材；取消可保留当前编辑区。")) return;
+        // Confirmation is not a lock: recheck disk, rendered input and list before accepting the choice.
+        assertGitStorageReady(targetId); assertLocalWorkspaceCurrent(workspaceBaseline.current);
+        const latest = readGitProject(targetId);
+        if (registrationInput.current !== input || JSON.stringify(readSavedProjectsStrict().find(item => item.id === saved.id)) !== JSON.stringify(saved) || !latest || !sameGitProject(latest, complete))
+          throw new Error("确认期间本机版本变化，未载入过期快照。");
+      }
+      assertAuthoringCanLeave(guarded);
+      setMode(saved.mode); setText(saved.text); setTemplate(saved.template); if (next) syncProjectTheme(next, saved.theme); else setTheme(saved.theme); setAspect(next?.aspect ?? saved.aspect);
+      setProject(next); setEditorVersion(value => value + 1); setEvidence(saved.evidence ?? ""); setReview(null); setProjectId(saved.id); setError("");
+      if (next) navigate("workspace"); else openTool("create");
+    } catch (cause) { setGitNotice(cause instanceof Error ? cause.message : "打开作品未确认，当前输入仍保留。"); }
+  };
+  const openProjectById = (id: string): boolean => {
+    if (project?.id === id) { navigate("workspace"); return true; }
+    const saved = readSavedProjects().find(item => (item.project?.id ?? item.id) === id || item.id === id);
+    if (!saved) { setGitNotice("没有找到这个工程：它可能已被删除，或保存在另一台设备上。"); return false; }
+    restoreProject(saved);
+    return true;
+  };
+  useStudioRoute({ ready: restored, request: location, view, projectId: project?.id, navigate, openProject: openProjectById, onLocationChange });
+  const retryLocalRecovery = async () => {
+    try {
+      const recovered = await recoverStudioWorkspace();
+      if (!mounted.current) return;
+      const recoveredProject = recovered?.project ? parseEditorProject(recovered.project) : null;
+      assertGitStorageReady(recoveredProject?.id);
+      if (storageRecoveryBlocked || localStorage.getItem("glint.workspace") !== workspaceBaseline.current) {
+        setGitNotice("本机恢复核对完成。为保留当前内存输入，请先导出当前草稿，再重新载入页面；未用磁盘版本覆盖编辑区。");
+        return;
+      }
+      setGitNotice("恢复日志已清理；当前输入仍保留，可重试登记作品。");
+    } catch (cause) { setGitNotice(cause instanceof Error ? cause.message : "本机恢复尚未完成，原始资料仍保留。"); }
   };
   const compose = async () => {
     if (lock.current || busy || !text.trim()) return;
+    if (themeWarning) { setError(themeWarning); return; }
+    if (project?.theme && typeof project.theme === "object" && !window.confirm("重新生成会替换当前分镜及工程中保存的风格参数或快照。是否继续？")) return;
     lock.current = true; setComposing(true); setError("");
     const controller = new AbortController(); active.current = controller;
     try {
       const response = await fetch("/api/compose", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ [mode]: text, engine, template, theme, aspect }), signal: AbortSignal.any([controller.signal, AbortSignal.timeout(180000)]) });
       const value = await response.json();
       if (!response.ok) throw new Error(value.error ?? "编排失败");
-      if (mounted.current) { setProject(parseEditorProject(value.project)); setEditorVersion(value => value + 1); setEvidence(value.source); setReview(value.review); if (value.generatedSource) setStorageStatus("模型生成的资料尚未经外部事实核验"); }
+      if (mounted.current) { const next = parseEditorProject(value.project); setProject(next); syncProjectTheme(next, theme); setEditorVersion(value => value + 1); setEvidence(value.source); setReview(value.review); navigate("workspace"); if (value.generatedSource) setStorageStatus("模型生成的资料尚未经外部事实核验"); }
     } catch (err) { if (mounted.current) setError(err instanceof Error ? err.message : "编排失败"); }
     finally { lock.current = false; if (mounted.current) setComposing(false); }
   };
@@ -188,10 +395,11 @@ export function IdeaStudio({ cardStyle }: { cardStyle: CSSProperties }) {
   }, [job?.id, busy, paused, retry]);
   const submit = async () => {
     if (lock.current || busy || (!text.trim() && !project)) return;
+    if (themeWarning) { setError(themeWarning); return; }
     if (costBlocked) { setError("当前配音引擎可能产生费用，请先勾选“我确认可能产生费用”。"); return; }
     lock.current = true; setSubmitting(true); setError("");
     const controller = new AbortController(); active.current = controller;
-    const payload = { ...(project ? { project: { ...project, aspect, theme } } : { [mode]: text }), template, theme, aspect, tts, encoding, music };
+    const payload = { ...(editorProject ? { project: editorProject } : { [mode]: text }), template, theme, aspect, tts, encoding, music };
     const signature = JSON.stringify(payload);
     if (submission.current?.signature !== signature) submission.current = { signature, requestId: crypto.randomUUID() };
     try { localStorage.setItem(`${key}:request`,submission.current.requestId); } catch {}
@@ -218,139 +426,119 @@ export function IdeaStudio({ cardStyle }: { cardStyle: CSSProperties }) {
   const loadProjectDocument = (value: unknown) => {
     try {
       const next = parseEditorProject(value);
+      assertAuthoringCanLeave([next.id, ...(project ? [project.id] : [])]);
       if (project) {
         try { saveProject({ id: projectId ?? crypto.randomUUID(), name: project.title, mode, text, template, theme, aspect, project, evidence }); setProjects(readSavedProjects()); }
         catch { throw new Error("当前工程备份失败，请先导出项目 JSON，再继续编辑。"); }
       }
       setProject(next); setEditorVersion(version => version + 1); setAspect(next.aspect);
-      if (typeof next.theme === "string" && THEME_IDS.some(id => id === next.theme)) setTheme(next.theme);
+      syncProjectTheme(next);
       setProjectId(null); setReview(null); setEvidence(""); setError("");
-      setStorageStatus("已载入新工程，可继续修改");
-    } catch (error) { setError(error instanceof Error ? error.message : "无法载入工程，请重试。"); }
+      setStorageStatus("已载入新工程，可继续修改"); navigate("workspace");
+      return true;
+    } catch (error) { setError(error instanceof Error ? error.message : "无法载入工程，请重试。"); return false; }
   };
-  return <section aria-label="创作首页" style={{ width: "min(94vw, 1180px)", display: "grid", gap: 36 }} onKeyDown={event => {
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); if (!busy && !submitting && !composing) rememberProject(); }
+  const applySnapshot = (snapshot: SavedProject) => {
+    const next = snapshot.project ? parseEditorProject(snapshot.project) : null;
+    assertAuthoringCanLeave([snapshot.project?.id ?? snapshot.id, ...(project ? [project.id] : [])]);
+    setMode(snapshot.mode); setText(snapshot.text); setTemplate(snapshot.template); if (next) syncProjectTheme(next, snapshot.theme); else setTheme(snapshot.theme); setAspect(snapshot.aspect);
+    setProject(next);
+    setEvidence(snapshot.evidence ?? ""); setReview(null); setError(""); setEditorVersion(version => version + 1);
+  };
+  const beforeHomeCreate = () => {
+    const input = registrationInput.current, signature = JSON.stringify(input);
+    const verify = () => {
+      if (JSON.stringify(registrationInput.current) !== signature) throw new Error("生成期间当前工程已变化；新工程结果保留，请先保存当前修改再打开。");
+      assertLocalWorkspaceCurrent(workspaceBaseline.current);
+      assertAuthoringCanLeave(input.project ? [input.project.id] : []);
+      if (readSavedProjectsStrict().length >= 20) throw new Error("作品列表已满，请先整理或导出作品，再开始新工程。");
+    };
+    verify(); return verify;
+  };
+  const acceptHomeProject = (work: ComposedWork, context: ComposeContext) => {
+    const next = parseEditorProject(work.project), input = registrationInput.current;
+    assertLocalWorkspaceCurrent(workspaceBaseline.current);
+    assertAuthoringCanLeave([next.id, ...(input.project ? [input.project.id] : [])]);
+    const list = readSavedProjectsStrict(), targets = list.filter(item => item.id === next.id || item.project?.id === next.id);
+    if (targets.length > 1 || targets[0] && (!targets[0].project || !sameGitProject(targets[0].project, next))) throw new Error("新工程编号已被其他作品使用；结果保留，未覆盖旧作品。");
+    const old = input.project && input.project.id !== next.id ? list.filter(item => item.project?.id === input.project!.id) : [];
+    if (old.length > 1) throw new Error("当前工程有多个作品入口，请先核对后再打开新工程。");
+    const oldId = projectId ?? old[0]?.id ?? input.project?.id;
+    const targetId = targets[0]?.id ?? next.id;
+    if (new Set([...list.map(item => item.id), targetId, ...(input.project && oldId ? [oldId] : [])]).size > 20) throw new Error("作品列表已满；新工程结果保留，请先整理作品，不会淘汰旧作品。");
+    if (input.project && input.project.id !== next.id && oldId) saveProject({ id: oldId, name: input.project.title, mode: input.mode, text: input.text, template: input.template, theme: input.theme, aspect: input.aspect, project: input.project, evidence: input.evidence });
+    const nextTheme = themeForSelector(next.theme) ?? context.theme;
+    const nextTemplate = TEMPLATES.some(item => item.id === context.template) ? context.template : "explainer";
+    const saved = saveProject({ id: targetId, name: next.title, mode: "source", text: work.source, template: nextTemplate, theme: nextTheme, aspect: next.aspect, project: next, evidence: work.source });
+    setMode("source"); setText(work.source); setTemplate(nextTemplate); setTheme(nextTheme); setAspect(next.aspect);
+    setProject(next); setProjectId(saved.id); setEditorVersion(value => value + 1); setEvidence(work.source); setReview(null); setError(""); setProjects(readSavedProjectsStrict());
+    try { recordRevision(saved, { label: "首次生成", reason: "generated" }); refreshRevisions(saved.id); }
+    catch { setStorageStatus("工程已保存，历史记录写入未确认；请导出备份。"); }
+    navigate("workspace");
+  };
+  const restoreFromRevision = (revision: ProjectRevision) => {
+    try {
+      const snapshot = restoreRevision(revision);
+      applySnapshot(snapshot); setProjectId(snapshot.id); navigate("workspace");
+      setStorageStatus(`已载入版本「${revision.label}」；保存后覆盖当前工程`);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "历史版本未载入，当前输入仍保留。"); }
+  };
+  const branchFromRevision = (revision: ProjectRevision) => {
+    try {
+      assertAuthoringCanLeave([revision.snapshot.project?.id ?? revision.snapshot.id, ...(project ? [project.id] : [])]);
+      const branch = saveProject(branchRevision(revision));
+      applySnapshot(branch); setProjectId(branch.id); setProjects(readSavedProjects());
+      recordRevision(branch, { label: `分支自 ${revision.label}`, reason: "branch" }); refreshRevisions(branch.id);
+      navigate("workspace"); setStorageStatus(`已创建分支「${branch.name}」`);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "创建分支失败：本机存储不可用"); }
+  };
+  const workspaceProps = {
+    editorVersion, view, onOpenTimeline, storageRecoveryBlocked, receiveSessionProject, registerGitProject,
+    tool, openTool, setTool, error, revisions, restoreFromRevision,
+    branchFromRevision, busy, composing, submitting, text, project,
+    rememberProject, setMode, setText, setProject, setReview, importRef,
+    loadProjectDocument, setError, storageStatus, setBackupSelection, refreshSessionBackups, backupNotice,
+    sessionBackups, setBackupNotice, backupRecovering, backupSelection, recoveryLock, setBackupRecovering,
+    mounted, setProjects, loadSharedProjects, sharedMessage, sharedProjects, projectId,
+    openSharedProject, projects, restoreProject, refreshRevisions, visited, mode,
+    setEvidence, aspect, template, setTemplate, selectorTheme, setTheme,
+    setAspect, themeWarning, engine, setEngine, compose, editorProject,
+    lock, syncProjectTheme, setEditorVersion, setProjectId, setStorageStatus, navigate,
+    evidence, recheck, review, tts, setTts, voiceEngines,
+    music, refreshMusic, setMusic, musicAssets, encoding, setEncoding,
+    costConfirmed, setCostConfirmedKey, preflightKey, costBlocked, submit, job,
+    cancel, recoveryRequest, setRecoveryRequest, setPaused, paused, setRetry,
+    setJob, submission, theme,
+  };
+  return <section aria-label="创作首页" className="idea-studio" data-view={view} onKeyDown={event => {
+    if (event.key === "Escape") setTool(null);
+    if (!event.defaultPrevented && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); if (!busy && !submitting && !composing) rememberProject(); }
   }}>
-    <HomeHero projects={projects} onOpen={restoreProject} disabled={busy || submitting || composing} preset={recipePreset} onOpenReference={() => {
-      setAdvancedOpen(true);
-      setTimeout(() => {
-        const target = document.querySelector<HTMLDetailsElement>('[aria-label="从参考片重建工程"]');
-        if (target) { target.open = true; target.scrollIntoView({ block: "center", behavior: "smooth" }); }
-      }, 150);
-    }} onEditProject={value => {
-      try {
-        const next = parseEditorProject(value);
-        if (project) {
-          try { saveProject({ id: projectId ?? crypto.randomUUID(), name: project.title, mode, text, template, theme, aspect, project, evidence }); setProjects(readSavedProjects()); }
-          catch { throw new Error("当前工程备份失败，请先导出项目 JSON，再继续编辑这支视频。"); }
-        }
-        setProject(next); setEditorVersion(version => version + 1); setAspect(next.aspect);
-        if (typeof next.theme === "string" && THEME_IDS.some(id => id === next.theme)) setTheme(next.theme);
-        setProjectId(null); setReview(null); setEvidence(""); setError("");
-        setStorageStatus("已载入这支视频的工程，可继续修改");
-      } catch (error) { setError(error instanceof Error ? error.message : "无法载入工程；仍可下载 MP4 后重试。"); }
-    }} />
-    <details style={{ ...cardStyle, padding: "16px 18px", borderRadius: 14, background: "#101013", border: "1px solid #26262b" }}>
-      <summary style={{ cursor: "pointer", color: "#aecef6", fontWeight: 600, fontSize: 13 }}>创作向导 · 从目标到分镜</summary>
-      <div style={{ paddingTop: 14 }}><Suspense fallback={<p role="status" style={{ color: "#8b8b95" }}>正在加载向导…</p>}>
-        <CreationWizard disabled={busy || submitting || composing} onCompose={(source, options) => {
-          const wizardTheme = typeof options.theme === "string" ? options.theme : "glint-dark";
-          if ((THEME_IDS as readonly string[]).includes(wizardTheme)) setTheme(wizardTheme as (typeof THEME_IDS)[number]);
-          if (options.aspect === "9:16" || options.aspect === "1:1") setAspect(options.aspect); else setAspect("16:9");
-          setMode("source"); setText(source);
-          setProject(null); setReview(null); setEvidence(""); setError("");
-          setStorageStatus("已载入向导计划，可直接生成或继续编辑");
-          requestAnimationFrame(() => document.querySelector('[aria-label="快速成片"]')?.scrollIntoView({ block: "center", behavior: "smooth" }));
-        }} />
-      </Suspense></div>
-    </details>
-    <details onToggle={event => setRecipesOpen(event.currentTarget.open)} style={{ ...cardStyle, padding: "16px 18px", borderRadius: 14, background: "#101013", border: "1px solid #26262b" }}>
-      <summary style={{ cursor: "pointer", color: "#aecef6", fontWeight: 600, fontSize: 13 }}>模板库 · 100 个实用配方</summary>
-      {recipesOpen && <div style={{ paddingTop: 14 }}><Suspense fallback={<p role="status" style={{ color: "#8b8b95" }}>正在加载模板…</p>}><RecipeGallery onUse={useRecipe} /></Suspense></div>}
-    </details>
-    <details open={advancedOpen} onToggle={event => setAdvancedOpen(event.currentTarget.open)} style={{ ...cardStyle, padding: "18px 22px", borderRadius: 14, background: "#101013", border: "1px solid #26262b" }}>
-      <summary style={{ cursor: "pointer", color: "#a1a1aa", fontWeight: 600, fontSize: 13 }}>高级编辑：版式、配音与导出</summary>
-      <div style={{ display: "grid", gap: 22, marginTop: 16 }}>
-    <details><summary style={{ cursor: "pointer" }}>从模板开始 · 选一个结果</summary>
-      <CreationLibrary disabled={busy || submitting || composing} onUse={instance => {
-        if (project) {
-          try { saveProject({ id: projectId ?? crypto.randomUUID(), name: project.title, mode, text, template, theme, aspect, project, evidence }); setProjects(readSavedProjects()); }
-          catch { throw new Error("当前工程备份失败，请先导出 JSON，再切换创作包。"); }
-        }
-        const next = parseEditorProject(instance.project);
-        setProject(next); setTheme(typeof next.theme === "string" ? next.theme : "glint-dark"); setAspect(next.aspect);
-        setEditorVersion(value => value + 1); setProjectId(null); setReview(null); setEvidence(""); setError("");
-        setText(""); setStorageStatus(`已从创作包 ${instance.pack.id} v${instance.pack.version} 创建新工程`);
-      }} />
-    </details>
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-      <button type="button" disabled={busy || composing || submitting} style={button} onClick={() => { setMode("source"); setText("# 清晰的讲解\n\n## 从问题开始\n先说清楚要解决什么问题。\n\n## 给出例子\n展示一个可以重复的操作，再解释结果和限制。"); setProject(null); setReview(null); }}>载入入门示例</button>
-      <button type="button" disabled={busy || composing || submitting} style={button} onClick={() => importRef.current?.click()}>导入项目 JSON</button>
-      <input ref={importRef} type="file" accept=".json,application/json" hidden onChange={async event => { const file = event.target.files?.[0]; if (!file) return; try { if (file.size > 100000) throw new Error("项目文件超过 100 KB"); const value = parseEditorProject(JSON.parse(await file.text())); setProject(value); setEditorVersion(value => value + 1); setAspect(value.aspect); if (typeof value.theme === "string" && THEME_IDS.some(theme => theme === value.theme)) setTheme(value.theme); setReview(null); setEvidence(""); setProjectId(null); setError(""); } catch (err) { setError(err instanceof Error ? err.message : "导入失败"); } finally { if (importRef.current) importRef.current.value = ""; } }} />
-      <span role="status" style={{ fontSize: 13, color: "#a7b4c4" }}>{storageStatus}</span>
+    {gitNotice && <section aria-label="完整本机版本与作品列表" className="studio-note"><p role="status">{gitNotice}</p><div className="ws-actions">
+      {gitRegistration && <><button type="button" className="g-btn g-btn--sm" onClick={retryGitRegistration}>登记完整本机版本</button><button type="button" className="g-btn g-btn--sm" disabled={busy || submitting || composing} onClick={openLocalGitVersion}>载入本机主快照与当前附件</button></>}
+      <button type="button" className="g-btn g-btn--sm" onClick={retryLocalRecovery}>重试本机恢复</button>
+      {project && <button type="button" className="g-btn g-btn--sm" title="仅含分镜工程，不含脚本、设计或素材文件" onClick={() => downloadJson(`${project.id}.local-draft.json`, project)}>导出当前工程 JSON</button>}
+    </div></section>}
+    <div hidden={view !== "home"}>
+      <HomeHero projects={projects} onOpen={restoreProject} disabled={busy || submitting || composing} preset={recipePreset}
+        onOpenPlan={() => navigate("plan")} onOpenTemplates={() => navigate("templates")}
+        onOpenReference={() => openTool("reference")} onOpenProject={() => openTool("imports")} onOpenAdvanced={() => openTool("create")}
+        onContinue={project || busy || paused || job ? () => { if (busy || paused || job) openTool("export"); else navigate("workspace"); } : undefined}
+        continueLabel={busy || paused ? "继续进行中的任务" : project?.title} currentProjectId={project?.id}
+        onEditProject={loadProjectDocument} beforeCreate={beforeHomeCreate} onCreateProject={acceptHomeProject} onOpenSettings={onOpenSettings} />
+      <details className="ws-details home-recovery" onToggle={event => { if (event.currentTarget.open) setGitWorksOpen(true); }}>
+        <summary>查找待登记的本机 Git 工程</summary>
+        {gitWorksOpen && <Suspense fallback={<p role="status">正在读取本机工程…</p>}><LocalGitWorks disabled={busy || submitting || composing} onSelect={selected => {
+          discoveredGit.current = selected; setGitRegistration(selected.project);
+          setGitNotice(`已选中「${selected.project.title}」的本机主快照；当前输入未变。请载入核对后登记作品。${selected.warning}`);
+        }} /></Suspense>}
+        {gitSourceNotice && <p role="status" className="ws-note">{gitSourceNotice}</p>}
+      </details>
     </div>
-    <details onToggle={event => { if (event.currentTarget.open) void loadSharedProjects(); }}>
-      <summary style={{ cursor: "pointer", color: "#aecef6" }}>从 Skill / CLI 继续</summary>
-      <p role="status">{sharedMessage}</p><div style={{ display: "grid", gap: 8 }}>{sharedProjects.map(item => <button type="button" key={item.projectId} style={{ ...button, textAlign: "left", overflowWrap: "anywhere" }} disabled={busy || composing || submitting} onClick={() => void openSharedProject(item.projectId)}>{item.title || item.projectId} · r{item.revision}<small style={{ display: "block" }}>{item.projectId}</small></button>)}</div>
-    </details>
-    <ReferenceBuilder onProject={loadProjectDocument} disabled={busy || submitting || composing} />
-    {projects.length > 0 && <details>
-      <summary style={{ cursor: "pointer", color: "#aecef6" }}>全部作品与删除</summary>
-      <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-        {projects.slice(0, 8).map((project) => <div key={project.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <button type="button" onClick={() => restoreProject(project)} style={{ ...button, flex: 1, textAlign: "left" }}>{project.name}<small style={{ display: "block", color: "#8d9aac" }}>{new Date(project.updatedAt).toLocaleString()}</small></button>
-          <button type="button" aria-label={`删除 ${project.name}`} onClick={() => { try { removeProject(project.id); setProjects(readSavedProjects()); } catch { setError("删除失败：本机存储不可用"); } }} style={button}>删除</button>
-        </div>)}
-      </div>
-    </details>}
-    <fieldset disabled={busy || submitting || composing} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-      <legend style={{ padding: "0 0 10px", fontWeight: 600 }}>资料与想法</legend>
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <button type="button" aria-pressed={mode === "source"} style={button} onClick={() => { setMode("source"); setText(""); setProject(null); setReview(null); }}>已有资料</button>
-        <button type="button" aria-pressed={mode === "idea"} style={button} onClick={() => { setMode("idea"); setText(""); setProject(null); setReview(null); }}>一句话想法</button>
-      </div>
-      <label htmlFor="make-input">{mode === "source" ? "粘贴 Markdown 或正文（最多 12000 字）" : "描述讲解主题（最多 2000 字）"}</label>
-      <textarea id="make-input" maxLength={mode === "source" ? 12000 : 2000} rows={5} value={text} onChange={(event) => { setText(event.target.value); setProject(null); setReview(null); }} placeholder={mode === "source" ? "# 标题\n\n## 核心概念\n资料正文…" : "例如：用扑克牌解释熵"} style={{ ...field, marginTop: 8, resize: "vertical" }} />
-    </fieldset>
-    <fieldset disabled={busy || submitting || composing} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-      <legend style={{ padding: "0 0 10px", fontWeight: 600 }}>版式与风格</legend>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 190px), 1fr))", gap: 14 }}>
-        <label>版式<select value={template} onChange={(e) => { setTemplate(e.target.value); setProject(null); setReview(null); }} style={field}>{TEMPLATES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
-        <label>风格<select aria-label="风格" value={theme} onChange={(e) => { setTheme(e.target.value); setProject(current => current ? { ...current, theme: e.target.value } : null); }} style={field}>{THEME_IDS.map((id, i) => <option key={id} value={id}>{themeLabels[i] ?? id}</option>)}</select></label>
-        <label>画幅<select value={aspect} onChange={(e) => setAspect(e.target.value)} style={field}>{["16:9", "9:16", "1:1"].map((value) => <option key={value}>{value}</option>)}</select></label>
-      </div>
-      <label>生成方式<select value={engine} onChange={event => setEngine(event.target.value)} style={field}><option value="heuristic">本地生成 · 不联网</option><option value="llm">模型生成 · 需要配置</option></select></label>
-      <p style={{ color: "#a7b4c4", fontSize: 13 }}>{TEMPLATES.find((item) => item.id === template)?.description} 资料要求：{TEMPLATES.find((item) => item.id === template)?.requires}。</p>
-    </fieldset>
-    <fieldset disabled={busy || composing || submitting} style={{ minWidth: 0, border: 0, padding: 0, margin: 0, display: "grid", gap: 14 }}>
-      <button type="button" disabled={!text.trim() || composing || busy} onClick={() => void compose()} style={button}>{composing ? "正在编排…" : project ? "重新生成（替换当前分镜）" : "生成分镜"}</button>
-      {editorProject && <SessionEditor key={`${editorProject.id}-${editorVersion}`} project={editorProject} voiceEngine={tts} onChange={receiveSessionProject} onFork={value => { receiveSessionProject(value); setEditorVersion(version => version + 1); }} />}
-      {project && <button type="button" style={button} disabled={!evidence} onClick={() => void recheck()}>重新核对旁白依据</button>}
-      {review && <details><summary>旁白依据核对 · {review.flagged}/{review.sentences.length} 句待看</summary><p style={{ color: "#a7b4c4", fontSize: 13 }}>{review.basis}</p>{review.sentences.filter((sentence) => sentence.flags.length).map((sentence, i) => <div key={i} style={{ padding: 10, borderBottom: "1px solid #304053" }}><strong>{sentence.sceneId}</strong><p>{sentence.text}</p><small>{sentence.flags.join(" / ")}</small>{sentence.candidates[0] && <blockquote>资料候选：{sentence.candidates[0].text}</blockquote>}</div>)}</details>}
-    </fieldset>
-    <div style={{ display: "grid", gap: 12 }}>
-      <strong>配音、配乐与导出</strong>
-      <p style={{ color: "#a7b4c4", fontSize: 13, margin: 0 }}>分镜优先于输入资料；改写资料或版式后请重新生成。Edge 配音联网，系统音色仅支持 Windows，本地克隆使用服务端参考音频。</p>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,210px),1fr))", gap: 12 }}>
-        <label>配音<select aria-label="配音" style={field} value={tts} onChange={event => setTts(event.target.value)} disabled={busy || submitting}>{TTS_ENGINES.map(item => <option key={item.id} value={item.id} disabled={!voiceEngines.includes(item.id)}>{item.label}{voiceEngines.includes(item.id) ? "" : " · 未配置"}</option>)}</select></label>
-        <label>背景配乐<select aria-label="背景配乐" style={field} value={music} onFocus={() => void refreshMusic()} onChange={event => setMusic(event.target.value)} disabled={busy || submitting}><option value="off">无配乐</option><option value="auto">本地氛围音 · 不联网</option>{musicAssets.map(asset => <option key={asset.name} value={asset.name}>{asset.name}</option>)}</select><small>在素材工坊生成 Suno / MiniMax 音乐后，回到这里选择；复用素材不会重新生成。</small></label>
-        <label>导出规格<select aria-label="导出规格" style={field} value={encoding} onChange={event => setEncoding(event.target.value)} disabled={busy || submitting}>{ENCODING_OPTIONS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
-      </div>
-      <RenderSummary project={project} tts={tts} encoding={encoding} confirmed={costConfirmed} disabled={busy || submitting || composing} onConfirmationChange={checked => setCostConfirmedKey(checked ? preflightKey : "")} />
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-        <button type="button" disabled={busy || submitting || composing || (!text.trim() && !project)} onClick={rememberProject} style={button}>保存项目</button>
-        <button disabled={busy || submitting || composing || (!text.trim() && !project) || costBlocked} title={costBlocked ? "请先勾选“我确认可能产生费用”" : undefined} onClick={() => void submit()} style={{ ...button, background: "#aecef6", color: "#101926", opacity: busy || submitting || composing || (!text.trim() && !project) || costBlocked ? 0.5 : 1 }}>{submitting ? "提交中…" : busy ? "制作中…" : "生成草稿"}</button>
-        {busy && job && <button style={button} disabled={job.status === "cancelling"} onClick={() => void cancel()}>取消任务</button>}
-        {recoveryRequest && <button style={button} onClick={()=>{setRecoveryRequest(null);setPaused(false);setError("已停止查询；服务器任务未取消。");try{localStorage.removeItem(`${key}:request`);}catch{}}}>停止查询</button>}
-        {paused && <button style={button} onClick={() => { setPaused(false); setRetry((value) => value + 1); }}>恢复查询</button>}
-        {job && terminalJob(job) && <button style={button} onClick={() => { setJob(null); setError(""); submission.current = null; try { localStorage.removeItem(key); } catch {} }}>清除任务记录</button>}
-      </div>
-      {error && <p role="alert" style={{ color: "#ffac98", margin: 0, overflowWrap: "anywhere" }}>{error}</p>}
-      {job && <div role="status" aria-live="polite" style={{ color: "#a7b4c4" }}>{labels[job.stage ?? job.status] ?? job.status}{job.status === "failed" ? `：${job.error ?? "请检查资料结构和模型配置。"}` : ""}</div>}
-      {job && job.log.length > 0 && <details><summary>任务进度</summary><ol>{job.log.map((line, i) => <li key={i}>{labels[line] ?? "处理中"}</li>)}</ol></details>}
-      {job?.status === "done" && job.video && <><video aria-label="生成的视频" src={job.video} controls preload="metadata" style={{ width: "100%", maxHeight: 600, borderRadius: 10 }} /><a style={{ color: "#aecef6" }} href={`${job.video}?download=1`} download>下载 MP4</a><DeliveryCheck jobId={job.id} /></>}
-    </div>
-      </div>
-    </details>
+    {(visited.plan || visited.templates) && <Suspense fallback={<p role="status">正在打开工程…</p>}><IdeaStudioViews {...workspaceProps} setComposing={setComposing} active={active} useRecipe={useRecipe} /></Suspense>}
+    {(workspaceToolsVisited || editorProject || view === "workspace") && <Suspense fallback={<p role="status">正在打开工程…</p>}><IdeaStudioWorkspace {...workspaceProps} /></Suspense>}
+    {storageWarning && <p role="alert" className="studio-error">{storageStatus}</p>}
+    {error && !tool && <p role="alert" className="studio-error">{error}</p>}
+    {job && <div className="studio-task-status" role="status" aria-live="polite"><span>{labels[job.stage ?? job.status] ?? job.status}{job.status === "failed" ? `：${job.error ?? "请检查资料结构和模型配置。"}` : ""}</span><button className="g-btn g-btn--sm" onClick={() => openTool("export")}>查看任务</button></div>}
   </section>;
 }

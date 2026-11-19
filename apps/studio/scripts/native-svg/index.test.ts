@@ -36,10 +36,36 @@ describe("native SVG scene contract", () => {
     const svg = renderSceneSvg(p, p.scenes[0]!, 30);
     expect(svg).toContain('width="1080" height="1920"'); expect(svg).not.toContain("NaN");
   });
+  it.each(["16:9", "9:16", "1:1"] as const)("groups wrapped title and subtitle above the caption safe area for %s", aspect => {
+    const p = { ...project({ kind: "title", title: "风景".repeat(40), subtitle: "副标题".repeat(20) }), aspect };
+    const height = aspect === "9:16" ? 1920 : 1080;
+    const svg = renderSceneSvg(p, p.scenes[0]!, 30);
+    const spans = [...svg.matchAll(/<tspan x="[^"]+" y="([^"]+)">([^<]*)<\/tspan>/g)].map(match => ({ y: Number(match[1]), text: match[2] }));
+    const titleRows = spans.filter(span => /^[风景]+$/.test(span.text ?? ""));
+    const subtitleRows = spans.filter(span => /^[副标题]+$/.test(span.text ?? ""));
+    expect(titleRows.length).toBeGreaterThan(1);
+    expect(subtitleRows.length).toBeGreaterThan(1);
+    expect(subtitleRows[0]!.y).toBeGreaterThan(titleRows[titleRows.length - 1]!.y);
+    expect(subtitleRows[subtitleRows.length - 1]!.y).toBeLessThan(height * 0.82);
+  });
   it("plate excludes narration captions", () => {
     const p = project({ kind: "title", title: "画面标题" });
     expect(renderSceneSvg(p, p.scenes[0]!, 30, { plate: true })).not.toContain("真实讲述文本");
     expect(renderSceneSvg(p, p.scenes[0]!, 30)).toContain("真实讲述文本");
+  });
+  it("does not add a title accent to a synthetic media-caption overlay", () => {
+    const p = project({ kind: "title", title: "temporary" });
+    const synthetic = { ...p.scenes[0]!, kind: "title" as const, title: "" };
+    expect(renderSceneSvg(p, synthetic, 30, { overlayOnly: true })).not.toContain('width="72" height="5" rx="2.5"');
+  });
+  it("uses outlined captions on a requested image backdrop without changing clean plates", () => {
+    const p = project({ kind: "title", title: "画面标题" });
+    const standard = renderSceneSvg(p, p.scenes[0]!, 30, { overlayOnly: true });
+    const contrast = renderSceneSvg(p, p.scenes[0]!, 30, { overlayOnly: true, contrastCaption: true });
+    expect(standard).not.toContain('paint-order="stroke fill"');
+    expect(contrast).toContain('paint-order="stroke fill"');
+    expect(contrast).toContain("真实讲述文本");
+    expect(renderSceneSvg(p, p.scenes[0]!, 30, { overlayOnly: true, contrastCaption: true, plate: true })).not.toContain("真实讲述文本");
   });
   it("rejects unsupported scenes instead of silently falling back", () => {
     const p = project({ kind: "html", html: "<b>html</b>" });

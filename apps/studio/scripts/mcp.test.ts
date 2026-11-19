@@ -1,4 +1,8 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { FileSessionStore } from "@glintai/session/node";
 import { createMcpHandler, defaultTools, type McpTool } from "./mcp";
 
 const echo: McpTool = {
@@ -54,10 +58,50 @@ describe("MCP handler", () => {
 describe("default tools", () => {
   it("exposes the four verbs plus verify with schemas", () => {
     const tools = defaultTools();
-    expect(tools.map(tool => tool.name).sort()).toEqual(["glint_apply", "glint_build", "glint_plan", "glint_prove", "glint_verify"]);
+    expect(tools.map((tool) => tool.name).sort()).toEqual(
+      [
+        "glint_apply",
+        "glint_build",
+        "glint_container_append",
+        "glint_container_lifecycle",
+        "glint_container_list",
+        "glint_container_migrate_copy",
+        "glint_tasks_list",
+        "glint_tasks_status",
+        "glint_tasks_cancel",
+        "glint_container_open",
+        "glint_container_redo",
+        "glint_container_snapshot",
+        "glint_container_undo",
+        "glint_plan",
+        "glint_prove",
+        "glint_verify",
+      ].sort(),
+    );
     for (const tool of tools) {
       expect(tool.description.length).toBeGreaterThan(10);
       expect((tool.inputSchema as { type?: string }).type).toBe("object");
     }
+  });
+  it("routes glint_apply through the shared session domain (CORE-09)", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "glint-mcp-"));
+    const sessionDirectory = path.join(root, "sessions");
+    const projectPath = path.join(root, "p.project.json");
+    fs.writeFileSync(projectPath, JSON.stringify({ schemaVersion: 1, id: "mcp-target", title: "原题", aspect: "16:9", knowledgeSources: [], scenes: [{ id: "one", kind: "title", title: "开场", narration: { text: "第一句" } }] }));
+    const tools = defaultTools({ sessionDirectory });
+    const apply = tools.find(tool => tool.name === "glint_apply")!;
+    const result = await apply.call({ project: projectPath, changes: ['title="MCP 新题"', 'scenes[0].title="新开场"'] }) as { projectId: string; revision: string };
+    expect(result.projectId).toBe("mcp-target");
+    // The file is updated AND the session domain carries the same edit.
+    expect(JSON.parse(fs.readFileSync(projectPath, "utf8")).title).toBe("MCP 新题");
+    const store = new FileSessionStore(sessionDirectory);
+    const { snapshot } = store.snapshot("mcp-target");
+    expect(snapshot.revision).toBe(1);
+    // The change is undoable through the same session line.
+    const undone = store.historyEdit("mcp-target", "undo", "undo-1", 1, "user");
+    expect(undone.receipt.stage).toBe("verified");
+    expect((store.snapshot("mcp-target").snapshot.document as { title: string }).title).toBe("原题");
+    // A stale CAS on the file hash still conflicts.
+    expect(() => apply.call({ project: projectPath, changes: ['title="晚到的一笔"'], expectedRevision: "sha256:stale" })).toThrow(/Revision conflict/);
   });
 });

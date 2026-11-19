@@ -1,0 +1,221 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Glint · 一源双输出</title><style>:root{--bg:#f7f1e6;--surface:#fffdf8;--ink:#2b2116;--muted:#7a6a52;--line:#e8dcc8;--accent:#c2571f;--font:"PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--font)}button,select{font:inherit;color:inherit;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 14px;cursor:pointer}button:hover{border-color:var(--accent)}button:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}button:disabled{opacity:.35;cursor:not-allowed}header,footer{display:flex;gap:12px;align-items:center;padding:16px 24px}header{border-bottom:1px solid var(--line)}header strong{flex:1;min-width:0;overflow-wrap:anywhere}main{max-width:1440px;margin:auto;padding:24px}.stage{position:relative;width:min(100%,calc((100dvh - 285px)*1.77778));margin:auto;aspect-ratio:16/9;background:var(--surface);overflow:hidden;border:1px solid var(--line);border-radius:12px}.stage img{width:100%;height:100%;object-fit:contain;display:block}#count{font-variant-numeric:tabular-nums}#status{min-height:24px;color:var(--muted);margin:10px 0}footer{padding:12px 0;flex-wrap:wrap}footer select{max-width:40vw}#caption{min-height:32px;color:var(--muted);font-size:18px}#caption mark{background:var(--accent);color:var(--bg)}#quiz{border-top:1px solid var(--line);padding-top:20px;margin-top:20px}#quiz h2{font-size:20px}#quiz .answers{display:flex;gap:12px;flex-wrap:wrap}#result{min-height:28px}#presenter{border-top:1px solid var(--line);margin-top:20px;padding-top:20px}#presenter:not([hidden]){display:grid;grid-template-columns:1fr 1fr;gap:24px}#next-image{width:100%;border:1px solid var(--line);border-radius:8px}#notes{white-space:pre-wrap;overflow-wrap:anywhere}#clock{font-size:28px;font-variant-numeric:tabular-nums}.progress{height:4px;background:var(--line)}#progress{height:100%;background:var(--accent);transition:width .3s ease}#help{font-size:12px;color:var(--muted)}[hidden]{display:none!important}@media(max-width:600px){header{padding:12px;flex-wrap:wrap}header strong{flex-basis:100%}main{padding:12px}button,select{padding:9px 10px}footer{gap:8px}footer select{max-width:100%;flex:1}#presenter:not([hidden]){grid-template-columns:1fr}.stage{border-radius:8px}#caption{font-size:15px}}@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
+</style></head><body><header><strong>Glint · 一源双输出</strong><button id="presenter-toggle" aria-expanded="false">演讲者视图</button><button id="presenter-window">独立演讲窗口</button><button id="fullscreen">全屏</button></header><main><div class="stage" style="aspect-ratio:16/9"><img id="scene-image" alt="演示画面"></div><div class="progress"><div id="progress"></div></div><footer><button id="previous">上一页</button><span id="count"></span><button id="next">下一页</button><select id="outline" aria-label="跳转到页面"></select><button id="play">播放旁白</button></footer><p id="status" role="status" aria-live="polite"></p><div id="caption"></div><section id="quiz" hidden><h2 id="question"></h2><div id="answers" class="answers"></div><p id="result" role="status"></p><button id="reset">清空答题记录</button></section><section id="presenter" hidden><div><h2>演讲备注</h2><p id="clock">00:00</p><p id="notes"></p></div><div><h2 id="next-label">下一页</h2><img id="next-image" alt="下一页预览"></div></section><p id="help">← → 翻页 · Home / End 首尾页 · Esc 关闭演讲者视图。演示动画与视频共用逐帧画面合同；旁白需提供本地音频。</p><audio id="voice" preload="metadata"></audio></main><script id="deck-data" type="application/json">{"digest":"affc264a6a90aa9d1cd1","scenes":[{"id":"control","scene":{"id":"control","narration":{"text":"先定义内容，再决定如何呈现。","durationMs":1800},"notes":"开场用一个具体收益引入：数字改一次，视频和演示一起更新。","sharedElements":[{"key":"metric","text":"18%","x":0.78,"y":0.3,"fontSize":70}],"kind":"title","title":"让内容成为\n可以控制的作品","subtitle":"一份 SceneScript，生成视频与演示"},"label":"让内容成为\n可以控制的作品","image":"scenes/control.svg","narration":{"text":"先定义内容，再决定如何呈现。","durationMs":1800},"notes":"开场用一个具体收益引入：数字改一次，视频和演示一起更新。"},{"id":"evidence","scene":{"id":"evidence","narration":{"text":"同一个数字跨场景移动，内容仍然可编辑。","durationMs":2200},"notes":"指向 Q3：修改 value 字段即可更新画面，不需要重新绘图。","quiz":{"question":"把 Q3 从 18% 改成 20%，应该修改哪里？","options":["修改数据字段","重新绘制整张图片","提高播放速度"],"answerIndex":0,"explanation":"数据是结构化对象；修改 Q3 的 value 后，重渲这一镜即可。"},"sharedElements":[{"key":"metric","text":"18%","x":0.68,"y":0.23,"fontSize":44}],"transition":{"in":"magic-move","durationMs":800},"kind":"chart","chartType":"bar","heading":"数据对象，而不是一张截图","unit":"%","data":[{"label":"Q1","value":12},{"label":"Q2","value":15},{"label":"Q3","value":18}]},"previousScene":{"id":"control","narration":{"text":"先定义内容，再决定如何呈现。","durationMs":1800},"notes":"开场用一个具体收益引入：数字改一次，视频和演示一起更新。","sharedElements":[{"key":"metric","text":"18%","x":0.78,"y":0.3,"fontSize":70}],"kind":"title","title":"让内容成为\n可以控制的作品","subtitle":"一份 SceneScript，生成视频与演示"},"label":"数据对象，而不是一张截图","image":"scenes/evidence.svg","narration":{"text":"同一个数字跨场景移动，内容仍然可编辑。","durationMs":2200},"notes":"指向 Q3：修改 value 字段即可更新画面，不需要重新绘图。","quiz":{"question":"把 Q3 从 18% 改成 20%，应该修改哪里？","options":["修改数据字段","重新绘制整张图片","提高播放速度"],"answerIndex":0,"explanation":"数据是结构化对象；修改 Q3 的 value 后，重渲这一镜即可。"}}],"project":{"schemaVersion":1,"id":"independent-deck","title":"Glint · 一源双输出","language":"zh-CN","aspect":"16:9","fps":24,"knowledgeSources":[],"theme":"cream-editorial","scenes":[{"id":"control","narration":{"text":"先定义内容，再决定如何呈现。","durationMs":1800},"notes":"开场用一个具体收益引入：数字改一次，视频和演示一起更新。","sharedElements":[{"key":"metric","text":"18%","x":0.78,"y":0.3,"fontSize":70}],"kind":"title","title":"让内容成为\n可以控制的作品","subtitle":"一份 SceneScript，生成视频与演示"},{"id":"evidence","narration":{"text":"同一个数字跨场景移动，内容仍然可编辑。","durationMs":2200},"notes":"指向 Q3：修改 value 字段即可更新画面，不需要重新绘图。","quiz":{"question":"把 Q3 从 18% 改成 20%，应该修改哪里？","options":["修改数据字段","重新绘制整张图片","提高播放速度"],"answerIndex":0,"explanation":"数据是结构化对象；修改 Q3 的 value 后，重渲这一镜即可。"},"sharedElements":[{"key":"metric","text":"18%","x":0.68,"y":0.23,"fontSize":44}],"transition":{"in":"magic-move","durationMs":800},"kind":"chart","chartType":"bar","heading":"数据对象，而不是一张截图","unit":"%","data":[{"label":"Q1","value":12},{"label":"Q2","value":15},{"label":"Q3","value":18}]}]}}</script><script>(()=>{var dt=/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]/;function mt(e){return dt.test(e)?1:/\s/.test(e)?0:/[.,!?;:'"()[\]{}、。，！？；：（）【】《》“”‘’…—·\-/]/.test(e)?.25:.55}function pt(e){let n=0;for(let s of e)n+=mt(s);return n}function nt(e,n){if(!e.trim())throw new Error("Cannot estimate duration of empty narration text");let s=Math.min(2,Math.max(.5,n?.speakingRate??1)),a=pt(e)/(4.6*s),o=Math.round(a*1e3/10)*10;return Math.max(800,o)}function at(e){let{narration:n}=e;return n.durationMs??nt(n.text,{speakingRate:n.speakingRate})}var ht=e=>Math.min(1,Math.max(0,e)),gt=e=>1-Math.pow(1-ht(e),3);function Q(e,n,s){if(!e||e.type==="static"||s<=1)return{scale:1,translateX:0,translateY:0,rotateX:0};let a=e.intensity??.5,o=gt(n/(s-1));switch(e.type){case"push":return{scale:1+.18*a*o,translateX:0,translateY:0,rotateX:0};case"pull":return{scale:1+.18*a*(1-o),translateX:0,translateY:0,rotateX:0};case"pan-left":return{scale:1+.06*a,translateX:36*a*(1-2*o),translateY:0,rotateX:0};case"pan-right":{let r=Q({type:"pan-left",intensity:a},n,s);return{...r,translateX:-r.translateX}}case"drift":{let r=Math.sin(o*Math.PI)*20*a;return{scale:1+.04*a,translateX:r,translateY:0,rotateX:0}}default:return{scale:1,translateX:0,translateY:0,rotateX:0}}}function rt(e,n){if(!e)return 1;let s=e.durationMs??280,a=0;for(let o of e.beatsMs){let r=n-o;r>=0&&r<=s&&(a=Math.max(a,Math.sin(Math.PI*r/s)*Math.exp(-2*r/s)))}return 1+(e.amount??.025)*a}var ot=800;var bt=["glint-dark","glint-light","cream-editorial","mint-clean","bold-poster","hand-note","retro-news","blackboard-tech","whiteboard","blueprint"];var L='"Noto Serif SC", "Source Han Serif SC", "STZhongsong", "SimSun", "PingFang SC", serif',A='"PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif',it={"glint-dark":{colors:{bg:"#121016",surface:"#1c1924",border:"#2b2735",text:"#f5f3f7",textMuted:"#a09aae",accent:"#9b8bfb",accent2:"#ff9d8a"},fonts:{display:L,body:A,mono:'ui-monospace, "Cascadia Code", Consolas, "JetBrains Mono", monospace'},fontSizes:{display:104,h1:66,h2:48,body:36,caption:30},radius:24,motion:{fadeMs:420},effects:{cardShadow:"0 32px 90px rgba(10, 8, 20, 0.5)",innerHighlight:"inset 0 1px 1px rgba(255, 255, 255, 0.12)",hairline:"1px solid rgba(245, 243, 247, 0.08)"}},"glint-light":{colors:{bg:"#faf9fc",surface:"#ffffff",border:"#e8e4f0",text:"#211d2a",textMuted:"#6f6980",accent:"#6d5ae0",accent2:"#e26d5a"},fonts:{display:L,body:A,mono:'ui-monospace, "Cascadia Code", Consolas, "JetBrains Mono", monospace'},fontSizes:{display:104,h1:66,h2:48,body:36,caption:30},radius:24,motion:{fadeMs:420},effects:{cardShadow:"0 28px 70px rgba(33, 29, 42, 0.10)",innerHighlight:"inset 0 1px 1px rgba(255, 255, 255, 0.65)",hairline:"1px solid rgba(33, 29, 42, 0.08)"}},"cream-editorial":{colors:{bg:"#f7f1e6",surface:"#fffdf8",border:"#e8dcc8",text:"#2b2116",textMuted:"#7a6a52",accent:"#c2571f",accent2:"#1f6e5c"},fonts:{display:L,body:A,mono:'ui-monospace, "Cascadia Code", Consolas, "JetBrains Mono", monospace'},fontSizes:{display:104,h1:66,h2:48,body:36,caption:30},radius:20,motion:{fadeMs:420},effects:{cardShadow:"0 24px 64px rgba(80, 60, 30, 0.14)",innerHighlight:"inset 0 1px 1px rgba(255, 255, 255, 0.8)",hairline:"1px solid rgba(80, 60, 30, 0.10)"}},"mint-clean":{colors:{bg:"#f4faf8",surface:"#ffffff",border:"#d8ece3",text:"#12332a",textMuted:"#5c7f74",accent:"#0e9f77",accent2:"#f2a03d"},fonts:{display:A,body:A,mono:'ui-monospace, "Cascadia Code", Consolas, "JetBrains Mono", monospace'},fontSizes:{display:96,h1:62,h2:46,body:36,caption:30},radius:18,motion:{fadeMs:360},effects:{cardShadow:"0 20px 56px rgba(18, 51, 42, 0.10)",innerHighlight:"inset 0 1px 1px rgba(255, 255, 255, 0.7)",hairline:"1px solid rgba(18, 51, 42, 0.08)"}},"bold-poster":{colors:{bg:"#0a0a0a",surface:"#161616",border:"#2c2c2c",text:"#ffffff",textMuted:"#9e9e9e",accent:"#ffd400",accent2:"#ff3d00"},fonts:{display:A,body:A,mono:'ui-monospace, "Cascadia Code", Consolas, "JetBrains Mono", monospace'},fontSizes:{display:128,h1:76,h2:52,body:38,caption:30},radius:4,motion:{fadeMs:280},effects:{cardShadow:"0 24px 64px rgba(0, 0, 0, 0.6)",innerHighlight:"inset 0 2px 0 rgba(255, 212, 0, 0.9)",hairline:"1px solid rgba(255, 255, 255, 0.14)"}},"hand-note":{colors:{bg:"#f6f1e3",surface:"#fdf9ee",border:"#d9cdae",text:"#33302a",textMuted:"#8a8069",accent:"#d95d39",accent2:"#3a6ea5"},fonts:{display:'"Kaiti SC", "STKaiti", "KaiTi", "DFKai-SB", "Segoe Print", "Comic Sans MS", cursive',body:A,mono:'ui-monospace, "Cascadia Code", Consolas, monospace'},fontSizes:{display:100,h1:64,h2:48,body:36,caption:30},radius:8,motion:{fadeMs:380},effects:{cardShadow:"0 14px 36px rgba(90, 70, 30, 0.14)",innerHighlight:"inset 0 1px 1px rgba(255, 255, 255, 0.75)",hairline:"1px dashed rgba(51, 48, 42, 0.35)"}},"retro-news":{colors:{bg:"#f1ead9",surface:"#f8f2e4",border:"#c9bda0",text:"#211d17",textMuted:"#6e6450",accent:"#8c1f28",accent2:"#33506b"},fonts:{display:L,body:L,mono:'ui-monospace, "Cascadia Code", Consolas, monospace'},fontSizes:{display:108,h1:68,h2:48,body:34,caption:28},radius:2,motion:{fadeMs:340},effects:{cardShadow:"none",innerHighlight:"none",hairline:"1px solid rgba(33, 29, 23, 0.45)"}},"blackboard-tech":{colors:{bg:"#101418",surface:"#171d24",border:"#2a333d",text:"#e8edf2",textMuted:"#8b98a5",accent:"#4fd1c5",accent2:"#f6ad55"},fonts:{display:'ui-monospace, "Cascadia Code", Consolas, "JetBrains Mono", monospace',body:A,mono:'ui-monospace, "Cascadia Code", Consolas, "JetBrains Mono", monospace'},fontSizes:{display:96,h1:62,h2:46,body:36,caption:30},radius:6,motion:{fadeMs:320},effects:{cardShadow:"0 18px 48px rgba(0, 0, 0, 0.55)",innerHighlight:"inset 0 1px 1px rgba(79, 209, 197, 0.18)",hairline:"1px solid rgba(79, 209, 197, 0.28)"}},whiteboard:{colors:{bg:"#fdfdfa",surface:"#ffffff",border:"#e2e2dc",text:"#22262b",textMuted:"#6b7280",accent:"#2965c8",accent2:"#d13b3b"},fonts:{display:A,body:A,mono:'ui-monospace, "Cascadia Code", Consolas, monospace'},fontSizes:{display:100,h1:64,h2:48,body:36,caption:30},radius:10,motion:{fadeMs:360},effects:{cardShadow:"0 10px 30px rgba(34, 38, 43, 0.08)",innerHighlight:"none",hairline:"2px solid rgba(41, 101, 200, 0.35)"}},blueprint:{colors:{bg:"#12335e",surface:"#174070",border:"#2e5c94",text:"#dcebff",textMuted:"#8fb2dd",accent:"#ffd166",accent2:"#9ee7ff"},fonts:{display:'ui-monospace, "Cascadia Code", Consolas, monospace',body:A,mono:'ui-monospace, "Cascadia Code", Consolas, monospace'},fontSizes:{display:96,h1:62,h2:46,body:36,caption:30},radius:4,motion:{fadeMs:340},effects:{cardShadow:"0 18px 44px rgba(6, 24, 48, 0.5)",innerHighlight:"none",hairline:"1px solid rgba(158, 231, 255, 0.4)"}}},xt="glint-dark";function st(e){if(typeof e=="string"){let a=it[e];if(!a)throw new Error(`Unknown theme "${e}". Available themes: ${bt.join(", ")}, or pass inline token overrides.`);return a}let n=it[xt];if(!e||typeof e!="object")return n;let s=e;return{colors:{...n.colors,...s.colors},fonts:{...n.fonts,...s.fonts},fontSizes:{...n.fontSizes,...s.fontSizes},radius:s.radius??n.radius,motion:{...n.motion,...s.motion},effects:{...n.effects,...s.effects}}}function W(e){return String(e).replace(/[&<>"']/g,n=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&apos;"})[n])}function ct(e,n,s){let a=[];for(let o of e.split(`
+`)){let r="",t=0;for(let c of Array.from(o)){let H=/[\u2e80-\uffff]/u.test(c)?s:s*.6;t+H>n&&r&&(a.push(r),r="",t=0),r+=c,t+=H}a.push(r)}return a}function Y(e,n,s,a,o,r,t={}){let c=ct(e,a,o);for(;t.height&&c.length*o*1.45>t.height&&o>14;)o-=2,c=ct(e,a,o);return`<text fill="${W(r)}" font-size="${o}" font-weight="${t.weight??400}" text-anchor="${t.anchor??"start"}">${c.map((H,P)=>`<tspan x="${n}" y="${s+P*o*1.45}">${W(H)}</tspan>`).join("")}</text>`}var V=(e,n,s)=>e+(n-e)*s,J=e=>Math.min(1,Math.max(0,e)),F=e=>1-Math.pow(1-J(e),3);var K=e=>Number(e.toPrecision(4));function lt(e,n,s,a,o,r){let t=r.colors,c=e.data,H=e.chartType==="pie",P=H?1:Math.ceil(c.length/6),l=e.narration.durationMs??6e3,j=Math.max(1,Math.round(l*s/1e3/P)),z=Math.min(P-1,Math.floor(n/j)),R=H?c:c.slice(z*6,z*6+6),i=F((n-z*j)/Math.min(s*1.2,j*.6)),M=o*.28,D=o*.71,S=a*.16,h=a*.84,f=Math.max(16,Math.min(a,o)*.025),N=(u,m,g,p="middle",T=t.text)=>Y(u,m,g,a*.2,f,T,{anchor:p,height:o*.09});if(H){let u=c.reduce((w,x)=>w+Math.max(0,x.value),0);if(u===0)return N("\u6682\u65E0\u6B63\u503C\u6570\u636E",a/2,o/2);let m=a*(a<o?.5:.38),g=o*.5,p=Math.min(a*.22,o*.22),T=-Math.PI/2,y="";for(let[w,x]of c.entries()){let E=Math.max(0,x.value)/u,$=Math.min(Math.PI*2-1e-5,E*Math.PI*2*i),X=T+$,G=p*.58,U=(tt,et)=>`${m+Math.cos(et)*tt},${g+Math.sin(et)*tt}`,ut=w%2?t.accent2:t.accent;E>0&&(y+=`<path d="M ${U(p,T)} A ${p} ${p} 0 ${$>Math.PI?1:0} 1 ${U(p,X)} L ${U(G,X)} A ${G} ${G} 0 ${$>Math.PI?1:0} 0 ${U(G,T)} Z" fill="${W(ut)}" opacity="${.55+w%3*.2}"/>`),T+=E*Math.PI*2}let O=a<o?a*.16:a*.66,Z=a<o?o*.77:M,q=a<o?o*.13:o*.45,d=Math.ceil(c.length/(a<o?4:8)),k=Math.ceil(c.length/d),v=Math.min(f,q/k/1.5);return y+c.map((w,x)=>Y(`${w.label} \xB7 ${K(Math.max(0,w.value)/u*100)}%`,O+Math.floor(x/k)*a*(a<o?.36:.15),Z+x%k*v*1.5,a*.28,v,x%2?t.accent2:t.accent)).join("")}let B=u=>{let m=Math.min(0,...u),g=Math.max(0,...u);return{min:m,max:g===m?g+1:g}},C=B(c.map(u=>e.chartType==="scatter"?u.value2:u.value)),b=u=>D-(u-C.min)/(C.max-C.min)*(D-M),_=u=>S+(h-S)*(u+.5)/R.length,I=[C.min,(C.min+C.max)/2,C.max].map(u=>`<line x1="${S}" x2="${h}" y1="${b(u)}" y2="${b(u)}" stroke="${t.border}"/>${N(`${K(u)}${e.unit??""}`,S-16,b(u)+f/3,"end")}`).join("");if(e.chartType==="scatter"){let u=c.map(y=>y.value),m=Math.min(...u),g=Math.max(...u),p=g-m||1,T=y=>S+(y-m)/p*(h-S);I+=[m,(m+g)/2,g].map(y=>N(String(K(y)),T(y),D+f*1.7)).join(""),I+=R.map((y,O)=>`<g opacity="${F(i*R.length-O)}"><circle cx="${T(y.value)}" cy="${b(y.value2)}" r="${f*.3}" fill="${t.accent}"/>${N(y.label,T(y.value),b(y.value2)-f)}</g>`).join("")}else{let u=R.map((m,g)=>`${_(g)},${b(m.value*i)}`).join(" ");if(e.chartType==="area"&&(I+=`<polygon points="${_(0)},${b(0)} ${u} ${_(R.length-1)},${b(0)}" fill="${t.accent}" opacity="0.18"/>`),(e.chartType==="line"||e.chartType==="area")&&(I+=`<polyline points="${u}" fill="none" stroke="${t.accent}" stroke-width="5" stroke-linejoin="round"/>`),I+=R.map((m,g)=>{let p=b(m.value*i),T=b(0),y=Math.min(a*.085,(h-S)/R.length*.55);return(e.chartType==="bar"||e.chartType==="combo"?`<rect x="${_(g)-y/2}" y="${Math.min(p,T)}" width="${y}" height="${Math.abs(p-T)}" rx="6" fill="${t.accent}"/>`:`<circle cx="${_(g)}" cy="${p}" r="5" fill="${t.accent}"/>`)+N(m.label,_(g),D+f*1.7)+(e.chartType==="combo"?"":N(String(K(m.value)),_(g),p+(m.value<0?f*1.5:-f*.7)))}).join(""),e.chartType==="combo"){let m=B(c.map(p=>p.value2)),g=p=>D-(p-m.min)/(m.max-m.min)*(D-M);I+=`<polyline points="${R.map((p,T)=>`${_(T)},${g(p.value2*i)}`).join(" ")}" fill="none" stroke="${t.accent2}" stroke-width="5"/>`,I+=[m.min,(m.min+m.max)/2,m.max].map(p=>N(String(K(p)),h+12,g(p)+f/3,"start",t.accent2)).join("")}}return P>1&&(I+=N(`${z+1} / ${P}`,h,o*.84,"end",t.textMuted)),e.seriesLabel2&&(I+=N(e.seriesLabel2,S,M-f*1.7,"start",t.accent2)),I}function yt(e){return["title","bullets","definition","quote","comparison","diagram","chart","code"].includes(e.kind)}function Mt(e,n,s){let a=J(s),o=t=>1-(1+8*t)*Math.exp(-8*t),r=o(a)/o(1);return(e.sharedElements??[]).map(t=>{let c=e.transition?.in==="magic-move"?n?.sharedElements?.find(H=>H.key===t.key):void 0;return{...t,x:V(c?.x??t.x,t.x,r),y:V(c?.y??t.y,t.y,r),fontSize:V(c?.fontSize??t.fontSize??48,t.fontSize??48,r)}})}function ft(e,n,s,a={}){if(!yt(n))throw new Error(`Native SVG does not support ${n.kind}; choose the browser backend`);let o=e.aspect==="9:16"?[1080,1920]:e.aspect==="1:1"?[1080,1080]:[1920,1080],r=a.width??o[0],t=a.height??o[1],c=e.fps??30,H=at(n),P=st(e.theme),l=P.colors,j=Math.max(1,Math.round(H/1e3*c)),z=Math.min(j-1,Math.max(0,s)),R=F(z/(c*.8)),i=Math.min(r,t)/1080,M=(d,k,v,w,x,E=l.text,$,X=400)=>Y(d,k,v,w,x*i,E,{height:$,weight:X}),D="heading"in n?n.heading??"":"",S="",h=r*.1,f=r*.8;switch(n.kind){case"title":S=M(n.title,h,t*.43,f,100,l.text,t*.32,700)+M(n.subtitle??"",h,t*.68,f,38,l.textMuted,t*.12);break;case"definition":D=n.term,S=`<rect x="${h}" y="${t*.32}" width="${f}" height="${t*.4}" rx="${P.radius}" fill="${l.surface}"/>`+M(n.definition,h+35*i,t*.43,f-70*i,52,l.text,t*.28);break;case"quote":S=M("\u201C",h,t*.34,f,120,l.accent)+M(n.text,h,t*.43,f,60,l.text,t*.29)+M(n.attribution??"",h,t*.78,f,30,l.textMuted);break;case"bullets":{let k=Math.ceil(n.items.length/5),v=Math.min(k-1,Math.floor(z/j*k)),w=n.items.slice(v*5,v*5+5),x=t*.52/w.length;S=w.map((E,$)=>`<g opacity="${F((z/c-$*.08)/.6)}"><rect x="${h}" y="${t*.3+$*x-25*i}" width="${48*i}" height="${48*i}" rx="8" fill="${l.accent}" opacity="0.16"/>${M(String(v*5+$+1).padStart(2,"0"),h+7*i,t*.3+$*x+10*i,45*i,24,l.accent)}${M(E,h+80*i,t*.3+$*x+10*i,f-90*i,42,l.text,x*.86)}</g>`).join("");break}case"comparison":{let d=r<t,k=d?f:f*.47,v=d?t*.23:t*.48;S=[n.left,n.right].map((w,x)=>{let E=h+(d?0:x*f*.53),$=t*.28+(d?x*t*.27:0);return`<rect x="${E}" y="${$}" width="${k}" height="${v}" rx="${P.radius}" fill="${l.surface}" stroke="${l.border}"/>${M(w.label,E+28*i,$+65*i,k-56*i,42,x?l.accent2:l.accent,v*.16,700)}${M(w.points.map(X=>`\u2022 ${X}`).join(`
+`),E+28*i,$+128*i,k-56*i,33,l.text,v*.63)}`}).join("");break}case"diagram":{let d=r<t,k=d?f:f/n.steps.length*.88;S=n.steps.map((v,w)=>{let x=h+(d?0:w*f/n.steps.length),E=t*.32+(d?w*t*.09:0),$=d?t*.077:t*.3;return`<rect x="${x}" y="${E}" width="${k}" height="${$}" rx="${P.radius}" fill="${l.surface}" stroke="${l.border}"/>${M(`${w+1}. ${v.label}`,x+20*i,E+52*i,k-40*i,34,l.accent,$*.5,700)}${M(v.note??"",x+20*i,E+$*.6,k-40*i,26,l.textMuted,$*.3)}`}).join("");break}case"code":S=`<rect x="${h}" y="${t*.27}" width="${f}" height="${t*.52}" rx="${P.radius}" fill="${l.surface}" stroke="${l.border}"/>`+M(n.code,h+30*i,t*.34,f-60*i,30,l.text,t*.42);break;case"chart":S=lt(n,z,c,r,t,P);break}a.overlayOnly&&(S="");let N=n.transition?.durationMs??ot,B=J(z/c*1e3/N),C=F(B),b=n.transition?.in,_="",I=n.transition&&b!=="magic-move"?C:1;if((b==="slide-left"||b==="slide-right")&&(_=`translate(${(b==="slide-left"?1:-1)*(1-C)*r*.08} 0)`),b==="slide-up"&&(_=`translate(0 ${(1-C)*t*.08})`),b==="zoom-punch"||b==="flash"){let d=1+(1-C)*.15;_=`translate(${r/2} ${t/2}) scale(${d}) translate(${-r/2} ${-t/2})`}b==="flip"&&(_=`translate(0 ${t/2}) scale(1 ${Math.max(.01,C)}) translate(0 ${-t/2})`);let u=Q(n.camera,z,j),m=rt(n.beatPulse,z/c*1e3),g=`translate(${r/2+u.translateX*i} ${t/2+u.translateY*i}) scale(${u.scale*m}) translate(${-r/2} ${-t/2})`,p=Mt(n,a.previousScene,B).map(d=>Y(d.text,d.x*r,d.y*t,r*.8,d.fontSize*i,d.color??l.accent,{weight:700})).join(""),T=n.narration.segments?.flatMap(d=>d.words??[])??[],y=z/c*1e3,O=T.findIndex(d=>y>=d.startMs&&y<d.endMs),Z=T.length?T.slice(Math.max(0,Math.floor(Math.max(0,O)/24)*24),Math.max(0,Math.floor(Math.max(0,O)/24)*24)+24).map(d=>d.text).join(""):n.narration.text,q=b==="wipe"?`<rect width="${r*C}" height="${t}"/>`:b==="iris"?`<circle cx="${r/2}" cy="${t/2}" r="${Math.hypot(r,t)*C}"/>`:`<rect width="${r}" height="${t}"/>`;return`<svg xmlns="http://www.w3.org/2000/svg" width="${r}" height="${t}" viewBox="0 0 ${r} ${t}" font-family="${W(P.fonts.body)}"><defs><clipPath id="entrance">${q}</clipPath><filter id="blur"><feGaussianBlur stdDeviation="${b==="blur"?(1-C)*10:0}"/></filter></defs><rect width="${r}" height="${t}" fill="${a.overlayOnly?"none":l.bg}"/><g clip-path="url(#entrance)" opacity="${I}" transform="${_}" filter="url(#blur)"><g transform="${g}">${M(D,h,t*.17,f,62,l.text,t*.12,700)}<g opacity="${R}">${S}</g></g></g>${p}${a.plate?"":M(Z,h,t*.9,f,30,l.textMuted,t*.085)}<rect y="${t-5}" width="${r*J(z/j)}" height="5" fill="${l.accent}"/></svg>`}window.__glintRender=ft;})();
+</script><script>function deckRuntime() {
+    const data = JSON.parse(document.getElementById("deck-data").textContent);
+    const get = (id) => document.getElementById(id);
+    const image = get("scene-image");
+    const render = window.__glintRender;
+    let animation = 0, imageUrl = "", lastPaintedFrame = -1;
+    function paint(frame) {
+        if (frame === lastPaintedFrame)
+            return;
+        lastPaintedFrame = frame;
+        if (imageUrl)
+            URL.revokeObjectURL(imageUrl);
+        const scene = data.scenes[page];
+        const svg = render(data.project, scene.scene, frame, { plate: true, previousScene: scene.previousScene });
+        imageUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+        image.src = imageUrl;
+    }
+    function animate() {
+        cancelAnimationFrame(animation);
+        const scene = data.scenes[page], fps = data.project.fps ?? 30;
+        const frames = Math.max(1, Math.round((scene.narration.durationMs ?? 6000) / 1000 * fps));
+        const token = generation, start = performance.now();
+        const tick = () => {
+            if (token !== generation)
+                return;
+            const seconds = scene.audio ? audio.currentTime : (performance.now() - start) / 1000;
+            const frame = Math.min(frames - 1, Math.floor(seconds * fps));
+            paint(frame);
+            if (frame < frames - 1 && (!scene.audio || !audio.paused))
+                animation = requestAnimationFrame(tick);
+        };
+        if (matchMedia("(prefers-reduced-motion: reduce)").matches)
+            paint(frames - 1);
+        else
+            animation = requestAnimationFrame(tick);
+    }
+    const audio = get("voice");
+    const select = get("outline");
+    const storageKey = `glint-deck-${data.digest}`;
+    const channel = typeof BroadcastChannel === "function" ? new BroadcastChannel(storageKey) : undefined;
+    const sender = crypto.randomUUID();
+    let applyingRemote = false;
+    channel?.addEventListener("message", event => {
+        const message = event.data;
+        if (!message || message.sender === sender || message.type !== "page" || !Number.isInteger(message.page) || message.page < 0 || message.page >= data.scenes.length)
+            return;
+        applyingRemote = true;
+        try {
+            show(message.page);
+        }
+        finally {
+            applyingRemote = false;
+        }
+    });
+    let page = 0, answers = {}, playing = false, generation = 0;
+    let elapsed = 0, startedAt = performance.now();
+    try {
+        const saved = JSON.parse(localStorage.getItem(storageKey) ?? "{}");
+        if (Number.isInteger(saved.page))
+            page = Math.max(0, Math.min(data.scenes.length - 1, saved.page));
+        if (saved.answers && typeof saved.answers === "object") {
+            data.scenes.forEach((scene) => { const a = saved.answers[scene.id]; if (scene.quiz && Number.isInteger(a) && a >= 0 && a < scene.quiz.options.length)
+                answers[scene.id] = a; });
+        }
+    }
+    catch { /* Private mode and file:// may deny storage; presentation still works. */ }
+    const save = () => { try {
+        localStorage.setItem(storageKey, JSON.stringify({ page, answers }));
+    }
+    catch {
+        get("status").textContent = "浏览器不允许保存，本次仍可正常演示。";
+    } };
+    const say = (text) => { get("status").textContent = text; };
+    data.scenes.forEach((scene, i) => { const option = document.createElement("option"); option.value = String(i); option.textContent = `${i + 1}. ${scene.label}`; select.append(option); });
+    function showResult() {
+        const scene = data.scenes[page], answer = answers[scene.id];
+        get("result").textContent = answer === undefined ? "选择一个答案，检查这一页是否讲清楚。" : `${answer === scene.quiz?.answerIndex ? "回答正确。" : "再想一想。"} ${scene.quiz?.explanation ?? ""}`;
+        get("answers").querySelectorAll("button").forEach((button, i) => { button.setAttribute("aria-pressed", String(answer === i)); });
+    }
+    async function playVoice() {
+        if (!data.scenes[page].audio) {
+            say("本页没有配音文件；可手动翻页，或先生成配音后重新导出。");
+            return;
+        }
+        const token = generation;
+        try {
+            await audio.play();
+            if (token !== generation)
+                return;
+            playing = true;
+            animate();
+            get("play").textContent = "暂停旁白";
+            say("正在播放本页旁白");
+        }
+        catch {
+            if (token === generation) {
+                playing = false;
+                get("play").textContent = "播放旁白";
+                say("浏览器阻止了自动播放，请点击“播放旁白”。");
+            }
+        }
+    }
+    function show(index, autoplay = false) {
+        generation++;
+        cancelAnimationFrame(animation);
+        lastPaintedFrame = -1;
+        playing = false;
+        audio.pause();
+        audio.removeAttribute("src");
+        page = Math.max(0, Math.min(data.scenes.length - 1, index));
+        const scene = data.scenes[page];
+        image.src = scene.image;
+        image.alt = scene.label;
+        select.value = String(page);
+        get("count").textContent = `${page + 1} / ${data.scenes.length}`;
+        get("previous").disabled = page === 0;
+        get("next").disabled = page === data.scenes.length - 1;
+        get("progress").style.width = `${(page + 1) / data.scenes.length * 100}%`;
+        get("play").textContent = "播放旁白";
+        get("caption").textContent = scene.narration.text;
+        if (scene.audio) {
+            audio.src = scene.audio;
+            audio.load();
+            say("旁白已就绪，点击播放。");
+        }
+        else
+            say("本页为无声演示，可用方向键翻页。");
+        get("notes").textContent = scene.notes || "本页没有演讲备注。";
+        const next = data.scenes[page + 1];
+        get("next-image").src = next?.image ?? scene.image;
+        get("next-label").textContent = next ? `下一页：${next.label}` : "已到最后一页";
+        get("quiz").hidden = !scene.quiz;
+        get("answers").replaceChildren();
+        if (scene.quiz) {
+            get("question").textContent = scene.quiz.question;
+            scene.quiz.options.forEach((text, i) => { const button = document.createElement("button"); button.textContent = text; button.onclick = () => { answers[scene.id] = i; save(); showResult(); }; get("answers").append(button); });
+            showResult();
+        }
+        save();
+        animate();
+        if (!applyingRemote)
+            channel?.postMessage({ type: "page", page, sender });
+        if (autoplay)
+            void playVoice();
+    }
+    get("previous").onclick = () => show(page - 1, playing);
+    get("next").onclick = () => show(page + 1, playing);
+    select.onchange = () => show(Number(select.value));
+    get("play").onclick = () => { if (playing) {
+        generation++;
+        audio.pause();
+        playing = false;
+        get("play").textContent = "继续旁白";
+        say("已暂停");
+    }
+    else
+        void playVoice(); };
+    get("presenter-toggle").onclick = () => { get("presenter").hidden = !get("presenter").hidden; get("presenter-toggle").setAttribute("aria-expanded", String(!get("presenter").hidden)); };
+    get("presenter-window").onclick = () => {
+        const url = new URL(location.href);
+        url.searchParams.set("presenter", "1");
+        const popup = window.open(url.href, `glint-presenter-${data.digest}`, "width=1280,height=900");
+        if (!popup)
+            say("浏览器阻止了新窗口；请允许弹窗，或使用同页演讲者视图。");
+    };
+    get("reset").onclick = () => { answers = {}; save(); show(page); say("已清空本演示的答题记录。"); };
+    get("fullscreen").onclick = async () => { try {
+        if (document.fullscreenElement)
+            await document.exitFullscreen();
+        else
+            await document.documentElement.requestFullscreen();
+    }
+    catch {
+        say("当前浏览器不允许全屏，请使用浏览器全屏快捷键。");
+    } };
+    document.addEventListener("keydown", event => {
+        if (event.target instanceof HTMLElement && /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(event.target.tagName))
+            return;
+        if (event.key === "ArrowRight" || event.key === " ") {
+            event.preventDefault();
+            show(page + 1, playing);
+        }
+        if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            show(page - 1, playing);
+        }
+        if (event.key === "Home")
+            show(0);
+        if (event.key === "End")
+            show(data.scenes.length - 1);
+        if (event.key === "Escape")
+            get("presenter").hidden = true;
+    });
+    audio.onended = () => { playing = false; get("play").textContent = "重新播放"; say("本页旁白播放完毕。请翻到下一页。"); };
+    audio.onerror = () => { playing = false; get("play").textContent = "重试旁白"; say("旁白读取失败，请确认导出目录中的音频文件完整。"); };
+    image.onerror = () => say("画面读取失败，请确认导出目录完整。");
+    audio.ontimeupdate = () => {
+        const words = data.scenes[page].narration.segments?.flatMap((segment) => segment.words ?? []) ?? [];
+        if (!words.length)
+            return;
+        const now = audio.currentTime * 1000, current = words.findIndex((word) => now >= word.startMs && now < word.endMs);
+        const start = Math.max(0, Math.floor(Math.max(0, current) / 24) * 24);
+        get("caption").replaceChildren();
+        words.slice(start, start + 24).forEach((word, i) => { const node = document.createElement(start + i === current ? "mark" : "span"); node.textContent = word.text; get("caption").append(node); });
+    };
+    setInterval(() => { elapsed += performance.now() - startedAt; startedAt = performance.now(); const seconds = Math.floor(elapsed / 1000); get("clock").textContent = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; }, 1000);
+    show(page);
+    if (new URL(location.href).searchParams.get("presenter") === "1") {
+        get("presenter").hidden = false;
+        get("presenter-toggle").setAttribute("aria-expanded", "true");
+    }
+    window.addEventListener("beforeunload", () => { channel?.close(); cancelAnimationFrame(animation); if (imageUrl)
+        URL.revokeObjectURL(imageUrl); });
+}
+
+deckRuntime();</script></body></html>

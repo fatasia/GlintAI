@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  attachGltfDecoders, createGltfMixer, detectDecoderNeeds, disposeGltf, DRACO_DECODER_PATH,
+  attachGltfDecoders, captureGltfMorphs, createGltfMixer, detectDecoderNeeds, disposeGltf, DRACO_DECODER_PATH,
   fitGltf, fittedCameraDistance, KTX2_TRANSCODER_PATH, loadLocalGltf, resetGltfDecoderPool,
   seekGltfAnimation, type DecoderNeeds,
 } from "./gltf";
@@ -73,6 +73,24 @@ const dracoDocument = {
 };
 
 describe("glTF rendering primitives", () => {
+  it("selects one exact animation, while missing or ambiguous names fail", async () => {
+    const gltf = await parseFixture("cube.glb");
+    const mixer = createGltfMixer(gltf, "Turn");
+    seekGltfAnimation(mixer, 15, 30);
+    expect(Math.abs(gltf.scene.getObjectByName("AuthoredCube")!.quaternion.y)).toBeGreaterThan(0);
+    expect(() => createGltfMixer(gltf, "missing")).toThrow(/exactly one/);
+    expect(() => createGltfMixer({ ...gltf, animations: [...gltf.animations, gltf.animations[0]!] }, "Turn")).toThrow(/exactly one/);
+    mixer.stopAllAction(); mixer.uncacheRoot(gltf.scene); disposeGltf(gltf);
+  });
+  it("restores authored morph defaults before applying overrides, across meshes and repeated seeks", () => {
+    const root = new THREE.Group(), a = new THREE.Mesh(), b = new THREE.Mesh();
+    a.morphTargetDictionary = { Smile: 0 }; a.morphTargetInfluences = [0.2];
+    b.morphTargetDictionary = { Smile: 0, Blink: 1 }; b.morphTargetInfluences = [0.4, 0.1]; root.add(a, b);
+    const pose = captureGltfMorphs(root);
+    pose.reset(); pose.apply({ Smile: 0.8 }); expect(a.morphTargetInfluences).toEqual([0.8]); expect(b.morphTargetInfluences).toEqual([0.8, 0.1]);
+    pose.reset(); pose.apply({ Blink: 1 }); expect(a.morphTargetInfluences).toEqual([0.2]); expect(b.morphTargetInfluences).toEqual([0.4, 1]);
+    expect(() => pose.apply({ missing: 0.5 })).toThrow(/not found/);
+  });
   it.each(["cube.gltf", "cube.glb"])("parses authored %s with real GLTFLoader", async (file) => {
     const gltf = await parseFixture(file);
     expect(gltf.scene.getObjectByName("AuthoredCube")).toBeInstanceOf(THREE.Mesh);

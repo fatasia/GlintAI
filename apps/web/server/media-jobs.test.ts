@@ -1,20 +1,41 @@
 import { afterEach, expect, it, vi } from "vitest";
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { createMediaJobs } from "./media-jobs.mjs";
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true }); });
-function setup() {
+
+/** Real decodable media: the ingest gate refuses bytes ffprobe cannot read. */
+const fixtures = new Map<string, Buffer>();
+function mediaFixture(kind: "wav" | "mp4" | "png"): Buffer {
+  const cached = fixtures.get(kind);
+  if (cached) return cached;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glint-media-fixture-"));
+  const file = path.join(dir, `fixture.${kind}`);
+  execFileSync("ffmpeg", ["-nostdin", "-v", "error", "-y",
+    ...(kind === "wav" ? ["-f", "lavfi", "-i", "sine=frequency=440:duration=0.3", "-ar", "8000"]
+      : kind === "png" ? ["-f", "lavfi", "-i", "color=c=red:size=32x32", "-frames:v", "1"]
+      : ["-f", "lavfi", "-i", "testsrc2=size=64x64:rate=10:duration=0.3", "-pix_fmt", "yuv420p"]),
+    file], { timeout: 60_000 });
+  const bytes = fs.readFileSync(file);
+  fs.rmSync(dir, { recursive: true, force: true });
+  fixtures.set(kind, bytes);
+  return bytes;
+}
+
+function setup(download?: (task: unknown, signal: AbortSignal) => Promise<{ contentType: string; bytes: Buffer }>) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "glint-media-jobs-")); roots.push(root);
   const client = { submit: vi.fn(async () => "task-1"), status: vi.fn(async () => ({ task_id: "task-1", state: "success", is_final: true, result_url: "https://asset.test/audio.wav" })) };
-  const download = vi.fn(async () => ({ contentType: "audio/wav", bytes: Buffer.from("fixture") }));
-  const jobs = createMediaJobs(root, { GLINT_MEDIA_BASE_URL: "https://gateway.test", GLINT_MEDIA_API_KEY: "test" }, { client, download });
+  const downloadImpl = download ?? vi.fn(async () => ({ contentType: "audio/wav", bytes: Buffer.from("fixture") }));
+  const jobs = createMediaJobs(root, { GLINT_MEDIA_BASE_URL: "https://gateway.test", GLINT_MEDIA_API_KEY: "test" }, { client, download: downloadImpl });
   const input = { type: "audio", model: "music", prompt: "Instrumental", params: {}, requestId: "request-1" };
-  return { root, client, download, jobs, input };
+  return { root, client, download: downloadImpl, jobs, input };
 }
 it("reserves request IDs before a paid submission and reuses task and download", async () => {
-  const { jobs, input, client, download } = setup();
+  const { jobs, input, client, download } = setup(vi.fn(async () => ({ contentType: "audio/wav", bytes: mediaFixture("wav") })));
   expect(await jobs.submit(input)).toEqual({ taskId: "task-1" });
   expect(await jobs.submit(input)).toEqual({ taskId: "task-1" });
   expect(client.submit).toHaveBeenCalledTimes(1);
@@ -23,6 +44,29 @@ it("reserves request IDs before a paid submission and reuses task and download",
   const result = await jobs.status("task-1"); await jobs.status("task-1");
   expect(result.assetUrl).toBe("/api/media/assets/task-1.wav"); expect(download).toHaveBeenCalledTimes(1);
   expect(jobs.library()[0].name).toBe("task-1.wav"); expect(jobs.asset("../task-1.wav")).toBeNull();
+});
+it("refuses a broken generated result at ingest and keeps it out of the library", async () => {
+  const { root, jobs, input } = setup();
+  await jobs.submit(input);
+  await expect(jobs.status("task-1")).rejects.toThrow(/ingest check/);
+  expect(fs.existsSync(path.join(root, "task-1.wav"))).toBe(false);
+  expect(jobs.library()).toEqual([]);
+});
+it("accumulates a local spend ledger and blocks new paid submissions past the budget cap", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "glint-media-budget-")); roots.push(root);
+  const client = { submit: vi.fn(async () => "task-budget"), status: vi.fn(async () => ({ task_id: "task-budget", state: "success", is_final: true, cost: 0.6, result_url: "https://asset.test/a.wav" })) };
+  const jobs = createMediaJobs(root, { GLINT_MEDIA_BASE_URL: "https://gateway.test", GLINT_MEDIA_API_KEY: "test", GLINT_MEDIA_BUDGET: "0.5" }, { client, download: vi.fn(async () => ({ contentType: "audio/wav", bytes: mediaFixture("wav") })) });
+  const input = { type: "audio", model: "music", prompt: "配乐", params: {}, requestId: "budget-1" };
+  expect((await jobs.submit(input)).taskId).toBe("task-budget");
+  const first = await jobs.status("task-budget");
+  expect(first.cost).toBe(0.6);
+  expect(jobs.spend()).toEqual({ total: 0.6, count: 1 });
+  // Re-polling the final task must not double-count its cost.
+  await jobs.status("task-budget");
+  expect(jobs.spend()).toEqual({ total: 0.6, count: 1 });
+  // A second requestId has real money behind it and must be refused by the cap.
+  await expect(jobs.submit({ ...input, requestId: "budget-2" })).rejects.toThrow(/预算已用尽/);
+  expect(client.submit).toHaveBeenCalledTimes(1);
 });
 it("does not retry an uncertain submission after a lost response", async () => {
   const { jobs, input, client } = setup(); client.submit.mockRejectedValue(new Error("lost response"));
@@ -78,12 +122,15 @@ it("installs a reference frame under a fresh library name and never overwrites",
   expect(() => jobs.install(source, "ref-abc-001.jpg")).toThrow(/already exists/);
   for (const bad of ["../x.jpg", "x.gif", "x.mp4\\", ""]) expect(() => jobs.install(source, bad as string)).toThrow();
 });
-it("streams uploads with a hard size cap and cleans partial files", async () => {
+it("streams uploads with a hard size cap, decodability gate and cleans partial files", async () => {
   const { root, jobs } = setup();
   const { Readable } = await import("node:stream");
-  const ok = await jobs.upload(Readable.from([Buffer.from("mp4")]), "upload-1.mp4");
-  expect(ok).toEqual({ name: "upload-1.mp4", bytes: 3 });
-  expect(fs.readFileSync(path.join(root, "upload-1.mp4"), "utf8")).toBe("mp4");
+  const mp4 = mediaFixture("mp4");
+  const ok = await jobs.upload(Readable.from([mp4]), "upload-1.mp4");
+  expect(ok).toEqual({ name: "upload-1.mp4", bytes: mp4.length });
+  expect(fs.readFileSync(path.join(root, "upload-1.mp4"))).toEqual(mp4);
+  await expect(jobs.upload(Readable.from([Buffer.from("not a video")]), "junk.mp4")).rejects.toThrow(/decodable/);
+  expect(fs.existsSync(path.join(root, "junk.mp4"))).toBe(false);
   await expect(jobs.upload(Readable.from([Buffer.alloc(64)]), "too-big.mp4", 16)).rejects.toThrow(/too large/);
   expect(fs.existsSync(path.join(root, "too-big.mp4"))).toBe(false);
   expect(fs.readdirSync(root).some(file => file.startsWith(".incoming-"))).toBe(false);
@@ -168,4 +215,179 @@ it("does not relabel chat models as image models when nothing matches", async ()
   const fetchImpl = vi.fn(async () => Response.json({ data: [{ id: "tt-4o" }, { id: "gem-3.8-flash" }] }));
   const { jobs } = openaiSetup(fetchImpl);
   expect(await jobs.models("image")).toEqual([]);
+});
+
+/** GEN-01: the gateway has no cancel endpoint, so cancellation is client-side —
+ * detach the task without gateway traffic, downloads or spend, and without
+ * letting a reused requestId trigger a second paid submission. */
+it("cancels a queued task client-side: polling detaches, nothing is downloaded or re-billed", async () => {
+  const { jobs, client, download, input } = setup();
+  client.status.mockResolvedValue({ task_id: "task-1", state: "pending", is_final: false });
+  await jobs.submit(input);
+  expect(await jobs.status("task-1")).toMatchObject({ state: "pending", isFinal: false });
+  expect(jobs.spend()).toEqual({ total: 0, count: 0 });
+  const cancelled = jobs.cancel("task-1");
+  expect(cancelled).toMatchObject({ taskId: "task-1", state: "cancelled", isFinal: true });
+  expect(jobs.cancel("task-1")).toMatchObject({ state: "cancelled", isFinal: true });
+  expect(await jobs.status("task-1")).toMatchObject({ state: "cancelled", isFinal: true });
+  expect(client.status).toHaveBeenCalledTimes(1);
+  expect(download).not.toHaveBeenCalled();
+  // The detached requestId resolves to the same task: no second paid submission.
+  expect(await jobs.submit(input)).toEqual({ taskId: "task-1" });
+  expect(client.submit).toHaveBeenCalledTimes(1);
+  expect(jobs.cancel("missing-task")).toBeNull();
+});
+
+it("refuses to cancel a finished task, and cancellation survives a restart without spend", async () => {
+  const { root, jobs, client, input } = setup(vi.fn(async () => ({ contentType: "audio/wav", bytes: mediaFixture("wav") })));
+  client.status.mockResolvedValue({ task_id: "task-1", state: "success", is_final: true, cost: 0.4, result_url: "https://asset.test/a.wav" });
+  await jobs.submit(input);
+  expect(await jobs.status("task-1")).toMatchObject({ state: "success", isFinal: true });
+  expect(jobs.spend()).toEqual({ total: 0.4, count: 1 });
+  expect(jobs.cancel("task-1")).toBeNull();
+  // Reopen the store on the same root: finality and cancellation are durable.
+  const reopened = createMediaJobs(root, { GLINT_MEDIA_BASE_URL: "https://gateway.test", GLINT_MEDIA_API_KEY: "test" }, { client, download: vi.fn() });
+  expect(reopened.cancel("task-1")).toBeNull();
+  client.status.mockResolvedValue({ task_id: "task-1", state: "pending", is_final: false });
+  await jobs.submit({ ...input, requestId: "request-2" });
+  jobs.cancel("task-1");
+  const statusCalls = client.status.mock.calls.length;
+  expect(await reopened.status("task-1")).toMatchObject({ state: "cancelled", isFinal: true });
+  expect(client.status).toHaveBeenCalledTimes(statusCalls);
+  expect(jobs.spend()).toEqual({ total: 0.4, count: 1 });
+});
+
+it.each([true, false])("keeps cancellation when an in-flight poll returns late (final=%s)", async final => {
+  const { root, jobs, client, download, input } = setup();
+  await jobs.submit(input);
+  let finish!: (value: Awaited<ReturnType<typeof client.status>> & { cost?: number }) => void;
+  client.status.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const polling = jobs.status("task-1");
+  expect(client.status).toHaveBeenCalledOnce();
+  expect(jobs.cancel("task-1")).toMatchObject({ state: "cancelled", isFinal: true });
+  finish({ task_id: "task-1", state: final ? "success" : "running", is_final: final, cost: 0.25, result_url: "https://asset.test/a.wav" });
+  expect(await polling).toMatchObject({ state: "cancelled", isFinal: true });
+  expect(download).not.toHaveBeenCalled(); expect(jobs.spend()).toEqual({ total: 0, count: 0 });
+  const stored = JSON.parse(fs.readFileSync(path.join(root, "task-1.json"), "utf8"));
+  expect(stored.cancelled).toBe(true); expect(stored.state).not.toBe("success");
+  const reopened = createMediaJobs(root, { GLINT_MEDIA_BASE_URL: "https://gateway.test", GLINT_MEDIA_API_KEY: "test" }, { client, download });
+  expect(await reopened.status("task-1")).toMatchObject({ state: "cancelled", isFinal: true });
+  expect(client.status).toHaveBeenCalledOnce(); expect(reopened.library()).toEqual([]);
+});
+
+it("recovers an existing request after restart even when the spend budget is exhausted", async () => {
+  const { root, jobs, client, input } = setup(); await jobs.submit(input);
+  fs.writeFileSync(path.join(root, "spend.json"), JSON.stringify({ total: 1, count: 1 }));
+  const reopened = createMediaJobs(root, { GLINT_MEDIA_BASE_URL: "https://gateway.test", GLINT_MEDIA_API_KEY: "test", GLINT_MEDIA_BUDGET: "1" }, { client });
+  expect(await reopened.submit(input)).toEqual({ taskId: "task-1" });
+  await expect(reopened.submit({ ...input, requestId: "new-request" })).rejects.toThrow(/预算已用尽/);
+  await expect(reopened.submit({ ...input, prompt: "changed" })).rejects.toThrow(/different input/);
+  expect(client.submit).toHaveBeenCalledOnce(); expect(reopened.spend()).toEqual({ total: 1, count: 1 });
+});
+
+/** GEN-15 task-level chain: stream upload → library retrieval → source
+ * annotation (request receipt, task record, versions.json provenance) →
+ * version chain read-back. Every byte in the library is locally decodable. */
+it("GEN-15: upload, retrieval, source annotation and the version chain read back as one story", async () => {
+  const { Readable } = await import("node:stream");
+  const { root, jobs, client, download, input } = setup(vi.fn(async () => ({ contentType: "image/png", bytes: mediaFixture("png") })));
+  // 1. Streamed upload lands in the library and is retrievable.
+  const uploaded = await jobs.upload(Readable.from([mediaFixture("mp4")]), "upload-ref-1.mp4");
+  expect(uploaded).toEqual({ name: "upload-ref-1.mp4", bytes: mediaFixture("mp4").length });
+  expect(jobs.library().map(asset => asset.name)).toContain("upload-ref-1.mp4");
+  expect(jobs.asset("upload-ref-1.mp4")).toBe(path.join(root, "upload-ref-1.mp4"));
+  // 2. A generated image enters the same library with a full source trail:
+  //    requestId → taskId receipt, plus the task record (type/model/protocol).
+  await jobs.submit({ ...input, type: "image", model: "doubao-image", prompt: "生成封面", requestId: "gen-request-1" });
+  expect(jobs.findRequest("gen-request-1")).toEqual({ taskId: "task-1" });
+  expect(await jobs.status("task-1")).toMatchObject({ assetUrl: "/api/media/assets/task-1.png" });
+  expect(download).toHaveBeenCalledTimes(1);
+  const taskRecord = JSON.parse(fs.readFileSync(path.join(root, "task-1.json"), "utf8"));
+  expect(taskRecord).toMatchObject({ type: "image", model: "doubao-image", protocol: "skills" });
+  expect(jobs.library().map(asset => asset.name)).toContain("task-1.png");
+  // 3. The edit chain (as `glint image-edit` writes versions.json): one edit on
+  //    top of the generated cover, installed through the library gate.
+  const staged = path.join(root, "staged-edit.png");
+  fs.writeFileSync(staged, mediaFixture("png"));
+  jobs.install(staged, "edit-001.png");
+  fs.writeFileSync(path.join(root, "versions.json"), JSON.stringify([
+    { file: "task-1.png", parent: null, model: "doubao-image", prompt: "生成封面", cost: 0.05, at: "2026-10-25T10:00:00.000Z" },
+    { file: "edit-001.png", parent: "task-1.png", model: "doubao-image", prompt: "换成夜景", cost: 0.03, at: "2026-10-25T10:05:00.000Z" },
+    { file: "../escape.png", parent: "edit-001.png", model: "x", prompt: "逃逸路径必须被滤掉" },
+  ]));
+  // 4. Read-back: order, parent links, annotations and library agreement.
+  const chain = jobs.versions();
+  expect(chain.map(version => version.file)).toEqual(["task-1.png", "edit-001.png"]);
+  expect(chain[0]).toMatchObject({ parent: null, model: "doubao-image", prompt: "生成封面", cost: 0.05, url: "/api/media/assets/task-1.png" });
+  expect(chain[1]).toMatchObject({ parent: "task-1.png", prompt: "换成夜景", cost: 0.03 });
+  const names = new Set(jobs.library().map(asset => asset.name));
+  for (const version of chain) expect(names.has(version.file), version.file).toBe(true);
+  expect(names.has("upload-ref-1.mp4")).toBe(true);
+});
+it("sends one bounded local reference only for a catalog-declared skills edit model and retains idempotency", async () => {
+  const { root, jobs, client } = setup();
+  const models = vi.fn(async () => [{ id: "edit", tags: ["图生图"] }, { id: "plain", tags: [] }]);
+  Object.assign(client, { models });
+  const bytes = mediaFixture("png"); fs.writeFileSync(path.join(root, "hero.png"), bytes);
+  const input = { type: "image", model: "edit", prompt: "小雨", params: {}, referenceImage: "hero.png", referenceSha256: createHash("sha256").update(bytes).digest("hex"), requestId: "ref-1" };
+  expect(await jobs.submit(input)).toEqual({ taskId: "task-1" });
+  expect(client.submit).toHaveBeenCalledTimes(1);
+  const params = (client.submit.mock.calls[0] as unknown as [string, string, { images: string[] }])[2];
+  expect(params.images).toEqual([`data:image/png;base64,${bytes.toString("base64")}`]);
+  const journal = fs.readFileSync(path.join(root, "request-ref-1.json"), "utf8");
+  expect(journal).not.toContain(bytes.toString("base64"));
+  expect(await jobs.submit(input)).toEqual({ taskId: "task-1" });
+  expect(client.submit).toHaveBeenCalledTimes(1);
+  await expect(jobs.submit({ ...input, requestId: "ref-2", model: "plain" })).rejects.toThrow(/未声明支持/);
+  await expect(jobs.submit({ ...input, requestId: "ref-injected", params: { images: ["https://example.test/injected.png"] } })).rejects.toThrow(/does not support/);
+  for (const bad of ["../hero.png", "https://example.test/a.png", "missing.png"]) await expect(jobs.submit({ ...input, requestId: "ref-bad", referenceImage: bad })).rejects.toThrow();
+  fs.writeFileSync(path.join(root, "large.png"), Buffer.alloc(8 * 1024 * 1024 + 1));
+  await expect(jobs.submit({ ...input, requestId: "ref-large", referenceImage: "large.png" })).rejects.toThrow(/8 MiB/);
+  fs.writeFileSync(path.join(root, "bad.png"), "not an image");
+  await expect(jobs.submit({ ...input, requestId: "ref-invalid", referenceImage: "bad.png" })).rejects.toThrow(/格式/);
+  fs.writeFileSync(path.join(root, "empty.png"), "");
+  await expect(jobs.submit({ ...input, requestId: "ref-empty", referenceImage: "empty.png" })).rejects.toThrow();
+  const changed = Buffer.concat([bytes, Buffer.from([0])]); fs.writeFileSync(path.join(root, "hero.png"), changed);
+  await expect(jobs.submit(input)).rejects.toThrow(/内容已变化/);
+  await expect(jobs.submit({ ...input, referenceSha256: createHash("sha256").update(changed).digest("hex") })).rejects.toThrow(/different input/);
+  expect(client.submit).toHaveBeenCalledTimes(1);
+});
+
+it("does not submit references through the OpenAI generations protocol", async () => {
+  const fetchImpl = vi.fn(async () => Response.json({ data: [{ url: "https://cdn.test/image.png" }] }));
+  const { jobs, input } = openaiSetup(fetchImpl);
+  await expect(jobs.submit({ ...input, referenceImage: "hero.png" })).rejects.toThrow(/does not support/);
+  expect(fetchImpl).not.toHaveBeenCalled();
+});
+
+
+it("retains generic model image parameters without claiming approved-reference semantics", async () => {
+  const { jobs, client } = setup();
+  const images = ["https://example.test/existing-image.png"];
+  await jobs.submit({ type: "video", model: "video-model", prompt: "镜头", params: { images }, requestId: "generic-image" });
+  expect((client.submit.mock.calls[0] as unknown as [string, string, { images: string[] }])[2].images).toEqual(images);
+});
+
+it("never overwrites a concurrent arrival while an upload is streaming", async()=>{
+  const { Readable } = await import("node:stream");
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),"glint-upload-race-"));roots.push(root);
+  const jobs=createMediaJobs(root,{}), existing=Buffer.from("concurrent original");
+  const source=Readable.from((async function*(){
+    fs.writeFileSync(path.join(root,"race.mp4"),existing,{flag:"wx"});
+    yield mediaFixture("mp4");
+  })());
+  await expect(jobs.upload(source,"race.mp4")).rejects.toThrow();
+  expect(fs.readFileSync(path.join(root,"race.mp4"))).toEqual(existing);
+  expect(fs.existsSync(path.join(root,".incoming-race.mp4"))).toBe(false);
+});
+it("projects catalog metadata and refuses malformed reference tags before sending or reserving", async () => {
+  const { root, jobs, client } = setup();
+  const models = vi.fn(async () => [{ id: "edit", name: "Edit", tags: ["图生图", {}] }]);
+  Object.assign(client, { models });
+  const catalog = await jobs.models("image");
+  expect(catalog[0]).toMatchObject({ id: "edit", registry: { capabilities: [], pricing: { basis: "unknown" }, adapter: { model: "edit", type: "skills-gateway" } } });
+  const input = { type: "image", model: "edit", prompt: "fixture", params: {}, referenceImage: "hero.png", referenceSha256: "a".repeat(64), requestId: "malformed-tags" };
+  await expect(jobs.submit(input)).rejects.toThrow(/未声明/);
+  expect(client.submit).not.toHaveBeenCalled(); expect(jobs.findRequest(input.requestId)).toBeNull();
+  expect(fs.readdirSync(root).some(name => name.startsWith("request-"))).toBe(false);
 });

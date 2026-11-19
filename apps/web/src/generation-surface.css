@@ -1,0 +1,9 @@
+.generation-surface .react-flow__controls-button { background: var(--ink-2); color: var(--paper); border-color: var(--line-2); }
+.generation-surface .react-flow__controls-button svg { fill: currentColor; }
+.generation-surface .react-flow__controls-button:hover { background: var(--ink-3); }
+.generation-surface .react-flow__minimap { border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; }
+@media (max-width: 600px) { .generation-surface .react-flow__minimap { display: none; } }
+.generation-surface .react-flow__node.selected > article {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}

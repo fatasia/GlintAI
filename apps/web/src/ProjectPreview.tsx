@@ -1,6 +1,7 @@
+import { applicationUrl } from "./app-url";
 import { Player, type CallbackListener, type PlayerRef } from "@remotion/player";
 import { GlintVideo } from "@glintai/video";
-import { buildTimeline, parseProject, timelineToFrames } from "@glintai/scenescript";
+import { buildTimeline, framesForMs, parseProject, resolveFrameRate, timelineToFrames } from "@glintai/scenescript";
 import { sizeByAspect } from "@glintai/video/size";
 import { useEffect, useMemo, useRef } from "react";
 
@@ -10,13 +11,15 @@ export type ProjectPreviewProps = {
   onSceneChange?(id: string): void;
   onFrameChange?(frame: number): void;
   initialFrame?: number;
+  seekRequest?: { sceneId: string; timeMs: number; sequence: number };
+  onSeekHandled?(sequence: number): void;
 };
 
 const boundedFrame = (frame: number, duration: number) =>
   Math.max(0, Math.min(duration - 1, Number.isFinite(frame) ? Math.floor(frame) : 0));
 
 /** Loaded on intent, not during workbench startup. */
-export default function ProjectPreview({ project, selectedSceneId, onSceneChange, onFrameChange, initialFrame }: ProjectPreviewProps) {
+export default function ProjectPreview({ project, selectedSceneId, onSceneChange, onFrameChange, initialFrame, seekRequest, onSeekHandled }: ProjectPreviewProps) {
   const parsed = useMemo(() => parseProject(project), [project]);
   const fps = parsed.fps ?? 30;
   const { entries, durationInFrames } = useMemo(() => timelineToFrames(buildTimeline(parsed), fps), [parsed, fps]);
@@ -27,6 +30,7 @@ export default function ProjectPreview({ project, selectedSceneId, onSceneChange
   const previousSelection = useRef(selectedSceneId);
   const reportedScene = useRef<string | undefined>(undefined);
   const playbackSelection = useRef<string | undefined>(undefined);
+  const handledSeek = useRef<number | undefined>(undefined);
   const latest = useRef({ entries, selectedSceneId, onSceneChange, onFrameChange });
   latest.current = { entries, selectedSceneId, onSceneChange, onFrameChange };
 
@@ -65,6 +69,17 @@ export default function ProjectPreview({ project, selectedSceneId, onSceneChange
   }, [selectedSceneId, entries, durationInFrames]);
 
   useEffect(() => {
+    if (!seekRequest || handledSeek.current === seekRequest.sequence || seekRequest.sceneId !== selectedSceneId || !Number.isFinite(seekRequest.timeMs)) return;
+    const entry = entries.find(item => item.scene.id === seekRequest.sceneId);
+    if (!entry || entry.duration < 1 || !playerRef.current) return;
+    const localFrame = Math.max(0, Math.min(entry.duration - 1, framesForMs(Math.max(0, seekRequest.timeMs), resolveFrameRate(fps))));
+    const target = boundedFrame(entry.from + localFrame, durationInFrames);
+    handledSeek.current = seekRequest.sequence;
+    if (playerRef.current.getCurrentFrame() !== target) playerRef.current.seekTo(target);
+    onSeekHandled?.(seekRequest.sequence);
+  }, [seekRequest, selectedSceneId, entries, durationInFrames, fps, onSeekHandled]);
+
+  useEffect(() => {
     const player = playerRef.current;
     if (!player) return;
     const frame = player.getCurrentFrame();
@@ -73,7 +88,7 @@ export default function ProjectPreview({ project, selectedSceneId, onSceneChange
   }, [durationInFrames]);
 
   // Player validates initialFrame on every render, including after a duration shrink.
-  return <Player ref={playerRef} component={GlintVideo} inputProps={{ project: parsed, mediaAssetBase: "/api/media/assets/" }}
+  return <Player ref={playerRef} component={GlintVideo} inputProps={{ project: parsed, mediaAssetBase: applicationUrl("/api/media/assets/") }}
     initialFrame={boundedFrame(startFrame.current, durationInFrames)} durationInFrames={durationInFrames}
     compositionWidth={size.width} compositionHeight={size.height} fps={fps}
     style={{ width: "100%", aspectRatio: `${size.width}/${size.height}` }} controls />;

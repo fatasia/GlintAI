@@ -19,17 +19,28 @@ export function parseMp3DurationMs(bytes: Uint8Array, fallbackMs: number): numbe
     const tagLength = ((bytes[6]! & 127) << 21) | ((bytes[7]! & 127) << 14) | ((bytes[8]! & 127) << 7) | (bytes[9]! & 127);
     start = 10 + tagLength + ((bytes[5]! & 16) ? 10 : 0);
   }
-  for (let i = start; i < Math.min(bytes.length - 3, start + 4096); i++) {
-    const first = frameHeader(bytes, i);
-    if (!first || i + first.length > bytes.length) continue;
+  if (start > bytes.length || (start + 4 <= bytes.length && bytes[start] !== 0xff)) return fallbackMs;
+  const i = start;
+  const first = frameHeader(bytes, i);
+  if (!first || i + first.length > bytes.length) return fallbackMs;
     let cursor = i, duration = 0, count = 0;
     while (cursor + 4 <= bytes.length) {
       const frame = frameHeader(bytes, cursor);
       if (!frame || frame.sampleRate !== first.sampleRate || cursor + frame.length > bytes.length) break;
       duration += frame.samples * 1000 / frame.sampleRate; cursor += frame.length; count++;
     }
-    if (count >= 2 && cursor >= bytes.length - 128) return Math.max(1, Math.round(duration));
-    if (count === 1 && cursor === bytes.length) return Math.max(1, Math.round(duration));
-  }
-  return fallbackMs;
+    // ID3v1 is the only accepted trailer; an incomplete frame is never padding.
+    const end = bytes.length - cursor === 128 && String.fromCharCode(...bytes.subarray(cursor, cursor + 3)) === "TAG" ? cursor + 128 : cursor;
+    if (!count || end !== bytes.length) return fallbackMs;
+    // Xing/Info or VBRI frames carry duration and encoder delay/padding that
+    // this frame-counting parser cannot reliably turn into playback samples.
+    // Ancillary encoder strings are not markers: they can occur in ordinary audio.
+    const mono = (bytes[i + 3]! >> 6) === 3;
+    const mpeg1 = ((bytes[i + 1]! >> 3) & 3) === 3;
+    const crc = (bytes[i + 1]! & 1) === 0 ? 2 : 0;
+    const xingOffset = i + 4 + crc + (mpeg1 ? (mono ? 17 : 32) : (mono ? 9 : 17));
+    const marker = (at: number) => String.fromCharCode(...bytes.subarray(at, at + 4));
+    if (xingOffset + 4 <= i + first.length && ["Xing", "Info"].includes(marker(xingOffset))) return fallbackMs;
+    if (i + 40 <= i + first.length && marker(i + 36) === "VBRI") return fallbackMs;
+    return Math.max(1, Math.round(duration));
 }

@@ -9,7 +9,11 @@ import os from "node:os";
 const entry = new URL("../../../apps/studio/scripts/glint.ts", import.meta.url);
 const require = createRequire(entry);
 const run = promisify(execFile);
-const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/KEY|TOKEN|SECRET|PASSWORD|INIT_CWD/i.test(key)));
+const env = {
+  ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !/KEY|TOKEN|SECRET|PASSWORD|INIT_CWD/i.test(key))),
+  // Execute the real entry scripts, retaining isolated output/cache directories from setup.
+  GLINT_STUDIO_DIR: fileURLToPath(new URL("../../../apps/studio/", import.meta.url)),
+};
 
 describe("CLI real child process, no credentials or paid services", () => {
   it("starts from an unrelated cwd", async () => {

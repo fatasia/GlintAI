@@ -1,3 +1,5 @@
+import { applicationUrl } from "./app-url";
+import { appFetch as fetch } from "./app-url";
 import { useEffect, useRef, useState } from "react";
 
 const SIZES = [
@@ -11,14 +13,15 @@ const TERMINAL = new Set(["success", "failed", "cancelled", "canceled"]);
 type Model = { id: string; name: string; description?: string };
 type Job = { taskId: string; state?: string; isFinal?: boolean; assetUrl?: string };
 
-const field = { boxSizing: "border-box" as const, width: "100%", minWidth: 0, padding: "9px 11px", borderRadius: 8, border: "1px solid #2b2b31", background: "#101013", color: "#e4e4e7", font: "inherit", fontSize: 13 };
+const field = { boxSizing: "border-box" as const, width: "100%", minWidth: 0, padding: "9px 11px", borderRadius: 8, border: "1px solid var(--line-2)", background: "var(--ink-1)", color: "var(--paper)", font: "inherit", fontSize: 13 };
 
 /**
  * The image side of the one-box entry. It only submits when the user presses
  * the button, reuses a stable request id for an identical retry, and restores
  * an in-flight task instead of paying twice after a reload.
  */
-export function QuickImage({ disabled = false }: { disabled?: boolean }) {
+export function QuickImage({ disabled = false, onUse }: { disabled?: boolean; onUse?(url: string): Promise<void> }) {
+  const [using, setUsing] = useState(false);
   const [models, setModels] = useState<Model[]>([]);
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [model, setModel] = useState("");
@@ -120,8 +123,8 @@ export function QuickImage({ disabled = false }: { disabled?: boolean }) {
     } finally { if (mounted.current) setBusy(false); }
   };
 
-  return <section aria-label="生成图片" style={{ display: "grid", minWidth: 0, background: "#151518", borderRadius: 18, boxShadow: "0 30px 80px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.045)", overflow: "hidden" }}>
-    <textarea aria-label="图片描述" rows={3} maxLength={4000} value={prompt} disabled={disabled || running} onChange={event => { setPrompt(event.target.value); setError(""); }} placeholder="描述画面：主体、风格、光线和构图。例如「雨夜的老街，暖黄路灯，电影感」。" style={{ boxSizing: "border-box", width: "100%", border: 0, resize: "none", background: "transparent", color: "#f4f4f5", padding: "20px 22px 6px", font: "inherit", fontSize: 16, lineHeight: 1.65 }} />
+  return <section aria-label="生成图片" style={{ display: "grid", minWidth: 0, background: "var(--ink-2)", borderRadius: 18, boxShadow: "0 30px 80px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.045)", overflow: "hidden" }}>
+    <textarea aria-label="图片描述" rows={3} maxLength={4000} value={prompt} disabled={disabled || running} onChange={event => { setPrompt(event.target.value); setError(""); }} placeholder="描述画面：主体、风格、光线和构图。例如「雨夜的老街，暖黄路灯，电影感」。" style={{ boxSizing: "border-box", width: "100%", border: 0, resize: "none", background: "transparent", color: "var(--paper)", padding: "20px 22px 6px", font: "inherit", fontSize: 16, lineHeight: 1.65 }} />
     <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, padding: "8px 14px 14px" }}>
       <select aria-label="图片模型" value={model} disabled={disabled || running || !models.length} onChange={event => setModel(event.target.value)} style={{ ...field, width: "auto", maxWidth: 220 }}>
         {models.length ? models.map(item => <option key={item.id} value={item.id}>{item.name}</option>) : <option value="">{modelsLoaded ? "未配置图片模型" : "正在读取图片模型…"}</option>}
@@ -129,21 +132,21 @@ export function QuickImage({ disabled = false }: { disabled?: boolean }) {
       {protocol === "openai-images" && <select aria-label="图片尺寸" value={size} disabled={disabled || running} onChange={event => setSize(event.target.value)} style={{ ...field, width: "auto" }}>
         {SIZES.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
       </select>}
-      <span style={{ marginLeft: "auto", color: "#8b8b95", fontSize: 12 }}>{prompt.trim().length} 字</span>
-      <button type="button" disabled={disabled || busy || running || !prompt.trim() || !model} onClick={() => void submit()} style={{ border: "1px solid #f4f4f5", borderRadius: 999, padding: "9px 18px", font: "inherit", fontSize: 14, fontWeight: 600, cursor: disabled || busy || running || !prompt.trim() || !model ? "not-allowed" : "pointer", background: "#f4f4f5", color: "#09090b", opacity: disabled || busy || running || !prompt.trim() || !model ? 0.45 : 1 }}>{busy ? "正在提交…" : running ? "正在生成…" : "生成图片（用网关额度）"}</button>
+      <span style={{ marginLeft: "auto", color: "var(--muted)", fontSize: 12 }}>{prompt.trim().length} 字</span>
+      <button type="button" disabled={disabled || busy || running || !prompt.trim() || !model} onClick={() => void submit()} style={{ border: "1px solid var(--paper)", borderRadius: 999, padding: "9px 18px", font: "inherit", fontSize: 14, fontWeight: 600, cursor: disabled || busy || running || !prompt.trim() || !model ? "not-allowed" : "pointer", background: "var(--paper)", color: "var(--ink-0)", opacity: disabled || busy || running || !prompt.trim() || !model ? 0.45 : 1 }}>{busy ? "正在提交…" : running ? "正在生成…" : "生成图片（用网关额度）"}</button>
     </div>
-    {modelsLoaded && !models.length && <small role="note" style={{ padding: "0 22px 16px", color: "#8b8b95" }}>还没有图片模型。到「工具与设置 → 模型连接」填入媒体网关，保存后即可生成。</small>}
-    {job && <p role="status" style={{ margin: 0, padding: "0 22px 12px", color: "#a1a1aa", fontSize: 13 }}>{job.isFinal ? "已完成" : `正在生成 · ${job.state ?? "处理中"}`}</p>}
+    {modelsLoaded && !models.length && <small role="note" style={{ padding: "0 22px 16px", color: "var(--muted)" }}>还没有图片模型。到「工具与设置 → 模型连接」填入媒体网关，保存后即可生成。</small>}
+    {job && <p role="status" style={{ margin: 0, padding: "0 22px 12px", color: "var(--muted)", fontSize: 13 }}>{job.isFinal ? (job.state === "success" ? "已完成" : `任务已结束 · ${job.state ?? "未知结果"}`) : `正在生成 · ${job.state ?? "处理中"}`}</p>}
     {job?.assetUrl && <div style={{ display: "grid", gap: 8, padding: "0 22px 18px" }}>
-      <img alt="生成的图片" src={job.assetUrl} style={{ width: "100%", maxHeight: 420, objectFit: "contain", borderRadius: 10, border: "1px solid #2b2b31", background: "#0c0c0e" }} />
-      <div style={{ display: "flex", gap: 14, alignItems: "center", fontSize: 13, color: "#a1a1aa" }}><a href={job.assetUrl} download style={{ color: "inherit" }}>下载图片</a><button type="button" onClick={() => { setJob(null); try { localStorage.removeItem(LAST_TASK_KEY); } catch { /* optional */ } }} style={{ border: "1px solid #3f3f46", borderRadius: 999, background: "transparent", color: "#d4d4d8", padding: "5px 11px", font: "inherit", fontSize: 12, cursor: "pointer" }}>再生成一张</button></div>
+      <img alt="生成的图片" src={applicationUrl(job.assetUrl)} style={{ width: "100%", maxHeight: 420, objectFit: "contain", borderRadius: 10, border: "1px solid var(--line-2)", background: "#0c0c0e" }} />
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", fontSize: 13, color: "var(--muted)" }}>{onUse && <button type="button" disabled={disabled || using} onClick={() => { if (!job.assetUrl || using) return; setUsing(true); setError(""); void onUse(job.assetUrl).catch(cause => { if (mounted.current) setError(cause instanceof Error ? cause.message : "图片未插入，请重试。"); }).finally(() => { if (mounted.current) setUsing(false); }); }}>{using ? "正在插入…" : "插入当前页面"}</button>}<a href={applicationUrl(job.assetUrl)} download style={{ color: "inherit" }}>下载图片</a><button type="button" onClick={() => { setJob(null); try { localStorage.removeItem(LAST_TASK_KEY); } catch { /* optional */ } }} style={{ border: "1px solid var(--line-3)", borderRadius: 999, background: "transparent", color: "var(--paper-dim)", padding: "5px 11px", font: "inherit", fontSize: 12, cursor: "pointer" }}>再生成一张</button></div>
     </div>}
     {recovery && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "0 22px 16px" }}>
-      <button type="button" onClick={() => { setError(""); setRetry(value => value + 1); }} style={{ border: "1px solid #3f3f46", borderRadius: 999, background: "transparent", color: "#d4d4d8", padding: "6px 12px", font: "inherit", fontSize: 12, cursor: "pointer" }}>再查回执（不重新生成）</button>
-      <button type="button" onClick={() => setRecovery(null)} style={{ border: "1px solid #2b2b31", borderRadius: 999, background: "transparent", color: "#8b8b95", padding: "6px 12px", font: "inherit", fontSize: 12, cursor: "pointer" }}>停止查询</button>
+      <button type="button" onClick={() => { setError(""); setRetry(value => value + 1); }} style={{ border: "1px solid var(--line-3)", borderRadius: 999, background: "transparent", color: "var(--paper-dim)", padding: "6px 12px", font: "inherit", fontSize: 12, cursor: "pointer" }}>再查回执（不重新生成）</button>
+      <button type="button" onClick={() => setRecovery(null)} style={{ border: "1px solid var(--line-2)", borderRadius: 999, background: "transparent", color: "var(--muted)", padding: "6px 12px", font: "inherit", fontSize: 12, cursor: "pointer" }}>停止查询</button>
     </div>}
-    {error && job && !job.isFinal && <button type="button" onClick={() => { setError(""); setRetry(value => value + 1); }} style={{ justifySelf: "start", margin: "0 22px 16px", border: "1px solid #3f3f46", borderRadius: 999, background: "transparent", color: "#d4d4d8", padding: "6px 12px", font: "inherit", fontSize: 12, cursor: "pointer" }}>再查一次任务</button>}
-    {error && <p role="alert" style={{ margin: 0, padding: "0 22px 16px", color: "#fca5a5", fontSize: 13, overflowWrap: "anywhere" }}>{error}</p>}
-    <details style={{ padding: "0 22px 14px", color: "#8b8b95", fontSize: 12 }}><summary style={{ cursor: "pointer" }}>费用与隐私</summary><p style={{ margin: "8px 0 0", lineHeight: 1.6 }}>只有点击生成才会把描述发给已配置的媒体网关，并按网关价格计费。结果保存在当前服务器。</p></details>
+    {error && job && !job.isFinal && <button type="button" onClick={() => { setError(""); setRetry(value => value + 1); }} style={{ justifySelf: "start", margin: "0 22px 16px", border: "1px solid var(--line-3)", borderRadius: 999, background: "transparent", color: "var(--paper-dim)", padding: "6px 12px", font: "inherit", fontSize: 12, cursor: "pointer" }}>再查一次任务</button>}
+    {error && <p role="alert" style={{ margin: 0, padding: "0 22px 16px", color: "var(--danger)", fontSize: 13, overflowWrap: "anywhere" }}>{error}</p>}
+    <details style={{ padding: "0 22px 14px", color: "var(--muted)", fontSize: 12 }}><summary style={{ cursor: "pointer" }}>费用与隐私</summary><p style={{ margin: "8px 0 0", lineHeight: 1.6 }}>只有点击生成才会把描述发给已配置的媒体网关，并按网关价格计费。结果保存在当前服务器。</p></details>
   </section>;
 }

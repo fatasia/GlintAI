@@ -9,11 +9,11 @@ import { renderSceneSvg, supportsNativeScene } from "./native-svg";
 import { createTextOutliner } from "./native-svg/outline";
 import { resolveTheme } from "@glintai/design-tokens";
 import { createDirectCapture } from "./direct-browser";
-import { prepareNativeAudio } from "./native-audio";
+import { prepareNativeAudio, narrationSignature } from "./native-audio";
 import { runMediaProcess, startPngEncoder } from "./native-process";
 import { buildProjectCues, formatSrt } from "./jianying";
 import { buildStitchPlan } from "./native-stitch";
-import { assetFingerprint, sceneMediaFingerprint, sceneAssetFingerprint, nativeCacheEnvironment, sceneCacheKey, visualSceneIdentity, cacheArtifactValid, recordCacheArtifact } from "./native-cache";
+import { assetFingerprint, sceneMediaFingerprint, sceneAssetFingerprint, nativeCacheEnvironment, sceneCacheKey, sceneEncoding, visualSceneIdentity, cacheArtifactValid, recordCacheArtifact } from "./native-cache";
 
 export interface NativeRenderOptions {
   beatGrid?: import("@glintai/music").BeatGrid;
@@ -25,6 +25,10 @@ export interface NativeRenderOptions {
   tts?: string;
   music?: string;
   noCache?: boolean;
+  /** Fail rather than synthesize if a budget-verified TTS cache entry vanishes. */
+  ttsCacheOnly?: boolean;
+  onProviderCall?: () => void;
+  expectedNarrationSignature?: string;
   /** Output height preset: 540/720/1080/1440/2160. Overrides --fast scaling. Vector scenes stay crisp at any height. */
   resolution?: "540" | "720" | "1080" | "1440" | "2160";
   signal?: AbortSignal;
@@ -52,13 +56,15 @@ export async function renderNative(options: NativeRenderOptions) {
   const output = path.resolve(options.output);
   if (fs.existsSync(output)) throw new Error(`Output already exists; choose a new --out path: ${output}`);
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "glint-native-"));
-  const cacheDir = path.resolve(".cache", "native-scenes");
-  fs.mkdirSync(cacheDir, { recursive: true }); fs.mkdirSync(path.dirname(output), { recursive: true });
+  const cacheDir = path.resolve(process.env.GLINT_CACHE_DIR ?? ".cache", "native-scenes");
+  if (!options.noCache) fs.mkdirSync(cacheDir, { recursive: true });
+  fs.mkdirSync(path.dirname(output), { recursive: true });
   const partial = path.join(path.dirname(output), `.${path.basename(output)}-${randomUUID()}.mp4`);
   let capture: Awaited<ReturnType<typeof createDirectCapture>> | undefined;
   try {
     const audio = await prepareNativeAudio(project, projectDir, workspace, options);
     project = audio.project;
+    if (options.expectedNarrationSignature && narrationSignature(project) !== options.expectedNarrationSignature) throw new Error("TTS timing changed after budget planning; retry without --assert-budget");
     const rate = frameRateOf(project.fps ?? 30);
     const { entries, durationInFrames } = timelineToFrames(buildTimeline(project), project.fps ?? 30);
     const fps = rate.value;
@@ -70,6 +76,7 @@ export async function renderNative(options: NativeRenderOptions) {
     const clips: string[] = [];
     const sceneReports: { id: string; key: string; cached: boolean }[] = [];
     const browserFor = new Set(browserScenes.map(scene => scene.id));
+    const encoding = sceneEncoding(options.fast);
     // Include local implementation source in the cache identity, not only the schema.
     const scriptDir = path.dirname(fileURLToPath(import.meta.url));
     const fontFiles = process.platform === "win32" ? ["msyh.ttc", "msyhbd.ttc", "simkai.ttf", "consola.ttf"].map(name => path.join(process.env.WINDIR ?? "C:/Windows", "Fonts", name)).filter(file => fs.existsSync(file)) : [];
@@ -79,7 +86,7 @@ export async function renderNative(options: NativeRenderOptions) {
     for (const [index, entry] of entries.entries()) {
       options.signal?.throwIfAborted();
       const previous = project.scenes[index - 1];
-      const key = sceneCacheKey({ environment: cacheEnvironment, scene: visualSceneIdentity(entry.scene, Boolean(options.plate)), media: sceneMediaFingerprint(entry.scene, projectDir, assets), assets: sceneAssetFingerprint(project, entry.scene), previousShared: entry.scene.transition?.in === "magic-move" ? previous?.sharedElements : undefined, theme: resolveTheme(project.theme), width, height, fps, duration: entry.duration, plate: Boolean(options.plate) });
+      const key = sceneCacheKey({ environment: cacheEnvironment, scene: visualSceneIdentity(entry.scene, Boolean(options.plate)), media: sceneMediaFingerprint(entry.scene, projectDir, assets), assets: sceneAssetFingerprint(project, entry.scene), previousShared: entry.scene.transition?.in === "magic-move" ? previous?.sharedElements : entry.scene.transition?.in === "shape-morph" ? previous?.elements : undefined, theme: resolveTheme(project.theme), width, height, fps, duration: entry.duration, plate: Boolean(options.plate), encoding });
       sceneReports.push({ id: entry.scene.id, key, cached: false });
       const clip = path.join(cacheDir, `${key}.mp4`);
       if (!options.noCache && cacheArtifactValid(clip)) {
@@ -90,7 +97,7 @@ export async function renderNative(options: NativeRenderOptions) {
         await capture.load(entry.scene, Boolean(options.plate));
       }
       log(`[glint] native rendering ${entry.scene.id}: ${entry.duration} frames${browserFor.has(entry.scene.id) ? " (browser)" : " (svg)"}`);
-      const encoder = startPngEncoder({ fps, frameRateText: rate.text, crf: options.fast ? 24 : 20, preset: options.fast ? "veryfast" : "medium", output: path.join(workspace, `clip-${index}.mp4`), signal: options.signal });
+      const encoder = startPngEncoder({ fps, frameRateText: rate.text, ...encoding, output: path.join(workspace, `clip-${index}.mp4`), signal: options.signal });
       const rasterStart = performance.now();
       try {
         for (let frame = 0; frame < entry.duration; frame++) {
@@ -113,39 +120,43 @@ export async function renderNative(options: NativeRenderOptions) {
       } catch (error) { await encoder.finish().catch(() => {}); throw error; }
       rasterMs += performance.now() - rasterStart;
       const tempClip = path.join(workspace, `clip-${index}.mp4`);
-      const cacheTemp = `${clip}.${randomUUID()}.tmp`; fs.copyFileSync(tempClip, cacheTemp); fs.renameSync(cacheTemp, clip); recordCacheArtifact(clip);
-      clips.push(clip);
+      if (options.noCache) clips.push(tempClip);
+      else {
+        const cacheTemp = `${clip}.${randomUUID()}.tmp`; fs.copyFileSync(tempClip, cacheTemp); fs.renameSync(cacheTemp, clip); recordCacheArtifact(clip);
+        clips.push(clip);
+      }
     }
     const concat = path.join(workspace, "concat.txt");
     fs.writeFileSync(concat, clips.map(file => `file '${file.replace(/\\/g, "/").replace(/'/g, "'\\''")}'`).join("\n"));
     const muxStart = performance.now();
     const stitch = buildStitchPlan(entries, fps);
-    // Container cache: identical scene clips + identical audio + identical stitch
-    // parameters must produce the same file, so a repeat build can copy instead of mux.
+    // Container identity follows the actual encoded clips, not just their cache names.
     const containerKey = createHash("sha256").update(JSON.stringify({
-      version: 2,
-      clips: clips.map(file => path.basename(file)),
+      version: 4,
+      ffmpeg: cacheEnvironment.ffmpeg,
+      clips: clips.map(file => createHash("sha256").update(fs.readFileSync(file)).digest("hex")),
       audio: audio.audioPath ? createHash("sha256").update(fs.readFileSync(audio.audioPath)).digest("hex") : null,
       overlaps: stitch.overlaps, durationInFrames, fps,
       crf: options.fast ? 24 : 20, preset: options.fast ? "veryfast" : "medium",
       filter: stitch.overlaps.some(Boolean) ? stitch.filter : "concat",
     })).digest("hex");
-    const containerCache = path.join(path.resolve(".cache", "native-container"), `${containerKey}.mp4`);
+    const containerCache = path.join(path.resolve(process.env.GLINT_CACHE_DIR ?? ".cache", "native-container"), `${containerKey}.mp4`);
     let containerHit = false;
-    if (cacheArtifactValid(containerCache)) { fs.copyFileSync(containerCache, partial); containerHit = true; }
+    if (!options.noCache && cacheArtifactValid(containerCache)) { fs.copyFileSync(containerCache, partial); containerHit = true; }
     else if (stitch.overlaps.some(Boolean)) {
       await runMediaProcess("ffmpeg", ["-v", "error", "-y", "-filter_complex_threads", "1", ...clips.flatMap(file => ["-i", file]), ...(audio.audioPath ? ["-i", audio.audioPath] : []), "-filter_complex", stitch.filter, "-map", `[${stitch.output}]`, ...(audio.audioPath ? ["-map", `${clips.length}:a:0`, "-c:a", "aac", "-b:a", "160k"] : []), "-c:v", "libx264", "-preset", options.fast ? "veryfast" : "medium", "-crf", options.fast ? "24" : "20", "-pix_fmt", "yuv420p", "-frames:v", String(durationInFrames), "-movflags", "+faststart", partial], { signal: options.signal });
     } else {
       await runMediaProcess("ffmpeg", ["-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", concat, ...(audio.audioPath ? ["-i", audio.audioPath] : []), "-map", "0:v:0", ...(audio.audioPath ? ["-map", "1:a:0", "-c:a", "aac", "-b:a", "160k"] : []), "-c:v", "copy", "-movflags", "+faststart", "-t", String(durationInFrames / fps), partial], { signal: options.signal });
     }
-    if (!containerHit) {
+    if (!containerHit && !options.noCache) {
       fs.mkdirSync(path.dirname(containerCache), { recursive: true });
       const cacheTemp = `${containerCache}.${randomUUID()}.tmp`;
       fs.copyFileSync(partial, cacheTemp); fs.renameSync(cacheTemp, containerCache); recordCacheArtifact(containerCache);
     }
     fs.renameSync(partial, output);
-    const metrics = { backend: browserScenes.length ? "independent-mixed" : "native-svg", remotionLoaded: false, chromiumLaunched: Boolean(capture), width, height, fps, frames: durationInFrames, renderedFrames, cacheHits, overlaps: stitch.overlaps, sceneCount: entries.length, rasterMs: Math.round(rasterMs), encodeMs: Math.round(encodeMs), muxMs: Math.round(performance.now() - muxStart), totalMs: Math.round(performance.now() - started), bytes: fs.statSync(output).size };
-    fs.writeFileSync(`${output}.metrics.json`, JSON.stringify(metrics, null, 2));
+    const metrics = { backend: browserScenes.length ? "independent-mixed" : "native-svg", remotionLoaded: false, chromiumLaunched: Boolean(capture), width, height, fps, frames: durationInFrames, renderedFrames, cacheHits, containerHit, overlaps: stitch.overlaps, sceneCount: entries.length, rasterMs: Math.round(rasterMs), encodeMs: Math.round(encodeMs), muxMs: Math.round(performance.now() - muxStart), totalMs: Math.round(performance.now() - started), bytes: fs.statSync(output).size };
+    // CREATE-11:渲染回执带上环境指纹（渲染器/浏览器/FFmpeg/字体），升级后可追溯并使缓存指纹失效。
+    fs.writeFileSync(`${output}.metrics.json`, JSON.stringify({ ...metrics, environment: cacheEnvironment }, null, 2));
     const portableProject = structuredClone(project);
     const mediaDirectory = `${output}.assets`;
     for (const scene of portableProject.scenes) {
@@ -158,7 +169,7 @@ export async function renderNative(options: NativeRenderOptions) {
     fs.writeFileSync(`${output}.project.json`, JSON.stringify(portableProject, null, 2));
     fs.writeFileSync(`${output}.srt`, formatSrt(buildProjectCues(project)));
     log(`[glint] native done: ${output} (${metrics.totalMs}ms, ${cacheHits}/${entries.length} cached)`);
-    return { output, metrics, scenes: sceneReports, environment: cacheEnvironment };
+    return { output, metrics, scenes: sceneReports, environment: cacheEnvironment, modelCalls: audio.modelCalls };
   } finally {
     await capture?.close();
     fs.rmSync(workspace, { recursive: true, force: true });

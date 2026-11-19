@@ -1,73 +1,20 @@
-import { type ImageScene } from "@glintai/scenescript";
-import { AbsoluteFill, Img, useVideoConfig } from "remotion";
-import { FadeIn } from "../components/FadeIn";
+import { sceneDurationMs, type ImageScene } from "@glintai/scenescript";
+import { Img, useCurrentFrame, useVideoConfig } from "remotion";
 import { useMediaAssetSrc } from "../components/MediaAssetContext";
+import { imageSceneLayout, shouldShowImageCaption, showcaseForegroundTransform } from "./image-layout";
 
-const IMAGE_LAYOUT = {
-  topPadding: 150,
-  bottomPadding: 330,
-  captionGap: 44,
-  captionReserve: 136,
-  imageHeightRatio: 420 / 1080,
-} as const;
-
-/** Framed local asset with separate, non-shrinking image and caption rows. */
+/** The layout and depth transform are shared with the independent exporter. */
 export const ImageSceneView: React.FC<{ scene: ImageScene }> = ({ scene }) => {
-  const { width, height } = useVideoConfig();
-  const src = useMediaAssetSrc(scene.src);
-  const topPadding = Math.min(IMAGE_LAYOUT.topPadding, height * 0.14);
-  const bottomPadding = Math.min(IMAGE_LAYOUT.bottomPadding, height * 0.31);
-  const captionSpace = scene.caption ? IMAGE_LAYOUT.captionGap + IMAGE_LAYOUT.captionReserve : 0;
-  const imageHeight = Math.max(1, Math.min(
-    height * IMAGE_LAYOUT.imageHeightRatio,
-    height - topPadding - bottomPadding - captionSpace,
-  ));
-  return (
-    <AbsoluteFill
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: IMAGE_LAYOUT.captionGap,
-        padding: `${topPadding}px ${Math.min(170, width * 0.09)}px ${bottomPadding}px`,
-        boxSizing: "border-box",
-      }}
-    >
-      <FadeIn style={{ width: "100%", maxWidth: 1400, height: imageHeight, flexShrink: 0 }}>
-        <Img
-          src={src}
-          alt={scene.caption ?? "Project image"}
-          style={{
-            display: "block",
-            width: "100%",
-            height: "100%",
-            maxWidth: "100%",
-            maxHeight: "100%",
-            boxSizing: "border-box",
-            objectFit: "contain",
-            borderRadius: "var(--glint-radius)",
-            boxShadow: "var(--glint-shadow-card)",
-            border: "1px solid color-mix(in srgb, var(--glint-color-text) 10%, transparent)",
-          }}
-        />
-      </FadeIn>
-      {scene.caption ? (
-        <FadeIn delay={8} style={{ width: "100%", maxWidth: 1400, flexShrink: 0 }}>
-          <p
-            style={{
-              margin: 0,
-              fontSize: "var(--glint-font-size-body)",
-              color: "var(--glint-color-text-muted)",
-              textAlign: "center",
-              lineHeight: 1.35,
-              overflowWrap: "anywhere",
-            }}
-          >
-            {scene.caption}
-          </p>
-        </FadeIn>
-      ) : null}
-    </AbsoluteFill>
-  );
+  const { width, height, fps } = useVideoConfig();
+  const frame = useCurrentFrame(), src = useMediaAssetSrc(scene.src);
+  const styles = imageSceneLayout(scene, width, height);
+  const duration = Math.max(1, Math.round(sceneDurationMs(scene) / 1000 * fps));
+  return <div style={styles.container}>
+    {styles.background && <Img src={src} alt="" aria-hidden style={styles.background} />}
+    {styles.veil && <div style={styles.veil} />}
+    <div style={{ ...styles.frame, transform: showcaseForegroundTransform(scene, frame, duration, Math.min(width, height) / 1080) }}>
+      <Img src={src} alt={scene.caption ?? "Project image"} style={styles.image} />
+    </div>
+    {shouldShowImageCaption(scene) && <p style={styles.caption}>{scene.caption}</p>}
+  </div>;
 };

@@ -1,3 +1,4 @@
+import { appFetch as fetch } from "./app-url";
 import { useEffect, useRef, useState } from "react";
 
 /** Peak envelope for a canvas waveform; exported so it can be tested without Web Audio. */
@@ -50,6 +51,6 @@ export function VoiceWaveform({ src }: { src: string }) {
       .finally(() => { void context.close(); });
     return () => { cancelled = true; };
   }, [src]);
-  if (state === "unsupported") return <small style={{ color: "#8b8b95" }}>当前浏览器无法解码波形；试听仍可用。</small>;
-  return <canvas ref={canvas} role="img" aria-label="配音波形" style={{ width: "100%", height: 36, display: "block", borderRadius: 6, background: "#101013", border: "1px solid #26262b", opacity: state === "loading" ? 0.5 : 1 }} />;
+  if (state === "unsupported") return <small style={{ color: "var(--muted)" }}>当前浏览器无法解码波形；试听仍可用。</small>;
+  return <canvas ref={canvas} role="img" aria-label="配音波形" style={{ width: "100%", height: 36, display: "block", borderRadius: 6, background: "var(--ink-1)", border: "1px solid var(--ink-4)", opacity: state === "loading" ? 0.5 : 1 }} />;
 }

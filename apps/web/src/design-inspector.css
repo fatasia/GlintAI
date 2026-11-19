@@ -1,0 +1,17 @@
+/* Layer controls and multi-selection layout, scoped to the design inspector. */
+.design-inspector .design-align { margin-top: 16px; border-top: 1px solid var(--line-2); padding-top: 12px; }
+.design-align-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.design-align-head strong { color: var(--paper); font-size: 12px; }
+.design-align-head span { color: var(--muted); font-size: 11px; }
+.design-align-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.design-align-grid button { padding: 6px 4px; font-size: 11px; line-height: 1.4; }
+.design-align-grid button[disabled] { opacity: .45; cursor: not-allowed; }
+.design-layer-row { border: 1px solid transparent; border-radius: var(--r-sm); padding: 1px 4px; }
+.design-layer-row.is-selected { border-color: var(--line-2); background: var(--ink-3); }
+.design-layer-row .design-layer { margin: 3px 0; }
+.design-layer-tools { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 0 4px 22px; }
+.design-layer-tools button { padding: 1px 6px; font-size: 10px; line-height: 1.6; color: var(--paper-dim); background: var(--ink-4); border: 1px solid var(--line-2); border-radius: var(--r-sm); cursor: pointer; }
+.design-layer-tools button:hover:not([disabled]) { border-color: var(--accent); color: var(--paper); }
+.design-layer-tools button[disabled] { opacity: .4; cursor: not-allowed; }
+.design-layer-tools button[aria-pressed="true"] { border-color: var(--accent); color: var(--g-accent-text); }
+@media (max-width: 1100px) { .design-align-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }

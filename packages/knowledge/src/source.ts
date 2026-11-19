@@ -3,14 +3,16 @@ import { createReadStream } from "node:fs";
 import path from "node:path";
 import { loadMarkdown, type KnowledgeDocument } from "./markdown";
 import { extractPdf } from "./pdf";
-import { fetchSource, MAX_SOURCE_BYTES } from "./source-url";
+import { fetchSource, MAX_SOURCE_BYTES, resolvePublicDns } from "./source-url";
 
 export class SourceError extends Error {
   constructor(message: string) { super(message); this.name = "SourceError"; }
 }
 const ENTITIES: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&nbsp;": " " };
 export function htmlToText(html: string): string {
-  return html.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ")
+  return html.replace(/<(script|style|template|noscript)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<\/(td|th)\s*>\s*(?=<(?:td|th)\b)/gi, " | ")
     .replace(/<\/(p|div|section|article|h[1-6]|li|tr)>/gi, "\n")
     .replace(/<(br|hr)\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "")
     .replace(/&(?:#x[\da-f]+|#\d+|[a-z]+);/gi, (entity) => {
@@ -49,7 +51,7 @@ export function csvToText(csv: string): string {
 }
 
 export type SourceAdapter = (input: { bytes: Uint8Array; extension: string; signal: AbortSignal }) => Promise<string>;
-export interface SourceOptions { signal?: AbortSignal; timeoutMs?: number; adapters?: Record<string, SourceAdapter>; httpsOnly?: boolean }
+export interface SourceOptions { signal?: AbortSignal; timeoutMs?: number; adapters?: Record<string, SourceAdapter>; httpsOnly?: boolean; publicDns?: boolean }
 const OFFICE = new Set(["docx", "pptx", "xlsx"]);
 const MEDIA = new Set(["png", "jpg", "jpeg", "webp", "gif", "svg", "mp3", "wav", "mp4", "mov", "webm", "m4a", "ogg"]);
 const TEXT = new Set(["md", "markdown", "txt", "html", "htm", "json", "csv"]);
@@ -87,7 +89,7 @@ export async function readSourceText(input: { path?: string; url?: string }, opt
   signal.throwIfAborted();
   let bytes: Buffer, ext: string;
   if (input.url) {
-    const fetched = await fetchSource(input.url, signal, 0, options.httpsOnly);
+    const fetched = await fetchSource(input.url, signal, 0, options.httpsOnly, options.publicDns ? resolvePublicDns : undefined);
     bytes = fetched.bytes;
     ext = MIME[fetched.contentType] ?? "unsupported MIME";
   } else {

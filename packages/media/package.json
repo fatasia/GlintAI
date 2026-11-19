@@ -9,8 +9,8 @@
       "default": "./src/index.ts"
     },
     "./presets": {
-      "default": "./src/presets.ts",
-      "types": "./src/presets.ts"
+      "types": "./src/presets.ts",
+      "default": "./src/presets.ts"
     }
   },
   "files": [

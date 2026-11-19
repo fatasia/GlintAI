@@ -19,10 +19,13 @@ describe("MP3 frame duration", () => {
   });
   it("skips an ID3 tag and accepts a small trailing tag", () => {
     const audio = mp3Frames([0xff, 0xf3, 0x64, 0], 144, 10), bytes = new Uint8Array(10 + 5 + audio.length + 128);
-    bytes.set([73, 68, 51, 4, 0, 0, 0, 0, 0, 5]); bytes.set(audio, 15);
+    bytes.set([73, 68, 51, 4, 0, 0, 0, 0, 0, 5]); bytes.set(audio, 15); bytes.set([84, 65, 71], bytes.length - 128);
     expect(parseMp3DurationMs(bytes, 123)).toBe(240);
   });
   it("uses fallback for junk, truncated streams and false sync", () => {
+    const bytes = mp3Frames([0xff, 0xf3, 0x64, 0xc4], 144, 10);
+    for (const missing of [1, 4, 100, 127]) expect(parseMp3DurationMs(bytes.subarray(0, bytes.length - missing), 456)).toBe(456);
+    bytes.set(Buffer.from("Xing"), 13); expect(parseMp3DurationMs(bytes, 456)).toBe(456);
     expect(parseMp3DurationMs(new Uint8Array(1024), 456)).toBe(456);
     expect(parseMp3DurationMs(new Uint8Array([255, 251, 144, 0, 1]), 456)).toBe(456);
   });

@@ -9,7 +9,7 @@ import path from "node:path";
  */
 const root = path.resolve(import.meta.dirname, "..", "..", "..");
 const lite = process.argv.includes("--lite");
-const source = path.join(root, "dist-portable", lite ? "Glint-lite" : "Glint");
+const source = process.env.GLINT_PORTABLE_OUTPUT ? path.resolve(process.env.GLINT_PORTABLE_OUTPUT) : path.join(root, "dist-portable", lite ? "Glint-lite" : "Glint");
 if (!existsSync(path.join(source, "Glint.exe"))) throw new Error("Build the package first: pnpm desktop:package");
 const temp = mkdtempSync(path.join(os.tmpdir(), "glint-standalone-"));
 const out = path.join(temp, "Glint");
@@ -34,8 +34,9 @@ const dataDir = path.join(temp, "data");
 mkdirSync(dataDir, { recursive: true });
 const nonce = "standalone-check-0123456789abcdef";
 
+let service;
 try {
-  const service = spawn(node, [path.join(app, "server", "service.mjs"), `--data-dir=${dataDir}`, `--nonce=${nonce}`],
+  service = spawn(node, [path.join(app, "server", "service.mjs"), `--data-dir=${dataDir}`, `--nonce=${nonce}`],
     { cwd: app, env, stdio: ["pipe", "pipe", "pipe"] });
   const ready = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => { service.kill(); reject(new Error("Standalone service did not become ready")); }, 30_000);
@@ -64,6 +65,12 @@ try {
   service.stdin.end();
   console.log(JSON.stringify({ standalone: "ok", copiedTo: out, render: job.status, scenes: composed.project.scenes.length }, null, 2));
 } finally {
+  if (service && service.exitCode === null) {
+    if (!service.stdin.writableEnded && !service.stdin.destroyed) service.stdin.end(JSON.stringify({type:"shutdown",nonce}) + "\n");
+    await Promise.race([new Promise(resolve=>service.once("exit",resolve)),new Promise(resolve=>setTimeout(resolve,3000))]);
+    if (service.exitCode === null) service.kill();
+  }
+  if (path.dirname(path.resolve(temp)) !== path.resolve(os.tmpdir()) || !path.basename(temp).startsWith("glint-standalone-")) throw new Error("Refusing cleanup outside the isolated test directory");
   for (let attempt = 0; attempt < 20 && existsSync(temp); attempt++) {
     try { rmSync(temp, { recursive: true, force: true }); } catch { await new Promise(done => setTimeout(done, 250)); }
   }

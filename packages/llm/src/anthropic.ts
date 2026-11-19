@@ -1,5 +1,7 @@
 import type { ChatRequest, ChatResponse, LlmProvider } from "./types";
 import { requestLifetime } from "./request";
+import { wireMessages } from "./message-images";
+import { outputBudget } from "./output-budget";
 
 export const DEFAULT_ANTHROPIC_TIMEOUT_MS = 60_000;
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -37,6 +39,7 @@ export class AnthropicProvider implements LlmProvider {
   }
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
+    const budget = outputBudget(request.maxOutputTokens);
     const timeoutMs = request.timeoutMs ?? this.config.timeoutMs ?? DEFAULT_ANTHROPIC_TIMEOUT_MS;
     const lifetime = requestLifetime(request.signal, timeoutMs, `Anthropic request (${this.endpoint})`);
     const { signal } = lifetime;
@@ -44,7 +47,7 @@ export class AnthropicProvider implements LlmProvider {
       let response: globalThis.Response;
       try {
         response = await fetch(this.endpoint, {
-          method: "POST",
+          method: "POST", redirect: "error",
           headers: {
             "content-type": "application/json",
             "x-api-key": this.config.apiKey,
@@ -52,9 +55,9 @@ export class AnthropicProvider implements LlmProvider {
           },
           body: JSON.stringify({
             model: this.config.model,
-            max_tokens: this.config.maxTokens ?? 4096,
+            max_tokens: budget ?? this.config.maxTokens ?? 4096,
             ...(request.system ? { system: request.system } : {}),
-            messages: request.messages,
+            messages: wireMessages(request.messages,"anthropic"),
             ...(request.temperature !== undefined
               ? { temperature: request.temperature }
               : {}),

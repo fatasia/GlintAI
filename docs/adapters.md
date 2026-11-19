@@ -2,6 +2,8 @@
 
 内置：UTF-8 Markdown/TXT、HTML、JSON、CSV、文本 PDF、HTTP(S) 文本/PDF。默认上限 10 MiB；网络读取有超时、重定向和私网/DNS 检查。CSV 保留行列，PDF 扫描件需要另做 OCR。
 
+Web 高级编辑可先预览 TXT/Markdown 本地正文、公开 HTTPS 链接，或把 CSV/TSV/XLSX 表格预览为可编辑图表工程。文本文件上限 256 KiB、12000 字符；XLSX 上限 2 MiB，可选择工作表，需服务端 Python 3，只读取缓存值，不执行公式或宏。无缓存值的公式和错误单元格会被拒绝；布尔值转为 TRUE/FALSE，日期保留时间，并遵循工作簿的 1900 或 1904 日期系统。链接提取正文上限 12000 字符，扫描 PDF 不含 OCR。图表最多显示 24 行，超出时会提示截断。链接读取不会自动提交模型。TUN/Fake-IP 环境可为服务显式设置 `GLINT_SOURCE_PUBLIC_DNS=1`：域名发送到公共 DNS，但私网地址和重定向仍经过检查。
+
 ## Office（可选）
 
 ```bash
@@ -44,6 +46,14 @@ pnpm glint make --source=recording.wav --media-python=D:/GlintRuntime/media/venv
 模型只在显式下载脚本中取得；渲染时离线读取本地文件。RapidOCR 使用安装包自带的中英文 ONNX 模型；Whisper tiny 在 CPU/int8 上运行，可从音频或视频的音轨转录。不上传媒体、不自动取账号凭据。图片最多 2000 万像素，音轨必须有可读取的时长且不超过十分钟；仍受 10 MiB 来源限制。当前不自动给扫描 PDF 的每页做 OCR。
 
 `mediaSourceAdapters({python,modelDir})` 可直接用于 API。适配器是可选 Python 文件，不增加主 Node 安装的模型体积。
+
+### 参考片画面文字
+
+服务端可设置 `GLINT_REFERENCE_OCR_PYTHON` 为本机可信 Python 可执行文件的绝对路径；该环境须安装 RapidOCR 1.4.4、Pillow 与 NumPy。重启 Web 服务后，在参考片面板显式勾选本机画面文字识别。未勾选不会启动 OCR；没有配置或识别失败时仍可生成参考工程。
+
+Windows x64 可使用独立 Python 3.12 环境，安装 `apps/web/server/requirements-reference-ocr-win-py312.txt` 中的验收版本（例如在新虚拟环境中运行 `python -m pip install --only-binary=:all: -r apps/web/server/requirements-reference-ocr-win-py312.txt`），然后将该环境的 `Scripts/python.exe` 绝对路径设置到服务进程的 `GLINT_REFERENCE_OCR_PYTHON`。配置不自动写入系统环境；临时命令窗口设置仅对该窗口启动的服务有效。其他系统需自行验证兼容版本。
+
+每镜取接近中点的一帧，仅在页面展示文字、请求采样时间和模型分数；不上传媒体、不自动写入旁白或发给模型。请求时间不是精确帧时间或逐字时间码，模型分数也不是校准准确率。单次最多 12 镜，帧图及返回内容受大小和时间限制。
 
 真实小样验证：一张含中文的讲解图识别出标题和字幕；三段 Qwen 合成音频经 Whisper tiny 转录，中文 CER 为 2/22、7/140，英文 WER 为 0/30。短语音和清晰字幕不代表扫描件、方言、噪声、复杂表格或长视频的准确率。
 

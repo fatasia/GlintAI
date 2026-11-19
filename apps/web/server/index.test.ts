@@ -8,13 +8,28 @@ import { consumeAnswerStream } from "../src/answer-stream";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { createCheckStore } from "./checks.mjs";
 import { createMediaJobs } from "./media-jobs.mjs";
 import { FileSessionStore } from "@glintai/session/node";
 import { parseProject } from "@glintai/scenescript";
 const servers: Server[] = [];
 const directories: string[] = [];
+import { execFileSync } from "node:child_process";
+const fixtures = new Map<string, Buffer>();
+/** Real decodable media: the media ingest gate refuses bytes ffprobe cannot read. */
+function mediaFixture(kind: "wav" | "mp4"): Buffer {
+  const cached = fixtures.get(kind);
+  if (cached) return cached;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glint-media-fixture-"));
+  const file = path.join(dir, `fixture.${kind}`);
+  execFileSync("ffmpeg", ["-nostdin", "-v", "error", "-y",
+    ...(kind === "wav" ? ["-f", "lavfi", "-i", "sine=frequency=440:duration=0.3", "-ar", "8000"] : ["-f", "lavfi", "-i", "testsrc2=size=64x64:rate=10:duration=0.3", "-pix_fmt", "yuv420p"]),
+    file], { timeout: 60_000 });
+  const bytes = fs.readFileSync(file);
+  fs.rmSync(dir, { recursive: true, force: true });
+  fixtures.set(kind, bytes);
+  return bytes;
+}
 afterEach(async () => {
   for (const server of servers.splice(0)) {
     server.closeAllConnections();
@@ -32,11 +47,38 @@ async function start(options: Record<string, unknown>) {
 function post(url: string, body: unknown, signal?: AbortSignal) {
   return fetch(url, { method: "POST", body: JSON.stringify(body), signal });
 }
+it("previews a public HTTPS source without submitting it to a model", async () => {
+  const reader = vi.fn(async () => "# 网页标题\n正文");
+  const url = (await start({ sourceReader: reader })).replace("/api/ask", "/api/source/preview");
+  const response = await post(url, { url: "https://example.com/page?token=private" });
+  expect(response.status).toBe(200); expect(await response.json()).toEqual({ text: "# 网页标题\n正文" });
+  expect(reader).toHaveBeenCalledWith({ url: "https://example.com/page?token=private" }, expect.objectContaining({ httpsOnly: true, timeoutMs: 20000 }));
+  expect((await post(url, { url: "http://example.com" })).status).toBe(400);
+  expect((await post(url, { url: "https://user:pass@example.com" })).status).toBe(400);
+  expect(reader).toHaveBeenCalledTimes(1);
+});
+it("source preview rejects local addresses and oversized extracted text", async () => {
+  const url = (await start({})).replace("/api/ask", "/api/source/preview");
+  expect((await post(url, { url: "https://127.0.0.1/" })).status).toBe(400);
+  const oversized = (await start({ sourceReader: async () => "a".repeat(12001) })).replace("/api/ask", "/api/source/preview");
+  const response = await post(oversized, { url: "https://example.com" });
+  expect(response.status).toBe(422); expect((await response.json()).error).toContain("12000");
+});
+it("limits concurrent source previews and releases slots", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const reader = vi.fn(async () => { await gate; return "text"; });
+  const url = (await start({ sourceReader: reader })).replace("/api/ask", "/api/source/preview");
+  const first = post(url, { url: "https://example.com/1" }), second = post(url, { url: "https://example.com/2" });
+  await vi.waitFor(() => expect(reader).toHaveBeenCalledTimes(2));
+  expect((await post(url, { url: "https://example.com/3" })).status).toBe(429);
+  release(); expect((await first).status).toBe(200); expect((await second).status).toBe(200);
+  expect((await post(url, { url: "https://example.com/4" })).status).toBe(200);
+});
 it("serves one creation pack catalog and materializes unique pinned editable projects", async () => {
   const url = (await start({})).replace("/api/ask", "/api/creation-packs");
   const catalog = await (await fetch(`${url}?query=数据`)).json();
-  expect(catalog.packs.map((pack: { id: string }) => pack.id)).toEqual(["data-insight"]);
-  const instanceUrl = `${url}/instantiate`;
+  expect(catalog.packs.map((pack: { id: string }) => pack.id)).toEqual(["data-insight"]);  const instanceUrl = `${url}/instantiate`;
   const a = await (await post(instanceUrl, { id: "product-launch", inputs: { productName: "真实商品" } })).json();
   const b = await (await post(instanceUrl, { id: "product-launch", inputs: { productName: "真实商品" } })).json();
   expect(parseProject(a.project).creationPack).toEqual(a.pack);
@@ -167,6 +209,11 @@ it("returns the composed project for a finished job so the workbench can keep ed
   expect((await fetch(base.replace("idea-abc123", "idea-missing1"))).status).toBe(404);
   expect((await fetch(base, { method: "POST" })).status).toBe(405);
 });it("lists installed local skills with descriptions", async () => {
+  const isolatedRepo = path.resolve(process.env.GLINT_STUDIO_DIR!, "../..");
+  const fixture = path.join(isolatedRepo, "skills", "glint-video");
+  directories.push(path.join(isolatedRepo, "skills"));
+  fs.mkdirSync(fixture, { recursive: true });
+  fs.writeFileSync(path.join(fixture, "SKILL.md"), "---\nname: Glint Video\ndescription: An isolated video skill fixture\n---\n");
   const url = (await start({})).replace("/api/ask", "/api/skills");
   const response = await fetch(url);
   expect(response.status).toBe(200);
@@ -175,13 +222,17 @@ it("returns the composed project for a finished job so the workbench can keep ed
   expect(body.skills.some((skill: { id: string; description: string }) => skill.id === "glint-video" && skill.description.length > 10)).toBe(true);
 });
 it("includes junctioned or symlinked skills and reports their registry source", async () => {
-  const skillsRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..", "skills");
-  const linked = fs.readdirSync(skillsRoot, { withFileTypes: true }).filter(entry => entry.isSymbolicLink()).map(entry => entry.name);
-  if (linked.length === 0) return;
+  const isolatedRepo = path.resolve(process.env.GLINT_STUDIO_DIR!, "../..");
+  const skillsRoot = path.join(isolatedRepo, "skills");
+  const target = path.join(isolatedRepo, "linked-skill");
+  fs.mkdirSync(skillsRoot, { recursive: true });
+  fs.mkdirSync(target, { recursive: true });
+  fs.writeFileSync(path.join(target, "SKILL.md"), "---\nname: Linked fixture\ndescription: An isolated linked skill fixture\n---\n");
+  fs.symlinkSync(target, path.join(skillsRoot, "linked-fixture"), "junction");
+  fs.writeFileSync(path.join(isolatedRepo, "skills-lock.json"), JSON.stringify({ skills: { "linked-fixture": { source: "registry" } } }));
   const body = await (await fetch((await start({})).replace("/api/ask", "/api/skills"))).json();
-  const ids = body.skills.map((skill: { id: string }) => skill.id);
-  expect(ids).toEqual(expect.arrayContaining(linked));
-  expect(body.skills.filter((skill: { source: string }) => skill.source !== "local").length).toBeGreaterThan(0);
+  const skill = body.skills.find((entry: { id: string }) => entry.id === "linked-fixture");
+  expect(skill?.source).toBe("registry");
 });
 it("rejects unsupported project export formats before rendering", async () => {
   const url = (await start({})).replace("/api/ask", "/api/project/export");
@@ -229,11 +280,13 @@ it("renders server-side SVG thumbnails for structured scenes and skips media sce
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glint-http-upload-")); directories.push(dir);
   const jobs = createMediaJobs(dir, {});
   const url = (await start({ mediaJobs: jobs })).replace("/api/ask", "/api/reference/upload");
-  const response = await fetch(url, { method: "POST", body: Buffer.from("fake mp4 bytes") });
+  const mp4 = mediaFixture("mp4");
+  const response = await fetch(url, { method: "POST", body: mp4 });
   expect(response.status).toBe(201);
   const body = await response.json();
   expect(body.name).toMatch(/^upload-[a-f0-9]{12}\.mp4$/);
-  expect(fs.readFileSync(path.join(dir, body.name), "utf8")).toBe("fake mp4 bytes");
+  expect(fs.readFileSync(path.join(dir, body.name))).toEqual(mp4);
+  expect((await fetch(url, { method: "POST", body: Buffer.from("not a video") })).status).toBe(400);
   expect((await fetch(url, { method: "POST", body: Buffer.alloc(0) })).status).toBe(400);
 });it("reads, saves and clears media gateway settings without returning the key", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glint-http-media-settings-")); directories.push(dir);
@@ -361,4 +414,154 @@ it("validates NLE projects and returns the rendered MP4", async () => {
   expect(await response.json()).toMatchObject({ bytes: 4096, file: "aabbccddeeff0011.mp4" });
   expect(seen).toEqual(["nle-http"]);
   expect((await post(url, { project: { ...project, tracks: [{ ...project.tracks[0], clips: [{ ...project.tracks[0]!.clips[0], kind: "audio" }] }] } })).status).toBe(400);
+});
+it("preflights transparent NLE exports before rendering and identifies all opaque clips", async () => {
+  const render = vi.fn(async ({ alpha }: { alpha: boolean }) => ({ file: alpha ? "alpha.webm" : "normal.mp4", url: "/test", bytes: 100 }));
+  const url = (await start({ nleVideoRenderer: render })).replace("/api/ask", "/api/nle/render");
+  const project = { schemaVersion: 1, id: "alpha-http", title: "Alpha", fps: 10, width: 320, height: 180, tracks: [{ id: "t", kind: "text", name: "文字", clips: [{ id: "text", kind: "text", text: "hello", startMs: 0, durationMs: 300 }] }] };
+  expect((await post(url, { project, alpha: true })).status).toBe(200);
+  expect(render).toHaveBeenCalledWith(expect.objectContaining({ alpha: true }));
+  const mixed = { ...project, tracks: [...project.tracks, { id: "v", kind: "video", name: "素材", clips: [{ id: "one", kind: "image", src: "assets/a.png", startMs: 0, durationMs: 300 }, { id: "two", kind: "video", src: "assets/a.mp4", startMs: 0, durationMs: 300 }] }] };
+  const rejected = await post(url, { project: mixed, alpha: true }); expect(rejected.status).toBe(400);
+  expect((await rejected.json()).issues.map((issue: { clipId: string }) => issue.clipId)).toEqual(["one", "two"]);
+  expect((await post(url, { project: { ...project, width: 321 }, alpha: true })).status).toBe(400);
+  expect((await post(url, { project, alpha: "yes" })).status).toBe(400);
+  expect(render).toHaveBeenCalledTimes(1);
+});
+
+it("requires a single valid structured input for storyboard composition", async () => {
+  const url = (await start({})).replace("/api/ask", "/api/compose");
+  expect((await post(url, { plan: { scenes: [] } })).status).toBe(400);
+  expect((await post(url, { plan: {}, source: "source" })).status).toBe(400);
+  expect((await post(url, { plan: {}, idea: "idea" })).status).toBe(400);
+});
+
+it("offline creation uses independent project identities while retrying the same receipt returns the same work", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glint-project-creation-")); directories.push(dir);
+  const url = (await start({ composeCacheDir: dir })).replace("/api/ask", "/api/compose");
+  const input = { source: "# 咖啡实验\n\n热咖啡放在桌上会逐渐接近室温，每隔一分钟记录一次。", engine: "heuristic", aspect: "16:9", template: "auto", requestId: "create-first-1234" };
+  const first = await (await post(url, input)).json(), retry = await (await post(url, input)).json();
+  const second = await (await post(url, { ...input, requestId: "create-second-1234" })).json();
+  expect(first.project.id).toMatch(/^editor-[a-f0-9]{16}$/);
+  expect(retry).toMatchObject({ project: first.project, cached: true });
+  expect(second.project.id).not.toBe(first.project.id);
+  expect(first).toMatchObject({ source: input.source, generatedSource: false });
+});
+
+it("composes an approved storyboard through HTTP with a local model fixture", async () => {
+  const { createServer } = await import("node:http");
+  const plan = { title: "发布", hook: "看产品", audience: "创作者", platform: "9:16", theme: "bold-poster", totalSeconds: 3, takeaway: "体验", scenes: [{ goal: "特点", narration: "确认的旁白", visual: "要点依次出现", seconds: 3, kind: "bullets" }] };
+  const candidate = { schemaVersion: 1, id: "model-id", title: "模型标题", aspect: "16:9", scenes: [{ id: "features", kind: "bullets", items: ["可编辑"], narration: { text: "模型旁白" } }] };
+  const model = createServer(async (req, res) => {
+    for await (const _ of req) { /* consume local fixture request */ }
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(candidate) } }] }));
+  });
+  servers.push(model);
+  await new Promise<void>(resolve => model.listen(0, "127.0.0.1", resolve));
+  const keys = ["GLINT_LLM_API_KEY", "GLINT_LLM_BASE_URL", "GLINT_LLM_MODEL", "GLINT_LLM_PROTOCOL", "GLINT_LLM_REASONING_EFFORT"];
+  const previous = keys.map(key => process.env[key]);
+  try {
+    process.env.GLINT_LLM_API_KEY = "local-test-only";
+    process.env.GLINT_LLM_BASE_URL = `http://127.0.0.1:${(model.address() as AddressInfo).port}/v1`;
+    process.env.GLINT_LLM_MODEL = "fixture"; process.env.GLINT_LLM_PROTOCOL = "openai"; delete process.env.GLINT_LLM_REASONING_EFFORT;
+    const url = (await start({ llmSettings: { read: () => ({ configured: true }) } })).replace("/api/ask", "/api/compose");
+    const response = await post(url, { plan });
+    expect(response.status).toBe(200);
+    const result = await response.json();
+    const project = parseProject(result.project);
+    expect(project.id).toMatch(/^plan-/); expect(project.aspect).toBe("9:16");
+    expect(project.scenes[0]!.narration).toMatchObject({ text: "确认的旁白", durationMs: 3000 });
+    expect(project.scenes[0]!.notes).toContain("要点依次出现");
+  } finally { keys.forEach((key, index) => { if (previous[index] === undefined) delete process.env[key]; else process.env[key] = previous[index]; }); }
+});
+
+it("composes idempotently: same requestId bills the model once and survives a dropped connection", async () => {
+  const { createServer } = await import("node:http");
+  const plan = { title: "幂等", hook: "一次扣费", audience: "创作者", platform: "16:9", theme: "glint-dark", totalSeconds: 3, takeaway: "复用", scenes: [{ goal: "要点", narration: "只算一次", visual: "卡片", seconds: 3, kind: "bullets" }] };
+  const candidate = { schemaVersion: 1, id: "model-id", title: "模型标题", aspect: "16:9", scenes: [{ id: "features", kind: "bullets", items: ["可复用"], narration: { text: "模型旁白" } }] };
+  let modelCalls = 0;
+  let releaseModel: (() => void) | null = null;
+  const model = createServer(async (req, res) => {
+    for await (const _ of req) { /* consume local fixture request */ }
+    modelCalls++;
+    await new Promise<void>(resolve => { releaseModel = resolve; });
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(candidate) } }] }));
+  });
+  servers.push(model);
+  await new Promise<void>(resolve => model.listen(0, "127.0.0.1", resolve));
+  const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "glint-compose-cache-")); directories.push(cacheDir);
+  const keys = ["GLINT_LLM_API_KEY", "GLINT_LLM_BASE_URL", "GLINT_LLM_MODEL", "GLINT_LLM_PROTOCOL"];
+  const previous = keys.map(key => process.env[key]);
+  process.env.GLINT_LLM_API_KEY = "local-test-only";
+  process.env.GLINT_LLM_BASE_URL = `http://127.0.0.1:${(model.address() as AddressInfo).port}/v1`;
+  process.env.GLINT_LLM_MODEL = "fixture"; process.env.GLINT_LLM_PROTOCOL = "openai";
+  try {
+    const composeUrl = () => start({ composeCacheDir: cacheDir }).then(base => base.replace("/api/ask", "/api/compose"));
+    expect((await post((await composeUrl()), { plan, requestId: "short" })).status).toBe(400);
+    const requestId = "idem-1234-abcd";
+    // The client drops mid-flight; the model call is still pending.
+    const dropped = post(await composeUrl(), { plan, requestId }, AbortSignal.timeout(50)).then(() => false, () => true);
+    await new Promise(resolve => setTimeout(resolve, 120));
+    expect(modelCalls).toBe(1);
+    releaseModel!();
+    expect(await dropped).toBe(true);
+    // The retry with the same requestId picks up the finished result without a second model call.
+    const retry = await post(await composeUrl(), { plan, requestId });
+    expect(retry.status).toBe(200);
+    const cached = await retry.json();
+    expect(cached.cached).toBe(true);
+    expect(cached.project.id).toMatch(/^plan-/);
+    expect(modelCalls).toBe(1);
+    // The lookup endpoint reports the finished cache entry and 404 for unknown ids.
+    expect(await (await fetch((await composeUrl()).replace("/api/compose", `/api/compose/request/${requestId}`))).json()).toMatchObject({ status: "succeeded", cached: true });
+    expect((await fetch((await composeUrl()).replace("/api/compose", "/api/compose/request/missing-9999"))).status).toBe(404);
+  } finally { releaseModel?.(); keys.forEach((key, index) => { if (previous[index] === undefined) delete process.env[key]; else process.env[key] = previous[index]; }); }
+});
+
+it("rejects a reused requestId that carries different plan content", async () => {
+  const { createServer } = await import("node:http");
+  const plan = { title: "内容A", hook: "h", audience: "a", platform: "16:9", theme: "glint-dark", totalSeconds: 3, takeaway: "t", scenes: [{ goal: "g", narration: "n", visual: "v", seconds: 3, kind: "bullets" }] };
+  const candidate = { schemaVersion: 1, id: "model-id", title: "标题", aspect: "16:9", scenes: [{ id: "features", kind: "bullets", items: ["x"], narration: { text: "旁白" } }] };
+  const model = createServer(async (req, res) => {
+    for await (const _ of req) { /* consume local fixture request */ }
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(candidate) } }] }));
+  });
+  servers.push(model);
+  await new Promise<void>(resolve => model.listen(0, "127.0.0.1", resolve));
+  const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "glint-compose-cache-")); directories.push(cacheDir);
+  const keys = ["GLINT_LLM_API_KEY", "GLINT_LLM_BASE_URL", "GLINT_LLM_MODEL", "GLINT_LLM_PROTOCOL"];
+  const previous = keys.map(key => process.env[key]);
+  process.env.GLINT_LLM_API_KEY = "local-test-only";
+  process.env.GLINT_LLM_BASE_URL = `http://127.0.0.1:${(model.address() as AddressInfo).port}/v1`;
+  process.env.GLINT_LLM_MODEL = "fixture"; process.env.GLINT_LLM_PROTOCOL = "openai";
+  try {
+    const composeUrl = () => start({ composeCacheDir: cacheDir }).then(base => base.replace("/api/ask", "/api/compose"));
+    const first = await post(await composeUrl(), { plan, requestId: "mismatch-check-01" });
+    expect(first.status).toBe(200);
+    // Same requestId, different plan content: must 409 instead of returning the stale result.
+    const second = await post(await composeUrl(), { plan: { ...plan, title: "内容B" }, requestId: "mismatch-check-01" });
+    expect(second.status).toBe(409);
+    expect(await second.json()).toMatchObject({ error: expect.stringContaining("requestId") });
+    // A different valid plan still composes fine under a fresh requestId.
+    const third = await post(await composeUrl(), { plan: { ...plan, title: "内容B" }, requestId: "mismatch-check-02" });
+    expect(third.status).toBe(200);
+  } finally { keys.forEach((key, index) => { if (previous[index] === undefined) delete process.env[key]; else process.env[key] = previous[index]; }); }
+});
+
+it("journals one line per API request for error location (OPS-06)", async () => {
+  const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "glint-api-log-")); directories.push(logDir);
+  const url = await start({ requestLogDir: logDir });
+  await fetch(url, { method: "POST", body: JSON.stringify({ question: "hi" }) }).catch(() => undefined);
+  // appendFile is fire-and-forget; give the event loop a beat before asserting.
+  await new Promise(resolve => setTimeout(resolve, 120));
+  const file = path.join(logDir, "requests.log");
+  expect(fs.existsSync(file)).toBe(true);
+  const lines = fs.readFileSync(file, "utf8").trim().split("\n").map(line => JSON.parse(line));
+  const last = lines.at(-1) as { method: string; path: string; status: number; ms: number; at: string };
+  expect(last).toMatchObject({ method: "POST", path: "/api/ask" });
+  expect(typeof last.status).toBe("number");
+  expect(typeof last.ms).toBe("number");
 });

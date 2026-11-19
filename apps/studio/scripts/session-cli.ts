@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { pathFromDot, type EditOperation, type SessionActor } from "@glintai/session";
 import { FileSessionStore } from "@glintai/session/node";
 import { parseProject } from "@glintai/scenescript";
+import { migrateProject } from "@glintai/scenescript/migrate";
 
 function arg(args: string[], name: string): string | undefined { return args.find(item => item.startsWith(`--${name}=`))?.slice(name.length + 3); }
 function parseValue(value: string): unknown { try { return JSON.parse(value); } catch { return value; } }
@@ -13,10 +14,16 @@ export function runSession(args: string[]): void {
   const projectFile = arg(args, "project");
   let projectId = arg(args, "id");
   if (projectFile) {
-    const file = path.resolve(projectFile), document = parseProject(JSON.parse(fs.readFileSync(file, "utf8")));
+    const file = path.resolve(projectFile);
+    const migration = migrateProject(JSON.parse(fs.readFileSync(file, "utf8")));
+    if (migration.migrated) console.log(`[glint] 工程已迁移到当前版本：\n  - ${migration.notes.join("\n  - ")}`);
+    const document = migration.project;
     if (projectId && projectId !== document.id) throw new Error("--id does not match the project document");
     projectId = document.id;
-    const opened = store.open(projectId, JSON.parse(fs.readFileSync(file, "utf8")), file);
+    // A migrated document no longer matches the file byte-for-byte; open it as
+    // an in-memory import so the durable store holds the repaired form while
+    // the original file stays untouched on disk.
+    const opened = migration.migrated ? store.open(projectId, document) : store.open(projectId, JSON.parse(fs.readFileSync(file, "utf8")), file);
     if (opened.conflict) throw new Error(`Local file differs from durable session revision ${opened.look.revision}; use --id=${projectId} to inspect that revision, or import the file under a new id`);
   }
   if (mode === "list") { console.log(JSON.stringify(store.list(), null, 2)); return; }

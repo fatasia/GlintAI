@@ -1,0 +1,209 @@
+/* Glint design tokens — the only source of visual values.
+   New code reads --g-* tokens. Legacy variables (--ink-*, --paper, --line-*, --s-*, --t-*)
+   are mapped onto them at the bottom so every existing surface follows one system.
+   Direction: a quiet, warm-neutral studio. Content (frames, pages, footage) carries the
+   color; chrome stays low-contrast. One accent — ink blue — for the primary action,
+   current location, selection and focus. Nothing else in the chrome is blue. */
+
+:root {
+  color-scheme: dark;
+
+  /* Surfaces: one warm-neutral family, each step ~+4% lightness. */
+  --g-bg-0: #0d0d0e;   /* app backdrop, canvas well */
+  --g-bg-1: #141415;   /* panels, rail */
+  --g-bg-2: #1a1a1c;   /* raised: inputs, cards, menus */
+  --g-bg-3: #222225;   /* hover */
+  --g-bg-4: #2a2a2e;   /* pressed, selected */
+  --g-overlay: rgba(8, 8, 9, 0.72);
+
+  --g-fg-1: #edebe6;   /* primary text */
+  --g-fg-2: #b5b1a9;   /* secondary text */
+  --g-fg-3: #8f8b83;   /* tertiary, labels (≥4.5:1 on bg-1) */
+  --g-fg-4: #66635d;   /* disabled, placeholder decorations only */
+
+  --g-line-1: rgba(237, 235, 230, 0.07);
+  --g-line-2: rgba(237, 235, 230, 0.12);
+  --g-line-3: rgba(237, 235, 230, 0.2);
+
+  /* Ink blue (墨蓝). Fills and indicators use --g-accent (≥3:1 on panels, ≥5:1 under
+     --g-on-accent); text drawn in the accent hue uses --g-accent-text (≥4.5:1 on panels). */
+  --g-accent: #41649d;
+  --g-accent-hover: #4a6ea8;
+  --g-accent-press: #385a90;
+  --g-accent-text: #93acd8;
+  --g-accent-soft: rgba(74, 110, 168, 0.2);
+  --g-accent-line: rgba(120, 152, 210, 0.62);
+  --g-on-accent: #ffffff;
+
+  --g-ok: #6fbf8e;
+  --g-warn: #d8a84f;
+  --g-danger: #ee6a74;
+  --g-ok-soft: rgba(111, 191, 142, 0.14);
+  --g-warn-soft: rgba(216, 168, 79, 0.14);
+  --g-danger-soft: rgba(238, 106, 116, 0.14);
+
+  /* Timeline tracks: fixed hue per media type so lanes scan without labels. */
+  --g-track-scene: #4f9a96;
+  --g-track-video: #5f7f97;
+  --g-track-image: #4d9aa8;
+  --g-track-voice: #7a6cb4;
+  --g-track-music: #4a9a86;
+  --g-track-sfx: #5b8fbf;
+  --g-track-caption: #868d98;
+  --g-playhead: var(--g-accent);
+
+  /* Type: Geist for Latin and digits, the platform CJK face for Chinese. */
+  --g-font: "Geist Variable", "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  --g-font-mono: "Geist Mono Variable", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --g-fs-1: 11px;  /* micro labels */
+  --g-fs-2: 12px;  /* captions, meta */
+  --g-fs-3: 13px;  /* dense UI: toolbars, lists, inspector */
+  --g-fs-4: 14px;  /* body, inputs */
+  --g-fs-5: 16px;  /* section titles */
+  --g-fs-6: 20px;  /* page titles */
+  --g-fs-7: 28px;  /* empty-state and dialog headlines */
+  --g-fs-8: 40px;  /* home display only */
+  --g-lh-tight: 1.2;
+  --g-lh-ui: 1.45;
+  --g-lh-body: 1.65;
+  --g-fw-regular: 400;
+  --g-fw-medium: 500;
+  --g-fw-semibold: 600;
+
+  /* Space: 4px grid. */
+  --g-sp-1: 2px;
+  --g-sp-2: 4px;
+  --g-sp-3: 6px;
+  --g-sp-4: 8px;
+  --g-sp-5: 12px;
+  --g-sp-6: 16px;
+  --g-sp-7: 20px;
+  --g-sp-8: 24px;
+  --g-sp-9: 32px;
+  --g-sp-10: 40px;
+  --g-sp-11: 56px;
+
+  /* Radius: tighter inside, softer outside. */
+  --g-r-1: 6px;    /* chips, inner controls */
+  --g-r-2: 8px;    /* buttons, inputs */
+  --g-r-3: 12px;   /* panels, cards */
+  --g-r-4: 16px;   /* dialogs, the home composer */
+  --g-r-full: 999px;
+
+  /* Elevation: tinted, single light source from above. */
+  --g-shadow-1: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 1px 2px rgba(0, 0, 0, 0.3);
+  --g-shadow-2: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 24px -6px rgba(0, 0, 0, 0.5);
+  --g-shadow-3: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 24px 56px -12px rgba(0, 0, 0, 0.62);
+  --g-focus: 0 0 0 2px var(--g-bg-0), 0 0 0 4px var(--g-accent-line);
+
+  /* Layers. */
+  --g-z-base: 0;
+  --g-z-sticky: 10;
+  --g-z-dock: 20;
+  --g-z-popover: 40;
+  --g-z-dialog: 60;
+  --g-z-toast: 80;
+
+  /* Motion: quick, never bouncy. Panels use the drawer curve. */
+  --g-dur-1: 120ms;
+  --g-dur-2: 180ms;
+  --g-dur-3: 260ms;
+  --g-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --g-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* Layout. */
+  --g-rail-w: 64px;
+  --g-rail-bar-h: 64px;   /* the rail as a bottom bar on narrow screens */
+  --g-bar-h: 48px;
+  --g-control-h: 32px;
+  --g-control-h-sm: 26px;
+  --g-page-max: 1180px;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --g-bg-0: #f3f2ef;
+  --g-bg-1: #fbfaf8;
+  --g-bg-2: #ffffff;
+  --g-bg-3: #efeeea;
+  --g-bg-4: #e6e4df;
+  --g-overlay: rgba(28, 27, 25, 0.32);
+  --g-fg-1: #1d1c1a;
+  --g-fg-2: #4a4843;
+  --g-fg-3: #6b6862;
+  --g-fg-4: #a19d96;
+  --g-line-1: rgba(29, 28, 26, 0.07);
+  --g-line-2: rgba(29, 28, 26, 0.12);
+  --g-line-3: rgba(29, 28, 26, 0.2);
+  --g-accent: #2f4f86;
+  --g-accent-hover: #284577;
+  --g-accent-press: #223c68;
+  --g-accent-text: #2f4f86;
+  --g-accent-soft: rgba(47, 79, 134, 0.1);
+  --g-accent-line: rgba(47, 79, 134, 0.45);
+  --g-on-accent: #ffffff;
+  --g-ok: #2a7f4e;
+  --g-warn: #8f6213;
+  --g-danger: #c43d4b;
+  --g-ok-soft: rgba(42, 127, 78, 0.1);
+  --g-warn-soft: rgba(143, 98, 19, 0.1);
+  --g-danger-soft: rgba(196, 61, 75, 0.1);
+  --g-shadow-1: 0 1px 2px rgba(40, 36, 30, 0.08);
+  --g-shadow-2: 0 8px 24px -8px rgba(40, 36, 30, 0.16);
+  --g-shadow-3: 0 24px 56px -16px rgba(40, 36, 30, 0.22);
+  --g-focus: 0 0 0 2px var(--g-bg-1), 0 0 0 4px var(--g-accent-line);
+}
+
+/* ── Legacy mapping: existing components keep their variable names. ── */
+:root,
+:root[data-theme="light"] {
+  --ink-0: var(--g-bg-0);
+  --ink-1: var(--g-bg-1);
+  --ink-2: var(--g-bg-2);
+  --ink-3: var(--g-bg-3);
+  --ink-4: var(--g-bg-4);
+  --line-1: var(--g-line-1);
+  --line-2: var(--g-line-2);
+  --line-3: var(--g-line-3);
+  --paper: var(--g-fg-1);
+  --paper-dim: var(--g-fg-2);
+  --muted: var(--g-fg-3);
+  --faint: var(--g-fg-3);
+  --accent: var(--g-accent);
+  --accent-hover: var(--g-accent-hover);
+  --accent-soft: var(--g-accent-soft);
+  --accent-ink: var(--g-on-accent);
+  --ok: var(--g-ok);
+  --warn: var(--g-warn);
+  --danger: var(--g-danger);
+  --r-sm: var(--g-r-2);
+  --r-md: var(--g-r-3);
+  --r-lg: var(--g-r-4);
+  --r-full: var(--g-r-full);
+  --font-ui: var(--g-font);
+  --font-display: var(--g-font);
+  --font-mono: var(--g-font-mono);
+  --ease-out: var(--g-ease);
+  --ease: var(--g-ease);
+  --shadow-panel: var(--g-shadow-3);
+  --s-1: var(--g-sp-2);
+  --s-2: var(--g-sp-4);
+  --s-3: var(--g-sp-5);
+  --s-4: var(--g-sp-6);
+  --s-5: var(--g-sp-8);
+  --s-6: var(--g-sp-9);
+  --s-7: 48px;
+  --t-micro: var(--g-fs-1);
+  --t-label: var(--g-fs-1);
+  --t-body: var(--g-fs-3);
+  --t-sub: var(--g-fs-5);
+  --t-title: var(--g-fs-6);
+  --t-display: 34px;
+  --rail-w: var(--g-rail-w);
+  --bar-h: var(--g-bar-h);
+  --surface: var(--g-bg-1);
+  --surface-raised: var(--g-bg-2);
+  --surface-sunken: var(--g-bg-0);
+  --hair: var(--g-line-1);
+  --hair-strong: var(--g-line-2);
+}

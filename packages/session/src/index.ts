@@ -1,3 +1,4 @@
+import { transitionDocument, type DocumentTransition } from "./document-transition";
 /** Pure session domain. Persistence and durable receipts live in the ./node adapter. */
 export type SessionActor = "user" | "product-agent" | "skill" | "cli";
 export type ReceiptStage = "refused" | "dispatched" | "saved" | "verified" | "failed";
@@ -22,6 +23,10 @@ export interface SessionSnapshot<T extends object = Record<string, unknown>> { p
 export interface SessionHistoryEntry {
   revision: number; transaction: EditTransaction; inverse: EditOperation[]; digest: string;
   action?: "edit" | "undo" | "redo"; target?: string; changed?: boolean; documentSha256?: string;
+  invalidated?: boolean;
+  amendPaths?: JsonPath[];
+  approvalOrigin?: "trusted-approval";
+  checkpoint?: { undo: SessionHistoryEntry[]; redo: SessionHistoryEntry[]; receipts?: SessionHistoryEntry[] };
 }
 export interface SessionLook { projectId: string; revision: number; digest: string; selection: string[]; undoDepth: number; redoDepth: number }
 export interface SessionState<T extends object = Record<string, unknown>> {
@@ -51,6 +56,53 @@ export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   const record = value as Record<string, unknown>;
   return `{${Object.keys(record).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(",")}}`;
+}
+function guardApprovedCharacters(before: unknown, after: unknown, undoOperations?: EditOperation[]): void {
+  const previousAssets = (before as Record<string, unknown>).assets, nextAssets = (after as Record<string, unknown>).assets;
+  if (!Array.isArray(previousAssets)) return;
+  let replayedAssets: unknown;
+  if (undoOperations) {
+    const replayed = structuredClone(after);
+    try {
+      for (const operation of undoOperations) applyOperation(replayed, operation);
+      replayedAssets = (replayed as Record<string, unknown>).assets;
+    } catch { /* A stale history entry cannot justify bypassing approval. */ }
+  }
+  for (const asset of previousAssets) {
+    if (!asset || typeof asset !== "object" || !["character", "product"].includes(asset.kind) || !asset.approval || typeof asset.id !== "string") continue;
+    if (Array.isArray(nextAssets) && nextAssets.filter(item => item && typeof item === "object" && item.id === asset.id).length !== 1) {
+      throw new SessionError("precondition-failed", `Approved asset identity ${asset.id} must remain unique`);
+    }
+    const replacement = Array.isArray(nextAssets) ? nextAssets.find(item => item && typeof item === "object" && item.id === asset.id) : undefined;
+    if (replacement && canonicalJson(replacement) === canonicalJson(asset)) continue;
+    const replayed = Array.isArray(replayedAssets) ? replayedAssets.find(item => item && typeof item === "object" && item.id === asset.id) : undefined;
+    if (replacement && !replacement.approval && replayed && canonicalJson(replayed) === canonicalJson(asset)) continue;
+    throw new SessionError("precondition-failed", `Approved asset identity ${asset.id} is frozen; undo approval before changing it`);
+  }
+}
+function guardNewApprovals(before: unknown, after: unknown, trusted: boolean): void {
+  if (trusted) return;
+  const previous = (before as Record<string, unknown>).assets;
+  const next = (after as Record<string, unknown>).assets;
+  if (!Array.isArray(next)) return;
+  for (const asset of next) {
+    if (!asset || typeof asset !== "object" || !["character", "product"].includes(asset.kind) || !asset.approval) continue;
+    const old = Array.isArray(previous) && previous.find(item => item && typeof item === "object" && item.id === asset.id);
+    if (!old?.approval || !["character", "product"].includes(old.kind)) throw new SessionError("precondition-failed", "New asset approvals require the trusted approval endpoint");
+  }
+}
+
+/** Array mutations are treated as structural changes, so indexed paths never silently retarget. */
+function changedPaths(before: unknown, after: unknown, path: JsonPath = []): JsonPath[] {
+  if (before === after) return [];
+  if (Array.isArray(before) && Array.isArray(after)) return canonicalJson(before) === canonicalJson(after) ? [] : [path];
+  if (!before || !after || typeof before !== "object" || typeof after !== "object" || Array.isArray(before) || Array.isArray(after)) return [path];
+  const a = before as Record<string, unknown>, b = after as Record<string, unknown>;
+  return [...new Set([...Object.keys(a), ...Object.keys(b)])].flatMap(key =>
+    !own(a, key) || !own(b, key) ? [[...path, key]] : changedPaths(a[key], b[key], [...path, key]));
+}
+function pathsOverlap(a: JsonPath, b: JsonPath): boolean {
+  return a.slice(0, Math.min(a.length, b.length)).every((part, index) => part === b[index]);
 }
 // A UI change token, NOT a cryptographic persistence proof. The node adapter uses SHA-256.
 function digest(value: unknown): string {
@@ -132,22 +184,77 @@ export class ProjectSession<T extends object = Record<string, unknown>> {
   private revision: number;
   private readonly history: SessionHistoryEntry[];
   private selection: string[];
-  constructor(private readonly projectId: string, document: T, revision = 0, history: SessionHistoryEntry[] = [], selection: string[] = [], private readonly validate?: (document: T) => void) {
+  constructor(private readonly projectId: string, document: T, revision = 0, history: SessionHistoryEntry[] = [], selection: string[] = [], private readonly validate?: (document: T) => void, private readonly allowNewApprovals = false, private readonly transition?: DocumentTransition<T>) {
     if (!projectId.trim() || !Number.isSafeInteger(revision) || revision < 0) invalid("Invalid session identity");
     assertJson(document); this.validate?.(document);
     this.document = structuredClone(document); this.revision = revision; this.history = structuredClone(history); this.selection = [...selection];
   }
-  private stacks(): { undo: SessionHistoryEntry[]; redo: SessionHistoryEntry[] } {
+  private stacks(entries = this.history): { undo: SessionHistoryEntry[]; redo: SessionHistoryEntry[] } {
     const undo: SessionHistoryEntry[] = [], redo: SessionHistoryEntry[] = [];
-    for (const entry of this.history) {
+    for (const entry of entries) {
+      if (entry.checkpoint) { undo.splice(0, undo.length, ...entry.checkpoint.undo); redo.splice(0, redo.length, ...entry.checkpoint.redo); continue; }
+      const amended = entry.amendPaths ?? (entry.changed === false && entry.transaction.id === `amend-${entry.revision}` ? [[]] : []);
+      if (amended.length) {
+        const conflicts = (item: SessionHistoryEntry) => [...item.transaction.operations, ...item.inverse].some(op => amended.some(path => pathsOverlap(path, op.path)));
+        for (const stack of [undo, redo]) for (let i = 0; i < stack.length; i++) {
+          if (conflicts(stack[i]!)) stack[i] = { ...stack[i]!, invalidated: true };
+        }
+      }
       if (entry.changed === false) continue;
       if (entry.action === "undo") { const item = undo.pop(); if (item) redo.push(item); }
       else if (entry.action === "redo") { const item = redo.pop(); if (item) undo.push(item); }
-      else { undo.push(entry); redo.length = 0; }
+      else { undo.push({ ...entry }); redo.length = 0; }
     }
     return { undo, redo };
   }
   snapshot(): SessionSnapshot<T> { return { projectId: this.projectId, revision: this.revision, document: structuredClone(this.document), digest: digest(this.document) }; }
+  /**
+   * Non-undoable document replacement (live preview states, title typing):
+   * bumps the revision so external readers see fresh state, but records a
+   * changed:false entry that the undo/redo stacks skip by design.
+   */
+  amend(document: T, reason = "amended"): SessionSnapshot<T> {
+    document = transitionDocument(this.transition, this.document, document, { action: "amend" }); assertJson(document);
+    // A frozen project is read-only, but the freeze action itself may pass through amend.
+    if ((this.document as Record<string, unknown>).frozen === true) invalid("Project is frozen for approval; unfreeze it before amending");
+    guardApprovedCharacters(this.document, document);
+    guardNewApprovals(this.document, document, false);
+    this.validate?.(document);
+    const amendPaths = changedPaths(this.document, document);
+    this.document = structuredClone(document); this.revision++;
+    this.history.push({ revision: this.revision, transaction: { id: `amend-${this.revision}`, projectId: this.projectId, baseRevision: this.revision - 1, actor: "user", scope: {}, operations: [], intent: reason }, inverse: [], digest: digest(this.document), action: "edit", changed: false, amendPaths });
+    return this.snapshot();
+  }
+  private findEntry(id: string): SessionHistoryEntry | undefined {
+    for (let i = this.history.length - 1; i >= 0; i--) {
+      const entry = this.history[i]!;
+      if ((!entry.checkpoint || entry.checkpoint.receipts === undefined) && entry.transaction.id === id) return entry;
+      if (entry.checkpoint?.receipts) {
+        for (let j = entry.checkpoint.receipts.length - 1; j >= 0; j--) {
+          const archived = entry.checkpoint.receipts[j]!;
+          if (archived.transaction.id === id) return archived;
+        }
+      }
+    }
+    return undefined;
+  }
+  /** Compact undo history; retain immutable transaction receipts for retry/idempotency. */
+  compactHistory(maxEntries: number): void {
+    if (!Number.isSafeInteger(maxEntries) || maxEntries < 1) invalid("Invalid history limit");
+    if (this.history.length <= maxEntries) return;
+    const cut = this.history.length - maxEntries + 1;
+    const checkpoint = this.stacks(this.history.slice(0, cut));
+    const retained = this.history.slice(cut);
+    const retainedEdits = retained.filter(entry => entry.changed !== false && (!entry.action || entry.action === "edit")).length;
+    // Later undo records still need their original entries even if that exceeds the limit.
+    const keep = Math.max(maxEntries - retainedEdits, retained.filter(entry => entry.changed !== false && entry.action === "undo").length);
+    checkpoint.undo = keep ? checkpoint.undo.slice(-keep) : [];
+    const last = this.history[cut - 1]!;
+    // Keep compact receipts, but not the old inverse operations or prior checkpoints.
+    const receipts = this.history.slice(0, cut).flatMap(entry => entry.checkpoint ? entry.checkpoint.receipts ?? [entry] : [entry]).map(({ checkpoint: _, inverse: __, ...entry }) => ({ ...entry, inverse: [] }));
+    // A checkpoint is not a transaction and must never reuse the removed entry's ID.
+    this.history.splice(0, cut, { revision: last.revision, transaction: { id: "", projectId: this.projectId, baseRevision: last.revision - 1, actor: "user", scope: {}, operations: [], intent: "history checkpoint" }, inverse: [], digest: last.digest, action: "edit", changed: false, checkpoint: { ...checkpoint, receipts } });
+  }
   look(): SessionLook { const stacks = this.stacks(); return { projectId: this.projectId, revision: this.revision, digest: digest(this.document), selection: [...this.selection], undoDepth: stacks.undo.length, redoDepth: stacks.redo.length }; }
   select(handles: string[]): void {
     if (!Array.isArray(handles) || handles.length > 100 || handles.some(h => typeof h !== "string" || !h)) invalid("Invalid selection");
@@ -162,17 +269,24 @@ export class ProjectSession<T extends object = Record<string, unknown>> {
       validateTransaction(transaction);
       base.affectedPaths = transaction.operations.map(op => op.path); base.affectedHandles = transaction.scope.handles ?? [];
       if (transaction.projectId !== this.projectId) invalid("Transaction belongs to another project");
-      const prior = this.history.find(e => e.transaction.id === transaction.id);
+      const prior = this.findEntry(transaction.id);
       if (prior) {
-        if (canonicalJson(prior.transaction) !== canonicalJson(transaction) || (prior.action ?? "edit") !== action) invalid("Transaction id was reused with different content");
+        if (prior.approvalOrigin === "trusted-approval" && !this.allowNewApprovals || canonicalJson(prior.transaction) !== canonicalJson(transaction) || (prior.action ?? "edit") !== action) invalid("Transaction id was reused with different content");
         return this.receipt(prior);
       }
       if (transaction.baseRevision !== this.revision) throw new SessionError("revision-conflict", `Revision conflict: expected ${this.revision}, received ${transaction.baseRevision}`);
+      // Approval freeze (TEAM-09): a frozen project accepts only the owner's
+      // single-operation unfreeze; every other actor and every other edit is refused.
+      if ((this.document as Record<string, unknown>).frozen === true) {
+        const op = transaction.operations.length === 1 ? transaction.operations[0] : undefined;
+        const unfreeze = transaction.actor === "user" && op?.kind === "set" && op.path.length === 1 && op.path[0] === "frozen" && op.value === false;
+        if (!unfreeze) throw new SessionError("precondition-failed", "Project is frozen for approval; only the owner can unfreeze it");
+      }
       for (const condition of transaction.preconditions ?? []) {
         const actual = readAt(this.document, condition.path);
         if (!(condition.kind === "exists" ? actual.exists === condition.expected : actual.exists && canonicalJson(actual.value) === canonicalJson(condition.value))) throw new SessionError("precondition-failed", `Precondition failed at ${condition.path.join(".")}`);
       }
-      const next = structuredClone(this.document), inverse: EditOperation[] = [];
+      let next = structuredClone(this.document); const inverse: EditOperation[] = [];
       for (const operation of transaction.operations) {
         const handles = transaction.scope.handles;
         if (handles?.length) {
@@ -181,6 +295,11 @@ export class ProjectSession<T extends object = Record<string, unknown>> {
         }
         inverse.unshift(applyOperation(next, operation));
       }
+      const historyTarget = action === "edit" ? undefined : this.stacks()[action].at(-1);
+      if (action !== "edit" && (!historyTarget || historyTarget.invalidated || target !== historyTarget.transaction.id || canonicalJson(transaction.operations) !== canonicalJson(action === "undo" ? historyTarget.inverse : historyTarget.transaction.operations))) invalid("Invalid or stale history operation");
+      next = transitionDocument(this.transition, this.document, next, { action, transaction }); assertJson(next);
+      guardApprovedCharacters(this.document, next, action === "undo" ? historyTarget?.transaction.operations : undefined);
+      if (action !== "undo") guardNewApprovals(this.document, next, this.allowNewApprovals || action === "redo" && !historyTarget?.invalidated);
       this.validate?.(next);
       const changed = canonicalJson(next) !== canonicalJson(this.document);
       this.document = next; this.revision++;
@@ -192,7 +311,7 @@ export class ProjectSession<T extends object = Record<string, unknown>> {
     } catch (error) { return { ...base, reason: error instanceof Error ? error.message : "Invalid edit" }; }
   }
   historyEdit(action: "undo" | "redo", id: string, baseRevision: number, actor: SessionActor): TaskReceipt {
-    const existing = this.history.find(e => e.transaction.id === id);
+    const existing = this.findEntry(id);
     if (existing) {
       if (existing.action !== action || existing.transaction.baseRevision !== baseRevision || existing.transaction.actor !== actor) return { ...this.receipt(existing), stage: "refused", changed: false, reason: "Transaction id was reused with different content" };
       return this.receipt(existing);
@@ -206,7 +325,7 @@ export class ProjectSession<T extends object = Record<string, unknown>> {
     return { transactionId: entry.transaction.id, stage: "dispatched", projectId: this.projectId, baseRevision: entry.transaction.baseRevision, revision: entry.revision, changed: entry.changed ?? true, affectedPaths: structuredClone(entry.transaction.operations.map(op => op.path)), affectedHandles: [...(entry.transaction.scope.handles ?? [])], digest: entry.digest };
   }
   verify(transactionId: string): TaskReceipt {
-    const entry = this.history.find(e => e.transaction.id === transactionId);
+    const entry = this.findEntry(transactionId);
     return entry ? { ...this.receipt(entry), reason: "Persistence readback is required" } : { transactionId, stage: "refused", projectId: this.projectId, baseRevision: this.revision, changed: false, affectedPaths: [], affectedHandles: [], reason: "Unknown transaction" };
   }
   exportState(): SessionState<T> { return structuredClone({ projectId: this.projectId, revision: this.revision, document: this.document, history: this.history, selection: this.selection }); }

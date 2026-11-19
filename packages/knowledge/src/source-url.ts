@@ -30,6 +30,16 @@ async function resolveHost(hostname: string, signal: AbortSignal) {
   }
 }
 
+/** Explicit opt-in for Fake-IP networks; fetchSource still checks and pins every answer. */
+export async function resolvePublicDns(hostname: string, signal: AbortSignal): Promise<Array<{ address: string; family: number }>> {
+  const response = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(hostname)}&type=A&edns_client_subnet=0.0.0.0%2F0`, { signal, redirect: "error" });
+  if (!response.ok) throw new Error("Public DNS lookup failed");
+  const data = await response.json();
+  if (!Array.isArray(data?.Answer)) return [];
+  return data.Answer.filter((answer: { type?: unknown; data?: unknown }) => answer.type === 1 && typeof answer.data === "string")
+    .map((answer: { data: string }) => ({ address: answer.data, family: 4 }));
+}
+
 export async function fetchSource(url: string, signal: AbortSignal, redirects = 0, httpsOnly = false, resolver = resolveHost): Promise<{ bytes: Buffer; contentType: string }> {
   signal.throwIfAborted();
   const parsed = new URL(url);

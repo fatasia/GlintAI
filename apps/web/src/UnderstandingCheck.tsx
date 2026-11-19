@@ -29,7 +29,7 @@ export function UnderstandingCheck({ project, cardStyle }: { project: string; ca
   return <section style={{ ...cardStyle, padding: 26, display: "grid", gap: 16 }} aria-labelledby="check-title">
     <h2 id="check-title" style={{ margin: 0, fontSize: 22 }}>看懂了吗？做个小检查</h2>
     <p style={{ color: "#a7b4c4", margin: 0, fontSize: 13 }}>题目由作者指定；提交后仅在本机保存匿名作答与错题计数，不记录观看行为。</p>
-    {questions.map((question) => <fieldset key={question.id} disabled={pending || Boolean(result)} style={{ border: "1px solid #35414e", borderRadius: 10, padding: 16, minWidth: 0 }}>
+    {questions.map((question) => <fieldset key={question.id} disabled={pending || Boolean(result)} style={{ border: "1px solid var(--line-2)", borderRadius: 10, padding: 16, minWidth: 0 }}>
       <legend>{question.question}</legend>
       {question.choices.map((choice, index) => <label key={index} style={{ display: "flex", gap: 10, alignItems: "baseline", padding: "8px 0" }}><input type="radio" name={question.id} checked={answers[question.id] === index} onChange={() => setAnswers({ ...answers, [question.id]: index })} />{choice}</label>)}
     </fieldset>)}

@@ -1,4 +1,7 @@
 import fs from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { build } from "esbuild";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -15,6 +18,7 @@ describe("copyRuntimeDecoders", () => {
     const source = resolveRuntimeDecoder("gsap/dist/gsap.min.js");
     const target = path.join(temp, "gsap.min.js");
     expect(await fs.readFile(target)).toEqual(await fs.readFile(source));
+    expect(await fs.readFile(path.join(temp, "lottie_light.min.js"))).toEqual(await fs.readFile(resolveRuntimeDecoder("lottie-web/build/player/lottie.min.js")));
     // Immutable source per installed version: a rerun overwrites safely.
     await expect(copyRuntimeDecoders(temp)).resolves.toEqual(copies);
     await fs.rm(temp, { recursive: true, force: true });
@@ -99,5 +103,45 @@ describe("glTF decoder staging (ensureDecoders)", () => {
   it("fails with an actionable message when a decoder source is missing", () => {
     expect(() => resolveRuntimeDecoder("three/examples/jsm/libs/missing/decoder.wasm"))
       .toThrow(/not installed.*pnpm install/s);
+  });
+});
+
+
+describe("isolated portable runtime", () => {
+  it("copies bundled animation and glTF assets without workspace packages and fails on missing assets", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "glint-portable-assets-"));
+    const assets = path.join(root, "assets"), bundle = path.join(root, "decoders.mjs");
+    await copyRuntimeDecoders(assets);
+    await ensureDecoders(assets);
+    await build({ entryPoints: [fileURLToPath(new URL("./decoders.ts", import.meta.url))], outfile: bundle, bundle: true, platform: "node", format: "esm", target: "node22", banner: { js: 'import {createRequire as __r} from "node:module"; const require=__r(import.meta.url);' } });
+    const code = `import {copyRuntimeDecoders,ensureDecoders} from ${JSON.stringify(pathToFileURL(bundle).href)}; await copyRuntimeDecoders('public'); await ensureDecoders('public');`;
+    const env = { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, GLINT_RUNTIME_ASSETS: assets };
+    const run = () => spawnSync(process.execPath, ["--input-type=module", "-e", code], { cwd: root, env, encoding: "utf8" });
+    const result = run();
+    expect(result.status, result.stderr).toBe(0);
+    for (const file of [...RUNTIME_DECODERS.map(d => d.file), "three.runtime.js", ...GLTF_DECODER_FILES.map(d => d.to)]) {
+      expect(await fs.readFile(path.join(root, "public", file))).toEqual(await fs.readFile(path.join(assets, file)));
+    }
+    await fs.rename(path.join(assets, "lottie_light.min.js"), path.join(assets, "missing-lottie"));
+    const missing = run();
+    expect(missing.status).not.toBe(0);
+    expect(missing.stderr).toContain("lottie_light.min.js");
+    // Keep this fresh fixture for inspection; never delete user data.
+  }, 30000);
+});
+
+describe("animation runtime dependency lock", () => {
+  it("pins runtime packages and matches the frozen lockfile without a network install", async () => {
+    const read = async (file: string) => fs.readFile(new URL(`../../../${file}`, import.meta.url), "utf8");
+    const video = JSON.parse(await read("packages/video/package.json"));
+    const studio = JSON.parse(await read("apps/studio/package.json"));
+    const lock = (await read("pnpm-lock.yaml")).replace(/\r\n/g, "\n");
+    expect(video.dependencies).toMatchObject({ gsap: "3.15.0", "lottie-web": "5.13.0", three: "0.180.0" });
+    expect(studio.devDependencies.three).toBe("0.180.0");
+    for (const [name, version] of [["gsap", "3.15.0"], ["lottie-web", "5.13.0"], ["three", "0.180.0"]]) {
+      expect(lock).toContain(`${name}:\n        specifier: ${version}\n        version: ${version}`);
+      expect(lock).toContain(`${name}@${version}:\n    resolution: {integrity: sha512-`);
+    }
+    expect((lock.match(/three:\n        specifier: 0\.180\.0\n        version: 0\.180\.0/g) ?? [])).toHaveLength(2);
   });
 });

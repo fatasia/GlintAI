@@ -19,6 +19,10 @@ export function resolvePaths(args: string[], callerDir: string): string[] {
       if (!["http:", "https:"].includes(url.protocol)) throw new Error("Source URL must use HTTP(S)");
       return arg;
     }
+    if (["font-file", "font-lock-create", "font-lock-verify"].includes(name!)) {
+      if (!value?.trim()) throw new Error(`--${name} requires a path`);
+      return `--${name}=${path.resolve(callerDir, value)}`;
+    }
     if(name === "catalog")return `--catalog=${path.resolve(callerDir,value!)}`;
     if(name === "preview-config")return `--preview-config=${path.resolve(callerDir,value!)}`;
     if (PATH_ARGS.has(name!) || (name === "music" && !["auto", "off", "synth", "existing", "minimax", "gateway"].includes(value!))) {
@@ -93,4 +97,10 @@ export function createCliRuntime(entryUrl: string, callerDir = process.env.INIT_
     runScript: (name: string, args: string[]) => run(scriptArgs(name, args)),
     runStudio: () => run([path.join(path.dirname(require.resolve("@remotion/cli/package.json")), "remotion-cli.js"), "studio", "src/index.ts"]),
   };
+}
+
+/** Command semantics are normalized before path-valued arguments are resolved. */
+export function normalizeCommandArgs(command: string | undefined, args: string[]): string[] {
+  if (command !== "nle-render" && args.some(value => /^--(?:motion-samples|shutter-angle)(?:=|$)/.test(value))) throw new Error("Motion sampling parameters are supported only by nle-render");
+  return command === "delivery-check" ? args.map(arg => /^--audio=(required|optional|forbidden)$/.test(arg) ? arg.replace("--audio=", "--audio-policy=") : arg) : args;
 }

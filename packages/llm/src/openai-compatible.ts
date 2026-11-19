@@ -1,6 +1,8 @@
 import type { ChatRequest, ChatResponse, LlmProvider } from "./types";
 import { requestLifetime } from "./request";
 import { readSseData } from "./sse";
+import { wireMessages } from "./message-images";
+import { outputBudget } from "./output-budget";
 
 export const DEFAULT_LLM_TIMEOUT_MS = 60_000;
 export function parseReasoningEffort(value: string | undefined): "low" | "high" | "max" | undefined {
@@ -37,11 +39,13 @@ export class OpenAICompatibleProvider implements LlmProvider {
   }
 
   private body(request: ChatRequest) {
+    const budget = outputBudget(request.maxOutputTokens);
     return {
       model: this.config.model,
+      ...(budget !== undefined ? { max_completion_tokens: budget } : {}),
       messages: [
         ...(request.system ? [{ role: "system" as const, content: request.system }] : []),
-        ...request.messages,
+        ...wireMessages(request.messages,"openai"),
       ],
       ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
       ...(this.config.reasoningEffort ? { reasoning_effort: this.config.reasoningEffort } : {}),
@@ -52,7 +56,7 @@ export class OpenAICompatibleProvider implements LlmProvider {
     let response: Response;
     try {
       response = await fetch(this.endpoint, {
-        method: "POST",
+        method: "POST", redirect: "error",
         headers: { "content-type": "application/json", authorization: `Bearer ${this.config.apiKey}` },
         body: JSON.stringify(body), signal,
       });

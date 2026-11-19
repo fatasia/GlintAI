@@ -50,7 +50,7 @@ export const ThreeSceneView: React.FC<{
         <directionalLight position={[-6, -2, -4]} intensity={2.4} color={colors.accent2} />
         <directionalLight position={[2, -5, 3]} intensity={0.8} color={colors.accent} />
         {scene.model === "gltf" ? (
-          <GltfModel key={scene.src} src={scene.src} frame={frame} fps={fps} />
+          <GltfModel key={scene.src} src={scene.src} frame={frame} fps={fps} animationClip={scene.animationClip} morphTargets={scene.morphTargets} />
         ) : <group rotation={[t * 0.32, t * 0.52, 0]}>
           <mesh>
             {geometryFor(scene.model)}

@@ -67,10 +67,12 @@ export function proveProject(input: ProveInput): ProofReport {
         const options = value as { maxCostCny?: number; maxModelCalls?: number };
         if (!options || typeof options !== "object") throw new Error("change expects an object");
         const failures: string[] = [];
-        if (options.maxCostCny !== undefined && plan.plan.costCny > options.maxCostCny) failures.push(`cost ¥${plan.plan.costCny.toFixed(2)} > ¥${options.maxCostCny}`);
-        const modelCalls = receipt?.totals.modelCalls ?? 0;
-        if (options.maxModelCalls !== undefined && modelCalls > options.maxModelCalls) failures.push(`model calls ${modelCalls} > ${options.maxModelCalls}`);
-        results.push({ assert: assertion, pass: failures.length === 0, detail: failures.join("; ") || `cost ¥${plan.plan.costCny.toFixed(2)}, ${modelCalls} model call(s)` });
+        const cost = plan.plan.costCny, modelCalls = receipt ? receipt.totals.modelCalls : plan.modelCalls;
+        if (options.maxCostCny !== undefined && cost === null) failures.push("cost is unknown");
+        else if (options.maxCostCny !== undefined && cost !== null && cost > options.maxCostCny) failures.push(`cost ¥${cost.toFixed(2)} > ¥${options.maxCostCny}`);
+        if (options.maxModelCalls !== undefined && modelCalls === null) failures.push("model calls unknown");
+        else if (options.maxModelCalls !== undefined && modelCalls !== null && modelCalls > options.maxModelCalls) failures.push(`model calls ${modelCalls} > ${options.maxModelCalls}`);
+        results.push({ assert: assertion, pass: failures.length === 0, detail: failures.join("; ") || `cost ${cost === null ? "unknown" : `¥${cost.toFixed(2)}`}, ${modelCalls ?? "unknown"} model call(s)` });
       } else if (key === "determinism") {
         if (!receipt) throw new Error("determinism needs --receipt from a completed build");
         const level = (value as { level?: string })?.level ?? "L0";

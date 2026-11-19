@@ -23,6 +23,26 @@ describe("ProjectSession domain", () => {
     expect(session.submit(tx(0, [{ kind: "set", path: ["title"], value: "changed" }, { kind: "move", path: ["scenes"], from: 5, to: 0 }])).stage).toBe("refused");
     expect(session.snapshot().document).toEqual(document());
   });
+  it("enforces the approval freeze: every actor is read-only except the owner unfreeze", () => {
+    const frozen = { ...document(), frozen: true } as Record<string, unknown> & { frozen: boolean };
+    const session = new ProjectSession("demo", frozen);
+    for (const actor of ["skill", "cli", "product-agent"] as const) {
+      const refused = session.submit({ ...tx(0, [{ kind: "set", path: ["title"], value: "x" }]), actor });
+      expect(refused.stage).toBe("refused");
+      expect(refused.reason).toContain("frozen");
+    }
+    expect(session.submit(tx(0, [{ kind: "set", path: ["title"], value: "owner-bypass" }], "tx-owner")).reason).toContain("frozen");
+    expect(session.submit(tx(0, [{ kind: "set", path: ["frozen"], value: false }, { kind: "set", path: ["title"], value: "x" }], "tx-two-ops")).reason).toContain("frozen");
+    expect(session.submit({ ...tx(0, [{ kind: "set", path: ["frozen"], value: false }], "tx-unfreeze"), actor: "user" }).stage).toBe("dispatched");
+    expect(session.submit({ ...tx(1, [{ kind: "set", path: ["title"], value: "解冻后" }], "tx-after"), actor: "skill" }).stage).toBe("dispatched");
+  });
+  it("refuses amendments while frozen but lets the freeze itself pass through", () => {
+    const session = new ProjectSession("demo", document());
+    const asFrozen = (title: string) => ({ ...document(), frozen: true, title }) as ReturnType<typeof document>;
+    session.amend(asFrozen("旧标题"), "冻结");
+    expect(() => session.amend(asFrozen("改题"))).toThrow("frozen");
+    expect(session.snapshot().document.title).toBe("旧标题");
+  });
   it("rejects raw prototype paths, malformed operations, JSON values and identity edits", () => {
     const session = new ProjectSession("demo", document());
     const bad = [
@@ -66,5 +86,30 @@ describe("ProjectSession domain", () => {
     expect(session.submit(tx(0, [{ kind: "set", path: ["title"], value: "" }])).stage).toBe("refused");
     expect(() => session.select(["missing"])).toThrow(); session.select(["b"]);
     expect(session.look().selection).toEqual(["b"]);
+  });
+});
+
+describe("amend and compactHistory", () => {
+  it("amends the document without creating an undo step", () => {
+    const session = new ProjectSession<{ value: string }>("p", { value: "a" });
+    session.submit({ id: "t1", projectId: "p", baseRevision: 0, actor: "user", scope: {}, operations: [{ kind: "set", path: ["value"], value: "b" }], intent: "edit" });
+    const before = session.look();
+    session.amend({ value: "c" }, "live typing");
+    const after = session.look();
+    expect(after.revision).toBe(before.revision + 1);
+    expect(after.undoDepth).toBe(before.undoDepth); // no new undo step
+    expect(session.snapshot().document.value).toBe("c");
+    // Overlapping non-undoable edits must never be overwritten by history.
+    expect(session.historyEdit("undo", "u1", after.revision, "user").stage).toBe("refused");
+    expect(session.snapshot().document.value).toBe("c");
+    expect(session.look().redoDepth).toBe(0);
+  });
+  it("keeps the newest entries when compacting history", () => {
+    const session = new ProjectSession<{ n: number }>("p", { n: 0 });
+    for (let index = 0; index < 6; index++) session.submit({ id: `t${index}`, projectId: "p", baseRevision: index, actor: "user", scope: {}, operations: [{ kind: "set", path: ["n"], value: index + 1 }], intent: `edit ${index}` });
+    session.compactHistory(3);
+    expect(session.look().undoDepth).toBe(3);
+    session.historyEdit("undo", "u1", session.look().revision, "user");
+    expect(session.snapshot().document.n).toBe(5); // newest undo step still intact
   });
 });

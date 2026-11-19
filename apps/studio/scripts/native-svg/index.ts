@@ -1,14 +1,14 @@
 import type { Scene, SceneScriptProject } from "@glintai/scenescript";
-import { cameraTransform, beatPulseScale, sceneDurationMs, evaluateElements, wrapSvgEffects, DEFAULT_TRANSITION_MS, type SceneElement } from "@glintai/scenescript";
+import { cameraTransform, beatPulseScale, sceneDurationMs, BRUSH_PATHS, evaluateMorphElements, strokePathAt, strokeProgress, wrapSvgEffects, DEFAULT_TRANSITION_MS, type SceneElement } from "@glintai/scenescript";
 import { resolveTheme } from "@glintai/design-tokens";
 import { renderChart } from "./charts";
-import { clamp, eased, mix, textBlock, xml } from "./text";
+import { clamp, eased, fitText, mix, textBlock, xml } from "./text";
 
 export function supportsNativeScene(scene: Scene): boolean {
   return ["title", "bullets", "definition", "quote", "comparison", "diagram", "chart", "code"].includes(scene.kind);
 }
 
-export interface SvgOptions { width?: number; height?: number; plate?: boolean; previousScene?: Scene; overlayOnly?: boolean }
+export interface SvgOptions { width?: number; height?: number; plate?: boolean; previousScene?: Scene; overlayOnly?: boolean; transparentBackground?: boolean; contrastCaption?: boolean }
 
 export function sharedElementPositions(scene: Scene, previous: Scene | undefined, progress: number) {
   const t = clamp(progress);
@@ -22,8 +22,8 @@ export function sharedElementPositions(scene: Scene, previous: Scene | undefined
 }
 
 /** Editable object layer: the same evaluator drives the Remotion overlay. */
-export function renderElementLayer(scene: Scene, w: number, h: number, size: number, timeMs: number, theme: ReturnType<typeof resolveTheme>): string {
-  return evaluateElements(scene, timeMs).map(state => {
+export function renderElementLayer(scene: Scene, w: number, h: number, size: number, timeMs: number, theme: ReturnType<typeof resolveTheme>, previousScene?: Scene): string {
+  return evaluateMorphElements(scene, previousScene, timeMs).map(state => {
     const element = state.element;
     const cx = state.x * w, cy = state.y * h;
     const opacity = Math.min(1, Math.max(0, state.opacity));
@@ -33,6 +33,14 @@ export function renderElementLayer(scene: Scene, w: number, h: number, size: num
       return `<g opacity="${opacity}" transform="${transform}"><text x="0" y="0" dy="0.35em" text-anchor="middle" font-family="${xml(theme.fonts.body)}" font-size="${(element.fontSize ?? 48) * size}" font-weight="${element.weight ?? 700}" fill="${fill}">${xml(element.text)}</text></g>`;
     }
     const width = element.w * w, height = element.h * h;
+    if (element.kind === "path") {
+      const d = scene.transition?.in === "shape-morph" && previousScene?.elements?.some(source => source.id === element.id && source.kind === "path") ? element.d : strokePathAt(element.d, strokeProgress(element, timeMs));
+      return `<g opacity="${opacity}" transform="${transform}"><svg x="${-width / 2}" y="${-height / 2}" width="${width}" height="${height}" viewBox="0 0 ${element.viewBox[0]} ${element.viewBox[1]}" preserveAspectRatio="xMidYMid meet"><path d="${xml(d)}" fill="none" stroke="${element.stroke}" stroke-width="${element.strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/></svg></g>`;
+    }
+    if (element.appearance === "brush") {
+      const strokes = BRUSH_PATHS.map(path => `<path d="${path.d}" fill="${element.fill}" opacity="${path.opacity}"/>`).join("");
+      return `<g opacity="${opacity}" transform="${transform}"><svg x="${-width / 2}" y="${-height / 2}" width="${width}" height="${height}" viewBox="0 0 1000 100" preserveAspectRatio="none">${strokes}</svg></g>`;
+    }
     return `<g opacity="${opacity}" transform="${transform}"><rect x="${-width / 2}" y="${-height / 2}" width="${width}" height="${height}" rx="${(element.radius ?? 0) * size}" fill="${element.fill}"/></g>`;
   }).join("");
 }
@@ -50,9 +58,19 @@ export function renderSceneSvg(project: SceneScriptProject, scene: Scene, frame:
   let content = "";
   const inset = w * 0.1, areaW = w * 0.8;
   switch (scene.kind) {
-    case "title":
-      content = tx(scene.title, inset, h * 0.43, areaW, theme.fontSizes.display, c.text, h * 0.32, 700, theme.fonts.display) + tx(scene.subtitle ?? "", inset, h * 0.68, areaW, theme.fontSizes.h2, c.textMuted, h * 0.12, 400, theme.fonts.body);
+    case "title": {
+      if (!scene.title) break; // Overlay-only media scenes use an empty synthetic title.
+      const titleY = h * 0.40;
+      const title = fitText(scene.title, areaW, theme.fontSizes.display * size, h * 0.20);
+      const subtitle = fitText(scene.subtitle ?? "", areaW, theme.fontSizes.h2 * size, h * 0.12);
+      const lastTitleY = titleY + (title.lines.length - 1) * title.size * 1.45;
+      const subtitleY = lastTitleY + title.size * 0.35 + subtitle.size;
+      const accentY = Math.max(h * 0.12, titleY - title.size * 1.4);
+      content = `<rect x="${inset}" y="${accentY}" width="${72 * size}" height="${5 * size}" rx="${2.5 * size}" fill="${xml(c.accent)}"/>`
+        + textBlock(scene.title, inset, titleY, areaW, title.size, c.text, { height: h * 0.20, weight: 700, family: theme.fonts.display })
+        + (scene.subtitle ? textBlock(scene.subtitle, inset, subtitleY, areaW, subtitle.size, c.textMuted, { height: h * 0.12, family: theme.fonts.body }) : "");
       break;
+    }
     case "definition":
       heading = scene.term;
       content = `<rect x="${inset}" y="${h * 0.32}" width="${areaW}" height="${h * 0.4}" rx="${theme.radius}" fill="${c.surface}"/>` + tx(scene.definition, inset + 35 * size, h * 0.43, areaW - 70 * size, 52, c.text, h * 0.28);
@@ -94,7 +112,7 @@ export function renderSceneSvg(project: SceneScriptProject, scene: Scene, frame:
   const transitionMs = scene.transition?.durationMs ?? DEFAULT_TRANSITION_MS;
   const progress = clamp(currentFrame / fps * 1000 / transitionMs), enter = eased(progress);
   const kind = scene.transition?.in;
-  let transform = "", opacity = scene.transition && kind !== "magic-move" ? enter : 1;
+  let transform = "", opacity = scene.transition && kind !== "magic-move" && kind !== "shape-morph" ? enter : 1;
   if (kind === "slide-left" || kind === "slide-right") transform = `translate(${(kind === "slide-left" ? 1 : -1) * (1 - enter) * w * 0.08} 0)`;
   if (kind === "slide-up") transform = `translate(0 ${(1 - enter) * h * 0.08})`;
   if (kind === "zoom-punch" || kind === "flash") { const scale = 1 + (1 - enter) * 0.15; transform = `translate(${w / 2} ${h / 2}) scale(${scale}) translate(${-w / 2} ${-h / 2})`; }
@@ -105,7 +123,7 @@ export function renderSceneSvg(project: SceneScriptProject, scene: Scene, frame:
   const shared = sharedElementPositions(scene, options.previousScene, progress).map(e => textBlock(e.text, e.x * w, e.y * h, w * 0.8, e.fontSize * size, e.color ?? c.accent, { weight: 700 })).join("");
   const words = scene.narration.segments?.flatMap(segment => segment.words ?? []) ?? [];
   const ms = currentFrame / fps * 1000;
-  const elementLayer = renderElementLayer(scene, w, h, size, ms, theme);
+  const elementLayer = renderElementLayer(scene, w, h, size, ms, theme, options.previousScene);
   // Only scene-local subtitles follow the audio offset; elements and camera keep their visual clock.
   const offsetMs = scene.narration.audioOffsetMs ?? 0;
   const captionMs = ms - (Number.isFinite(offsetMs) ? offsetMs : 0);
@@ -118,7 +136,10 @@ export function renderSceneSvg(project: SceneScriptProject, scene: Scene, frame:
     }
   }
   const caption = words.length ? words.slice(captionStart, captionStart + pageSize).map(word => word.text).join("") : scene.narration.text;
+  const captionLayer = options.plate || captionMs < 0 ? "" : options.contrastCaption
+    ? textBlock(caption, inset, h * 0.9, areaW, 30 * size, "#ffffff", { height: h * 0.085, family: theme.fonts.body, stroke: "#151515", strokeWidth: Math.max(1, 4 * size) })
+    : tx(caption, inset, h * 0.9, areaW, 30, c.textMuted, h * 0.085);
   const clip = kind === "wipe" ? `<rect width="${w * enter}" height="${h}"/>` : kind === "iris" ? `<circle cx="${w / 2}" cy="${h / 2}" r="${Math.hypot(w, h) * enter}"/>` : `<rect width="${w}" height="${h}"/>`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" font-family="${xml(theme.fonts.body)}"><defs><clipPath id="entrance">${clip}</clipPath><filter id="blur"><feGaussianBlur stdDeviation="${kind === "blur" ? (1 - enter) * 10 : 0}"/></filter></defs><rect width="${w}" height="${h}" fill="${options.overlayOnly ? "none" : c.bg}"/><g clip-path="url(#entrance)" opacity="${opacity}" transform="${transform}" filter="url(#blur)"><g transform="${cameraSvg}">${tx(heading, inset, h * 0.17, areaW, theme.fontSizes.h1, c.text, h * 0.12, 700, theme.fonts.display)}<g opacity="${p}">${content}</g>${options.overlayOnly || options.plate ? "" : elementLayer}</g></g>${shared}${options.plate || captionMs < 0 ? "" : tx(caption, inset, h * 0.9, areaW, 30, c.textMuted, h * 0.085)}<rect y="${h - 5}" width="${w * clamp(currentFrame / frames)}" height="5" fill="${c.accent}"/></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" font-family="${xml(theme.fonts.body)}"><defs><clipPath id="entrance">${clip}</clipPath><filter id="blur"><feGaussianBlur stdDeviation="${kind === "blur" ? (1 - enter) * 10 : 0}"/></filter></defs><rect width="${w}" height="${h}" fill="${options.overlayOnly || options.transparentBackground ? "none" : c.bg}"/><g clip-path="url(#entrance)" opacity="${opacity}" transform="${transform}" filter="url(#blur)"><g transform="${cameraSvg}">${tx(heading, inset, h * 0.17, areaW, theme.fontSizes.h1, c.text, h * 0.12, 700, theme.fonts.display)}<g opacity="${p}">${content}</g>${options.overlayOnly || options.plate ? "" : elementLayer}</g></g>${shared}${captionLayer}<rect y="${h - 5}" width="${w * clamp(currentFrame / frames)}" height="5" fill="${c.accent}"/></svg>`;
   return wrapSvgEffects(svg, scene.effects ?? [], ms);
 }

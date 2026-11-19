@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nleAddTrack, nleClipSourceEndMs, nleDurationMs, nleMoveClip, nleRemoveClip, nleRemoveTrack, nleSampleMotion, nleSnap, nleSnapPoints, nleSplitClip, nleTransitionProgress, nleTrimClip, parseNleProject } from "./nle";
+import { nleAddTrack, nleClipSourceEndMs, nleMagnetizeTrack, nleRollEdit, nleDurationMs, nleMoveClip, nleRemoveClip, nleRemoveTrack, nleSampleMotion, nleSnap, nleSnapPoints, nleSplitClip, nleTransitionProgress, nleTrimClip, parseNleProject, nleSpeedAt } from "./nle";
 
 const base = {
   schemaVersion: 1 as const, id: "nle-test", title: "NLE", fps: 30, width: 1920, height: 1080,
@@ -118,5 +118,106 @@ describe("keyframes, blend and mask", () => {
     ] });
     expect(next.tracks[0]!.clips[0]).toMatchObject({ blend: "screen", mask: { shape: "circle", feather: 0.2 } });
     expect(() => parseNleProject({ ...base, tracks: [{ ...base.tracks[0]!, clips: [{ ...base.tracks[0]!.clips[0]!, keyframes: [{ ms: 500, opacity: 1 }, { ms: 500, opacity: 0.5 }] }] }, base.tracks[1]!] })).toThrow(/ascending/);
+  });
+});
+
+describe("NLE magnetic main track & solo", () => {
+  const gapped = parseNleProject({
+    ...base,
+    tracks: [
+      { id: "v1", kind: "video" as const, name: "主画面", clips: [
+        { id: "clip-a", kind: "video" as const, src: "assets/a.mp4", startMs: 1000, durationMs: 4000 },
+        { id: "clip-b", kind: "video" as const, src: "assets/b.mp4", startMs: 9000, durationMs: 2000 },
+        { id: "clip-c", kind: "video" as const, src: "assets/c.mp4", startMs: 4000, durationMs: 1000 },
+      ] },
+      { id: "a1", kind: "audio" as const, name: "音乐", muted: true, clips: base.tracks[1]!.clips },
+    ],
+  });
+  it("closes gaps head-to-tail in start order, keeping the earliest clip anchored", () => {
+    const next = nleMagnetizeTrack(gapped, "v1");
+    expect(next.tracks[0]!.clips.map(clip => [clip.id, clip.startMs])).toEqual([["clip-a", 1000], ["clip-c", 5000], ["clip-b", 6000]]);
+  });
+  it("is a no-op when the track already has no gaps", () => {
+    const tight = nleMagnetizeTrack(gapped, "v1");
+    expect(nleMagnetizeTrack(tight, "v1")).toBe(tight);
+  });
+  it("leaves other tracks untouched and ignores missing ids", () => {
+    const next = nleMagnetizeTrack(gapped, "v1");
+    expect(next.tracks[1]).toEqual(gapped.tracks[1]);
+    expect(nleMagnetizeTrack(gapped, "nope")).toBe(gapped);
+  });
+  it("accepts solo on a track and keeps older projects without it valid", () => {
+    expect(parseNleProject({ ...base, tracks: [{ ...base.tracks[1]!, solo: true }, base.tracks[0]!] }).tracks[0]!.solo).toBe(true);
+    expect(project.tracks[0]!.solo).toBeUndefined();
+  });
+});
+
+describe("NLE roll edit", () => {
+  const adjacent = parseNleProject({
+    ...base,
+    tracks: [
+      { id: "v1", kind: "video" as const, name: "主画面", clips: [
+        { id: "clip-a", kind: "video" as const, src: "assets/a.mp4", startMs: 1000, durationMs: 4000, trimStartMs: 0 },
+        { id: "clip-b", kind: "video" as const, src: "assets/b.mp4", startMs: 5000, durationMs: 2000, trimStartMs: 0 },
+        { id: "clip-c", kind: "video" as const, src: "assets/c.mp4", startMs: 9000, durationMs: 1000 },
+      ] },
+      base.tracks[1]!,
+    ],
+  });
+  it("moves the shared boundary and keeps the track length", () => {
+    const next = nleRollEdit(adjacent, "v1", "clip-a", 500);
+    expect(next.tracks[0]!.clips[0]).toMatchObject({ durationMs: 4500 });
+    expect(next.tracks[0]!.clips[1]).toMatchObject({ startMs: 5500, durationMs: 1500, trimStartMs: 500 });
+    expect(next.tracks[0]!.clips[2]).toMatchObject({ startMs: 9000 });
+    expect(nleDurationMs(next)).toBe(nleDurationMs(adjacent));
+  });
+  it("follows the right source in-point with clip speed", () => {
+    const fast = parseNleProject({ ...adjacent, tracks: [{ ...adjacent.tracks[0]!, clips: [
+      adjacent.tracks[0]!.clips[0]!,
+      { ...adjacent.tracks[0]!.clips[1]!, speed: 2 },
+      adjacent.tracks[0]!.clips[2]!,
+    ] }, adjacent.tracks[1]!] });
+    const next = nleRollEdit(fast, "v1", "clip-a", 500);
+    expect(next.tracks[0]!.clips[1]).toMatchObject({ trimStartMs: 1000 });
+  });
+  it("clamps so both sides keep >= 100ms", () => {
+    const next = nleRollEdit(adjacent, "v1", "clip-a", 99_000);
+    expect(next.tracks[0]!.clips[1]!.durationMs).toBe(100);
+  });
+  it("rolls left while the right clip still has source before its in-point", () => {
+    const withHead = parseNleProject({ ...adjacent, tracks: [{ ...adjacent.tracks[0]!, clips: [
+      adjacent.tracks[0]!.clips[0]!,
+      { ...adjacent.tracks[0]!.clips[1]!, trimStartMs: 5000 },
+      adjacent.tracks[0]!.clips[2]!,
+    ] }, adjacent.tracks[1]!] });
+    const back = nleRollEdit(withHead, "v1", "clip-a", -99_000);
+    expect(back.tracks[0]!.clips[0]!.durationMs).toBe(100);
+    expect(back.tracks[0]!.clips[1]).toMatchObject({ startMs: 1100, durationMs: 5900, trimStartMs: 1100 });
+  });
+  it("is a no-op rolling left when the right clip has no earlier source", () => {
+    expect(nleRollEdit(adjacent, "v1", "clip-a", -500)).toBe(adjacent);
+  });
+  it("is a no-op without an adjacent right neighbour or a zero delta", () => {
+    expect(nleRollEdit(adjacent, "v1", "clip-c", 500)).toBe(adjacent);
+    expect(nleRollEdit(adjacent, "v1", "clip-a", 0)).toBe(adjacent);
+    expect(nleRollEdit(adjacent, "a1", "music", 500)).toBe(adjacent);
+  });
+});
+
+describe("speed ramp (曲线变速)", () => {
+  const clip = (curve: "linear" | "in" | "out" | "bell", speed = 1) => ({ speed, speedCurve: curve, durationMs: 1000 });
+  it("linear is constant; in ramps up; out mirrors; bell is symmetric slow-fast-slow", () => {
+    expect(nleSpeedAt(clip("linear"), 250)).toBe(1);
+    const rampIn = [0, 500, 1000].map(ms => nleSpeedAt(clip("in"), ms));
+    expect(rampIn[0]).toBeLessThan(rampIn[1]!);
+    expect(rampIn[1]!).toBeLessThan(rampIn[2]!);
+    expect(nleSpeedAt(clip("out"), 250)).toBeCloseTo(nleSpeedAt(clip("in"), 750), 5);
+    expect(nleSpeedAt(clip("bell"), 0)).toBeCloseTo(nleSpeedAt(clip("bell"), 1000), 5);
+    expect(nleSpeedAt(clip("bell"), 500)).toBeGreaterThan(nleSpeedAt(clip("bell"), 0));
+  });
+  it("scales with the base speed and clamps out-of-range local times", () => {
+    expect(nleSpeedAt(clip("linear", 2), 500)).toBe(2);
+    expect(nleSpeedAt(clip("in", 2), -5)).toBe(nleSpeedAt(clip("in", 2), 0));
+    expect(nleSpeedAt(clip("in", 2), 1500)).toBe(nleSpeedAt(clip("in", 2), 1000));
   });
 });

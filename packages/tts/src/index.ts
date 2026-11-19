@@ -8,7 +8,7 @@ import { createSilentWav, parseWavDurationMs } from "./wav";
 export { createSilentWav, parseWavDurationMs, WAV_SAMPLE_RATE } from "./wav";
 export { parseMp3DurationMs, detectEdgeVoice, EdgeTtsProvider, type EdgeTtsConfig } from "./edge";
 export { SapiTtsProvider, type SapiTtsConfig } from "./sapi";
-export { synthesizeBatch } from "./batch";
+export { synthesizeBatch, readCachedTts } from "./batch";
 export { QwenLocalTtsProvider, type QwenLocalTtsConfig } from "./qwen";
 export { analyzePcm16Wav } from "./audio-quality";
 export { ElevenLabsTtsProvider, FishTtsProvider, MiniMaxTtsProvider, type ElevenLabsTtsConfig, type FishTtsConfig, type MiniMaxTtsConfig } from "./cloud";

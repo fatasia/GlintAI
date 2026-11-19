@@ -1,0 +1,8 @@
+{
+  "id": "old-demo",
+  "title": "旧工程",
+  "aspect": "9:16",
+  "scenes": [
+    { "id": "a", "title": "开场", "text": "老旁白" }
+  ]
+}

@@ -47,11 +47,11 @@ export function libraryVisuals(assets: unknown): LibraryVisual[] {
   return visuals;
 }
 
-/** A fixed shelf to the right of the scene cards; material cards are references, not draggable layout. */
-export function materialNodes(visuals: readonly LibraryVisual[], origin: { x: number; y: number } = { x: 0, y: 0 }): MaterialCardNode[] {
+/** Material cards remain references; their workspace positions are independent of playback. */
+export function materialNodes(visuals: readonly LibraryVisual[], origin: { x: number; y: number } = { x: 0, y: 0 }, positions: BoardPositions = {}): MaterialCardNode[] {
   return visuals.slice(0, MATERIAL_LIMIT).map((visual, index) => ({
-    id: `material:${visual.name}`, type: "materialCard", draggable: false, deletable: false, width: 220, height: 116,
-    position: { x: origin.x + index % 3 * 250, y: origin.y + Math.floor(index / 3) * 146 },
+    id: `material:${visual.name}`, type: "materialCard", draggable: true, deletable: false, width: 220, height: 116,
+    position: positions[`material:${visual.name}`] ?? { x: origin.x + index % 3 * 250, y: origin.y + Math.floor(index / 3) * 146 },
     data: { name: visual.name, kind: visual.kind },
   }));
 }
@@ -63,7 +63,7 @@ export function readBoardPositions(raw: string | null): BoardPositions {
     if (!data || typeof data !== "object" || Array.isArray(data)) return {};
     const output: BoardPositions = Object.create(null);
     for (const [id, value] of Object.entries(data).slice(0, 200)) {
-      if (!/^[a-z0-9][a-z0-9-]*$/.test(id) || !value || typeof value !== "object") continue;
+      if ((!/^[a-z0-9][a-z0-9-]*$/.test(id) && !/^material:[a-zA-Z0-9_-]{1,100}\.(png|jpg|webp|mp4)$/.test(id)) || !value || typeof value !== "object") continue;
       const { x, y } = value as { x: number; y: number };
       if (Number.isFinite(x) && Number.isFinite(y) && Math.abs(x) <= 100_000 && Math.abs(y) <= 100_000) output[id] = { x, y };
     }

@@ -13,10 +13,15 @@ export async function createDirectCapture(project: SceneScriptProject, projectDi
   const prepared = await copyProjectAssets(projectDir, root, project);
   await copyRuntimeDecoders(root);
   if (project.scenes.some(s => s.kind === "three" && s.model === "gltf")) await ensureDecoders(root);
-  const threeRoot = path.resolve(path.dirname(resolveRuntimeDecoder("three")), "..");
-  const bundle = await build({ entryPoints: [path.join(path.dirname(fileURLToPath(import.meta.url)), "page.ts")], bundle: true, write: false, format: "iife", platform: "browser", target: "es2020", alias: { three: threeRoot }, minify: true, metafile: true });
-  if (Object.keys(bundle.metafile!.inputs).some(file => /node_modules[\\/].*remotion[\\/]/.test(file))) throw new Error("Independent backend unexpectedly bundled Remotion");
-  fs.writeFileSync(path.join(root, "page.js"), bundle.outputFiles[0]!.contents);
+  const prebuilt = process.env.GLINT_DIRECT_BROWSER_HARNESS;
+  if (prebuilt) {
+    fs.copyFileSync(prebuilt, path.join(root, "page.js"));
+  } else {
+    const threeRoot = path.resolve(path.dirname(resolveRuntimeDecoder("three")), "..");
+    const bundle = await build({ entryPoints: [path.join(path.dirname(fileURLToPath(import.meta.url)), "page.ts")], bundle: true, write: false, format: "iife", platform: "browser", target: "es2020", alias: { three: threeRoot }, minify: true, metafile: true });
+    if (Object.keys(bundle.metafile!.inputs).some(file => /node_modules[\\/].*remotion[\\/]/.test(file))) throw new Error("Independent backend unexpectedly bundled Remotion");
+    fs.writeFileSync(path.join(root, "page.js"), bundle.outputFiles[0]!.contents);
+  }
   fs.writeFileSync(path.join(root, "index.html"), '<!doctype html><html><head><meta charset="utf-8"></head><body><script src="/page.js"></script></body></html>');
   const server = await startAssetServer(root);
   let browser: Awaited<ReturnType<typeof openCaptureBrowser>>["browser"] | undefined;
