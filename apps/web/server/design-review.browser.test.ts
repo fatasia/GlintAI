@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { expect, it } from "vitest";
 import { findSystemBrowser } from "../../studio/scripts/direct-browser/host";
+const browserGated = (() => { try { findSystemBrowser(); return process.env.GLINT_BROWSER_UI_TEST === "1"; } catch { return false; } })();
 import { artifactFingerprint } from "../src/artifact-project";
 import type { ArtifactEditRequest } from "../src/artifact-project";
 import type { DesignDocument, DesignSelection, ProjectDesignDocuments } from "../src/design-artifacts";
@@ -25,7 +26,7 @@ const initialDocument: DesignDocument = {
 const initialState: ProjectDesignDocuments = { version: 1, projectId, activeId: initialDocument.id, documents: [initialDocument] };
 type ProposalRequest = { projectId: string; document: DesignDocument; instruction: string; selection: DesignSelection };
 
-it("真实 DesignEditor + ArtifactChat：多批注精准提案、影响单、确认应用、一次撤销，以及过期预览和旧批注请求拒绝", async () => {
+it.skipIf(!browserGated)("真实 DesignEditor + ArtifactChat：多批注精准提案、影响单、确认应用、一次撤销，以及过期预览和旧批注请求拒绝", async () => {
   const evidence = await mkdtemp(fileURLToPath(new URL("../../../evidence/design-review-browser-", import.meta.url)));
   const bundle = await build({ stdin: { contents: `
     import React,{useRef,useState} from 'react';import{createRoot}from'react-dom/client';

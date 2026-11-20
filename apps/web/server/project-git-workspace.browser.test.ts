@@ -7,12 +7,13 @@ import path from "node:path";
 import { build } from "esbuild";
 import { expect, it } from "vitest";
 import { findSystemBrowser } from "../../studio/scripts/direct-browser/host";
+const browserGated = (() => { try { findSystemBrowser(); return process.env.GLINT_BROWSER_UI_TEST === "1"; } catch { return false; } })();
 // @ts-expect-error native server module
 import { createProjectGitHost } from "./project-git-host.mjs";
 
 const puppeteer = createRequire(new URL("../../studio/package.json", import.meta.url))("puppeteer-core");
 
-it("真实 Chromium + 真实 Git：草稿备份、完整版本恢复、清理失败重启和独立副本", async () => {
+it.skipIf(!browserGated)("真实 Chromium + 真实 Git：草稿备份、完整版本恢复、清理失败重启和独立副本", async () => {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "glint-git-browser-"));
   const host = createProjectGitHost({ dataDir });
   const projectId = "git-browser-project";
@@ -165,7 +166,7 @@ it("真实 Chromium + 真实 Git：草稿备份、完整版本恢复、清理失
   }
 }, 120_000);
 
-it("真实 IdeaStudio + Chromium + Git：副本登记、跨作品重开、保存去重与显式载入主快照及当前附件（共享服务未确认）", async () => {
+it.skipIf(!browserGated)("真实 IdeaStudio + Chromium + Git：副本登记、跨作品重开、保存去重与显式载入主快照及当前附件（共享服务未确认）", async () => {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "glint-idea-git-browser-"));
   const host = createProjectGitHost({ dataDir });
   let browser: any, server: ReturnType<typeof createServer> | undefined;

@@ -100,13 +100,17 @@ jobs:
       # Hosted Ubuntu provides Chrome; fail explicitly if that image contract changes.
       - run: test -x "$GLINT_CHROME_PATH" && "$GLINT_CHROME_PATH" --version
       - run: pnpm --filter glint-web build
-      - name: Run all four core browser files without skips
+      - name: Run the core and design browser files without skips
         run: >-
           node scripts/verify-browser.mjs
           apps/web/server/creation-flow.browser.test.ts
           apps/web/server/storyboard.browser.test.ts
           apps/web/server/hybrid-creation.browser.test.ts
           apps/web/server/reference-adoption.browser.test.ts
+          apps/web/server/design-editor-bridge.browser.test.ts
+          apps/web/server/design-export.browser.test.ts
+          apps/web/server/project-git-workspace.browser.test.ts
+          apps/desktop/scripts/legacy-origin-export.test.ts
 
   code-quality:
     # Owner enables this only after reviewing and committing the bootstrap baseline.

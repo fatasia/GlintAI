@@ -5,9 +5,10 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { expect, it } from "vitest";
 import { findSystemBrowser } from "../../studio/scripts/direct-browser/host";
+const browserGated = (() => { try { findSystemBrowser(); return process.env.GLINT_BROWSER_UI_TEST === "1"; } catch { return false; } })();
 const puppeteer = createRequire(new URL("../../studio/package.json", import.meta.url))("puppeteer-core");
 
-it("真实双 iframe：缩放后点击 child 留批注，滚动后点钉编辑，隔离来源和旧 generation，刷新品牌及缩略图", async () => {
+it.skipIf(!browserGated)("真实双 iframe：缩放后点击 child 留批注，滚动后点钉编辑，隔离来源和旧 generation，刷新品牌及缩略图", async () => {
   const bundle = await build({ stdin: { contents: `
     import React,{useState} from 'react';import{createRoot}from'react-dom/client';
     import{DesignPreview,DesignThumb}from'./design-editor-preview';

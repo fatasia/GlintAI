@@ -33,7 +33,7 @@ it("native scene filters apply pixels and identity/disabled stacks preserve byte
   expect(renderSceneSvg(project, { ...scene, effects: [{ id: "off", kind: "grayscale", value: 1, enabled: false }] }, 0, { width: 192, height: 108 })).toBe(plain);
 });
 
-describe.skipIf(!available)("shared SVG effect pixels in system Chrome", () => {
+describe.skipIf(!available || process.env.GLINT_BROWSER_UI_TEST !== "1")("shared SVG effect pixels in system Chrome", () => {
   let opened: Awaited<ReturnType<typeof openCaptureBrowser>>;
   beforeAll(async () => { opened = await openCaptureBrowser(96, 64); }, 60_000);
   afterAll(async () => { await opened?.browser.close(); });

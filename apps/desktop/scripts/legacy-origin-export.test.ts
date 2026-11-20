@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { expect, it } from "vitest";
 import { findSystemBrowser } from "../../studio/scripts/direct-browser/host";
+const browserGated = (() => { try { findSystemBrowser(); return process.env.GLINT_BROWSER_UI_TEST === "1"; } catch { return false; } })();
 import { discoverLegacyPorts, exportLegacyOrigins, recoveryKey } from "./legacy-origin-export.mjs";
 const puppeteer = createRequire(new URL("../../studio/package.json", import.meta.url))("puppeteer-core");
 it("limits backups to authoring data and valid loopback metadata", () => {
@@ -19,7 +20,7 @@ it("limits backups to authoring data and valid loopback metadata", () => {
     expect(recoveryKey("password")).toBe(false);
   } finally { fs.rmSync(root,{recursive:true,force:true}); }
 });
-it("exports distinct historical origins through a copied Chromium profile without modifying source or copying credentials", async () => {
+it.skipIf(!browserGated)("exports distinct historical origins through a copied Chromium profile without modifying source or copying credentials", async () => {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),"glint-origin-recovery-test-"));
   const profile=path.join(root,"profile"),out=path.join(root,"backup"),executablePath=findSystemBrowser();
   const servers: http.Server[]=[];let browser:any;

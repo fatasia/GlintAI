@@ -7,6 +7,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { unzipSync, strFromU8 } from "fflate";
 import { createDesignExporter } from "./design-export.mjs";
 import { findSystemBrowser } from "../../studio/scripts/direct-browser/host";
+const browserGated = (() => { try { findSystemBrowser(); return process.env.GLINT_BROWSER_UI_TEST === "1"; } catch { return false; } })();
 const puppeteer = createRequire(new URL("../../studio/package.json", import.meta.url))("puppeteer-core");
 let root: string;
 beforeAll(async () => { root = await fs.mkdtemp(path.join(os.tmpdir(), "glint-design-render-")); });
@@ -16,7 +17,7 @@ const document = { id: "test", title: "中文演示", kind: "slides", pages: [
   { id: "one", title: "一", notes: "讲稿 中文备注", html: `<style>body{margin:0;background:#fff}.box{position:absolute;left:80px;top:120px;width:300px;height:160px;background:#336699;border:2px solid #222;border-radius:12px}h1{position:absolute;left:80px;top:30px;font-size:40px;color:#122334}</style><h1>你好，中文设计</h1><div class="box"></div><img style="position:absolute;left:450px;top:120px;width:120px;height:120px" src="${image}">` },
   { id: "two", title: "二", html: '<h2 style="font-size:48px;color:rgb(255,0,0)">第二页</h2><div style="width:160px;height:120px;background:linear-gradient(red,blue)">复杂效果</div>' },
 ], activePageId: "one", updatedAt: 1 };
-it("creates a real 1280x720 PNG of the active page, a 2-page PDF, editable text/shapes/images PPTX", async () => {
+it.skipIf(!browserGated)("creates a real 1280x720 PNG of the active page, a 2-page PDF, editable text/shapes/images PPTX", async () => {
   const exporter = createDesignExporter({ outputDir: root });
   const png = await exporter.run({ document, format: "png" });
   const bytes = await fs.readFile(png.path);
@@ -35,7 +36,7 @@ it("creates a real 1280x720 PNG of the active page, a 2-page PDF, editable text/
   expect(pptx.editableElements).toBeGreaterThanOrEqual(4); expect(pptx.warnings.join(" ")).toContain("局部栅格化");
   expect((await fs.readdir(root)).some(name => name.endsWith(".part"))).toBe(false);
 }, 120_000);
-it("renders export-copy brand colors consistently in PNG, PDF, PPTX and HTML", async () => {
+it.skipIf(!browserGated)("renders export-copy brand colors consistently in PNG, PDF, PPTX and HTML", async () => {
   const source = { ...document, pages: [{ ...document.pages[0], html: '<html><head><style>:root{--accent:#336699}</style><style data-glint-export-brand="true">:root{--brand-accent:#e0533d;--brand-bg:#ffffff;--brand-text:#121212;--accent:#e0533d}</style></head><body><div style="position:absolute;left:0;top:0;width:400px;height:400px;background:var(--accent)"></div><h1 style="position:absolute;left:500px;top:20px;color:var(--brand-text)">品牌导出</h1></body></html>' }] };
   const before = JSON.stringify(source), exporter = createDesignExporter({ outputDir: root });
   const png = await exporter.run({ document: source, format: "png" });
@@ -87,7 +88,7 @@ it("rejects script-only static captures, cancels its own browser and recovers", 
   await expect(task).rejects.toThrow("取消");
   const recovered = await exporter.run({ document, format: "html" }); expect(recovered.bytes).toBeGreaterThan(0);
 }, 60_000);
-it("HTML export really clicks through pages and runs inline prototype interaction only in opaque sandbox", async () => {
+it.skipIf(!browserGated)("HTML export really clicks through pages and runs inline prototype interaction only in opaque sandbox", async () => {
   const exporter = createDesignExporter({ outputDir: root });
   const source = { ...document, kind: "prototype", pages: [{ ...document.pages[0], html: '<button id="reserve">预约</button><a href="#two">下一页</a><script>document.getElementById("reserve").onclick=()=>document.getElementById("reserve").textContent="已预约"</script>' }, { ...document.pages[1], html: "<h1>原型第二页</h1>" }] };
   const result = await exporter.run({ document: source, format: "html" });
