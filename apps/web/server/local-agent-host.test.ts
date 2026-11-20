@@ -93,7 +93,8 @@ it("cancels pending requests, drops late proposal, and detach is resumable witho
   expect(await connect(host)).toBe(id);
   const calls = (await readFile(path.join(dataDir, "agent-workspaces", id, "fixture-calls.jsonl"), "utf8")).trim().split("\n").map(line => JSON.parse(line));
   expect(calls.filter(item => item.method === "session/new")).toHaveLength(1); expect(calls.filter(item => item.method === "session/resume")).toHaveLength(2);
-  expect(calls.filter(item => item.method === "session/prompt")).toHaveLength(2);
+  // The cancelled turn may or may not reach the fixture before cancellation lands; a replay would exceed two prompts.
+  const prompts = calls.filter(item => item.method === "session/prompt"); expect(prompts.length).toBeGreaterThanOrEqual(1); expect(prompts.length).toBeLessThanOrEqual(2);
 });
 it("restores persisted conversation and model selection without an automatic prompt", async () => {
   const { host, dataDir } = await setup(); const id = await connect(host);
