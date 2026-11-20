@@ -110,7 +110,7 @@ jobs:
           apps/web/server/design-editor-bridge.browser.test.ts
           apps/web/server/design-export.browser.test.ts
           apps/web/server/project-git-workspace.browser.test.ts
-          apps/desktop/scripts/legacy-origin-export.test.ts
+          apps/desktop/scripts/legacy-origin-export.browser.test.ts
 
   code-quality:
     # Owner enables this only after reviewing and committing the bootstrap baseline.
