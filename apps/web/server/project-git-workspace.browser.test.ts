@@ -279,7 +279,7 @@ it.skipIf(!browserGated)("真实 IdeaStudio + Chromium + Git：副本登记、�
     };
     const evidenceDir = fileURLToPath(new URL("../evidence/", import.meta.url));
     // The public tree ships without evidence/; the workspace only needs the directory to exist.
-    fs.mkdirSync(evidenceDir, { recursive: true });
+    await mkdir(evidenceDir, { recursive: true });
     expect((await stat(evidenceDir)).isDirectory()).toBe(true);
     await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}`);
     await openRecent(original.title); await currentIdentity(projectId, original.title); await sharedUnconfirmed();
