@@ -41,7 +41,7 @@ it.skipIf(!browserGated)("renders export-copy brand colors consistently in PNG, 
   const before = JSON.stringify(source), exporter = createDesignExporter({ outputDir: root });
   const png = await exporter.run({ document: source, format: "png" });
   const pngBytes = await fs.readFile(png.path);
-  const browser = await puppeteer.launch({ executablePath: findSystemBrowser(), headless: true });
+  const browser = await puppeteer.launch({ executablePath: findSystemBrowser(), headless: true, args: process.platform === "linux" ? ["--no-sandbox", "--disable-setuid-sandbox"] : [] });
   try {
     const page = await browser.newPage();
     const pixel = await page.evaluate(async (src: string) => {
@@ -95,7 +95,7 @@ it.skipIf(!browserGated)("HTML export really clicks through pages and runs inlin
   const html = await fs.readFile(result.path, "utf8");
   const server = createServer((_req, res) => { res.setHeader("content-type", "text/html;charset=utf-8"); res.end(html); });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
-  const browser = await puppeteer.launch({ executablePath: findSystemBrowser(), headless: true });
+  const browser = await puppeteer.launch({ executablePath: findSystemBrowser(), headless: true, args: process.platform === "linux" ? ["--no-sandbox", "--disable-setuid-sandbox"] : [] });
   try {
     const page = await browser.newPage(); await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}`);
     await page.waitForFunction(() => document.querySelector("iframe")?.getAttribute("srcdoc"));
@@ -115,7 +115,7 @@ it("keeps a tall slide footer in the PNG used by contain-fit video scenes",async
  const source={...document,pages:[{id:"one",title:"Tall slide",html:'<style>html,body{width:1280px;min-height:720px;margin:0}main{height:1000px;position:relative;background:white}footer{position:absolute;bottom:0;width:100%;height:80px;background:rgb(224,83,61)}</style><main>Long slide<footer>Footer remains visible</footer></main>'}]};
  const result=await createDesignExporter({outputDir:root}).run({document:source,format:"png"}),bytes=await fs.readFile(result.path);
  expect(bytes.readUInt32BE(16)).toBe(1280);expect(bytes.readUInt32BE(20)).toBe(1000);
- const browser=await puppeteer.launch({executablePath:findSystemBrowser(),headless:true});
+ const browser=await puppeteer.launch({executablePath:findSystemBrowser(),headless:true,args:process.platform==="linux"?["--no-sandbox","--disable-setuid-sandbox"]:[]});
  try{
   const page=await browser.newPage();
   const pixel=await page.evaluate(async(src:string)=>{const img=new Image();img.src=src;await img.decode();const canvas=document.createElement("canvas");canvas.width=img.width;canvas.height=img.height;const ctx=canvas.getContext("2d")!;ctx.drawImage(img,0,0);return [...ctx.getImageData(600,950,1,1).data];},`data:image/png;base64,${bytes.toString("base64")}`);
