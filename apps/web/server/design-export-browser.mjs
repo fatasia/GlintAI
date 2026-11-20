@@ -54,7 +54,7 @@ export async function captureDesign(prepared, document, format, { signal } = {})
     await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
     const origin = `http://127.0.0.1:${server.address().port}`;
     profile = await fs.mkdtemp(path.join(os.tmpdir(), "glint-design-browser-"));
-    browser = await puppeteer.launch({ executablePath: findSystemBrowser(), headless: true, userDataDir: profile, timeout: 20_000, protocolTimeout: 30_000, args: ["--disable-background-networking", "--disable-component-update", "--disable-extensions", "--no-first-run"] });
+    browser = await puppeteer.launch({ executablePath: findSystemBrowser(), headless: true, userDataDir: profile, timeout: 20_000, protocolTimeout: 30_000, args: ["--disable-background-networking", "--disable-component-update", "--disable-extensions", "--no-first-run", ...(process.platform === "linux" ? ["--no-sandbox", "--disable-setuid-sandbox"] : [])] });
     signal?.addEventListener("abort", abort, { once: true }); checkDesignAbort(signal);
     const page = await browser.newPage();
     await page.setViewport({ ...DESIGN_VIEWPORT, deviceScaleFactor: 1 });

@@ -62,6 +62,11 @@ export async function executionRequest<T>(route: string, body?: unknown): Promis
   if (!response.ok) throw new Error(data.code ?? data.error ?? `HTTP ${response.status}`);
   return data as T;
 }
+/** GET /bindings answers with the bare list; older drafts assumed an envelope that never existed. */
+export async function executionBindings(): Promise<ExecutionConfig["bindings"]> {
+  const value = await executionRequest<ExecutionConfig["bindings"] | { bindings?: ExecutionConfig["bindings"] }>("bindings");
+  return Array.isArray(value) ? value : value.bindings ?? [];
+}
 export function rememberExecution(key: string, value: { requestId: string; taskId?: string }) {
   try {
     localStorage.setItem(`${key}.bound`, JSON.stringify(value));

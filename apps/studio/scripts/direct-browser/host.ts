@@ -83,7 +83,9 @@ export async function startAssetServer(root: string) {
 }
 
 export async function openCaptureBrowser(width: number, height: number): Promise<{ browser: Browser; page: Page }> {
-  const browser = await puppeteer.launch({ executablePath: findSystemBrowser(), headless: true, args: ["--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--autoplay-policy=no-user-gesture-required"], protocolTimeout: 60000 });
+  // Ubuntu 24+ runners disable unprivileged user namespaces: Chrome cannot sandbox there.
+  const linuxSandboxWorkaround = process.platform === "linux" ? ["--no-sandbox", "--disable-setuid-sandbox"] : [];
+  const browser = await puppeteer.launch({ executablePath: findSystemBrowser(), headless: true, args: ["--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--autoplay-policy=no-user-gesture-required", ...linuxSandboxWorkaround], protocolTimeout: 60000 });
   recordProcessLedger("chromium", browser.process()?.pid, ["(puppeteer capture browser)"]);
   try {
     const page = await browser.newPage(); await page.setViewport({ width, height, deviceScaleFactor: 1 });

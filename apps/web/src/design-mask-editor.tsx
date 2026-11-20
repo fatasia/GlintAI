@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { appFetch, applicationUrl } from "./app-url";
-import { executionRequest, type ExecutionQuote } from "./media-execution-client";
+import { executionBindings, executionRequest, type ExecutionQuote } from "./media-execution-client";
 import { buildSubmissionInput, compositeMaskedPixels, dataUrlBytes, libraryAssetName, maskDiffStats, maskIsEmpty, sha256Hex, type MaskStats, type Rgba } from "./design-mask-edit";
 import { optimizeDesignImage } from "./design-image-optimize";
 
@@ -64,8 +64,8 @@ export function DesignMaskEditor({ projectId, imageSrc, onClose, onAdopt, onNoti
       if (saved.requestId && saved.taskId) void resume(saved.requestId, saved.taskId);
     }
     void prepare();
-    void executionRequest<{ bindings: Binding[] }>("bindings").then(value => {
-      const images = (value.bindings ?? []).filter(item => item.ready && item.entry?.kind === "image");
+    void executionBindings().then(value => {
+      const images = value.filter(item => item.ready && item.entry?.kind === "image") as Binding[];
       setBindings(images); setBindingId(current => current || (images.find(item => item.entry?.capabilities?.includes("reference-image"))?.id ?? images[0]?.id ?? ""));
     }).catch(failure => setError(failure instanceof Error ? failure.message : "模型绑定读取失败。"));
     // eslint-disable-next-line react-hooks/exhaustive-deps

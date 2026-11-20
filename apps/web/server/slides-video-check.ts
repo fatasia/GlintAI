@@ -13,7 +13,8 @@ if(fs.existsSync(output))throw new Error('Use a new evidence directory');fs.mkdi
 const service=await startDesktopService({dataDir:path.join(output,'data'),distDir:path.join(repo,'apps/web/dist'),studioDir:path.join(repo,'apps/studio')});
 const inputDocument=process.env.GLINT_DESIGN_ACCEPTANCE_DOCUMENT?JSON.parse(fs.readFileSync(process.env.GLINT_DESIGN_ACCEPTANCE_DOCUMENT,'utf8')):null;
 if(inputDocument&&inputDocument.kind!=='slides')throw new Error('Acceptance document must be slides');
-const browser=await puppeteer.launch({executablePath:findSystemBrowser(),headless:true});
+const linuxSandboxWorkaround=process.platform==="linux"?["--no-sandbox","--disable-setuid-sandbox"]:[];
+const browser=await puppeteer.launch({executablePath:findSystemBrowser(),headless:true,args:linuxSandboxWorkaround});
 let page:any;
 try{
  page=await browser.newPage();await page.setViewport({width:1440,height:1000});const errors:string[]=[];page.on('pageerror',(error:Error)=>errors.push(String(error)));
