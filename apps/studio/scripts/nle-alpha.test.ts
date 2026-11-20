@@ -56,6 +56,14 @@ it.skipIf(!available)("refuses an old capture harness instead of silently export
   fs.writeFileSync(projectFile, JSON.stringify(text));
   fs.writeFileSync(harness, 'window.__glintNleInit = async function() { document.body.style.background="#000"; }; window.__glintNleSeek = async function() {};');
   const previous = process.env.GLINT_NLE_HARNESS; process.env.GLINT_NLE_HARNESS = harness;
-  try { await expect(renderNle({ projectFile, assetsDir: dir, out, alpha: true })).rejects.toThrow(/版本不匹配/); expect(fs.existsSync(out)).toBe(false); }
+  // A mismatched environment lock must refuse before any browser launch, on every platform.
+  const lock = path.join(dir, "env-lock.json");
+  fs.writeFileSync(lock, JSON.stringify({ version: 1, environment: { platform: "ci-nonexistent", node: "v0.0.0", ffmpeg: "missing", browser: "missing", browserPath: "missing", resvg: "missing", designTokens: "missing", scenescript: "missing", fontsHash: "0000000000000000" } }));
+  try {
+    await expect(renderNle({ projectFile, assetsDir: dir, out, alpha: true, envLock: lock })).rejects.toThrow(/渲染环境与锁不匹配/);
+    expect(fs.existsSync(out)).toBe(false);
+    await expect(renderNle({ projectFile, assetsDir: dir, out, alpha: true })).rejects.toThrow(/版本不匹配/);
+    expect(fs.existsSync(out)).toBe(false);
+  }
   finally { if (previous === undefined) delete process.env.GLINT_NLE_HARNESS; else process.env.GLINT_NLE_HARNESS = previous; }
 }, 60000);

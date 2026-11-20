@@ -36,10 +36,16 @@ export function coverFrameIndex(coverAtMs: number | undefined, fps: number, tota
   return Math.min(Math.max(0, totalFrames - 1), Math.max(0, Math.round(coverAtMs / 1000 * fps)));
 }
 
-export async function renderNle({ projectFile, assetsDir, out, encoding = "balanced", concurrency = 4, coverAtMs, alpha = false, motionSamples = 1, shutterAngle = 180, signal: externalSignal }: {
-  projectFile: string; assetsDir: string; out: string; encoding?: string; concurrency?: number; coverAtMs?: number; alpha?: boolean; motionSamples?: number; shutterAngle?: number; signal?: AbortSignal;
+export async function renderNle({ projectFile, assetsDir, out, encoding = "balanced", concurrency = 4, coverAtMs, alpha = false, motionSamples = 1, shutterAngle = 180, signal: externalSignal, envLock }: {
+  projectFile: string; assetsDir: string; out: string; encoding?: string; concurrency?: number; coverAtMs?: number; alpha?: boolean; motionSamples?: number; shutterAngle?: number; signal?: AbortSignal; envLock?: string;
 }): Promise<{ output: string; bytes: number; durationMs: number; cover?: string; motion?: { samples: number; shutterAngle: number; frameSha256: string; outputSha256: string; samplesRendered: number } }> {
   void concurrency; // One deterministic capture page; parallelism lives in the encoder, not the seek clock.
+  if (envLock) {
+    // Refuse before any capture work when the recorded environment no longer matches.
+    const { parseEnvironmentLock, verifyEnvironmentLock } = await import("./render-env");
+    const { ok, diffs } = verifyEnvironmentLock(parseEnvironmentLock(fs.readFileSync(envLock, "utf8")));
+    if (!ok) throw new Error(`渲染环境与锁不匹配：${diffs.map(d => `${d.field} 期望 ${d.expected} 实际 ${d.actual}`).join("；")}`);
+  }
   const project = parseNleProject(JSON.parse(fs.readFileSync(projectFile, "utf8")));
   if (alpha) {
     if (!/\.webm$/i.test(out)) throw new Error("透明导出需要 .webm 输出文件。");
@@ -224,7 +230,7 @@ if (process.argv[1] && /nle-render\.(?:ts|mjs|js)$/.test(process.argv[1])) {
   const cliMotion = motionCliOptions(process.argv.slice(2));
   const controller = new AbortController();
   const stop = () => controller.abort(); process.once("SIGINT", stop); process.once("SIGTERM", stop);
-  renderNle({ signal: controller.signal, motionSamples: cliMotion.samples, shutterAngle: cliMotion.shutterAngle, projectFile, assetsDir: assets, out, encoding: arg("encoding") ?? "balanced", concurrency: Number(arg("concurrency") ?? 4), coverAtMs: Number(arg("cover-at")) || undefined, alpha: process.argv.slice(2).includes("--alpha") })
+  renderNle({ signal: controller.signal, motionSamples: cliMotion.samples, shutterAngle: cliMotion.shutterAngle, projectFile, assetsDir: assets, out, encoding: arg("encoding") ?? "balanced", concurrency: Number(arg("concurrency") ?? 4), coverAtMs: Number(arg("cover-at")) || undefined, alpha: process.argv.slice(2).includes("--alpha"), envLock: arg("env-lock") })
     .then(result => { if (result.motion) console.log(JSON.stringify({ motion: result.motion })); console.log(`[glint] NLE rendered: ${result.output} (${Math.round(result.bytes / 1024)} KB, ${(result.durationMs / 1000).toFixed(2)}s)`); })
     .catch(error => { console.error(`[glint] failed: ${error instanceof Error ? error.message : String(error)}`); process.exitCode = 1; })
     .finally(() => { process.removeListener("SIGINT", stop); process.removeListener("SIGTERM", stop); });

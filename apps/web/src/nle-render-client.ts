@@ -3,7 +3,17 @@ import { appFetch } from "./app-url";
 import { t } from "./ui/i18n";
 import { nleRenderOptions } from "../server/nle-render-options";
 export type RenderMotion = { motionSamples: number; shutterAngle: number };
-export type NleRenderResult = { url: string; file: string; coverUrl?: string };
+/** Server-side technical verification summary (V-04a): controlled names only. */
+export type NleVerifyReceipt = {
+  pass: boolean;
+  sha256: string | null;
+  bytes: number;
+  duration?: number;
+  checks: { name: string; pass: boolean }[];
+  remainingChecks: string[];
+  error?: string;
+};
+export type NleRenderResult = { url: string; file: string; coverUrl?: string; verify?: NleVerifyReceipt };
 type RenderContext = {
   project: NleProject;
   alpha: boolean;
@@ -33,6 +43,13 @@ export async function requestNleVideo(
     throw new Error(data?.error ?? t("nleRender.failed"));
   return data as NleRenderResult & { bytes: number };
 }
+function isNleVerifyReceipt(value: unknown): value is NleVerifyReceipt {
+  return Boolean(value) && typeof value === "object" &&
+    typeof (value as NleVerifyReceipt).pass === "boolean" &&
+    Array.isArray((value as NleVerifyReceipt).checks) &&
+    Array.isArray((value as NleVerifyReceipt).remainingChecks);
+}
+
 export async function executeNleRender(context: RenderContext) {
   const { project, alpha, motion, epoch, requests, setRendering, setError, setStatus, setResult } =
     context;
@@ -55,6 +72,7 @@ export async function executeNleRender(context: RenderContext) {
       url: data.url,
       file: data.file,
       ...(typeof data.coverUrl === "string" ? { coverUrl: data.coverUrl } : {}),
+      ...(isNleVerifyReceipt(data.verify) ? { verify: data.verify } : {}),
     });
     setStatus(t("nleRender.ready", { size: Math.round(Number(data.bytes) / 1024) }));
   } catch (cause) {

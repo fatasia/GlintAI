@@ -3,7 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { environmentSnapshot, parseEnvironmentLock, verifyEnvironmentLock, type EnvironmentLock } from "./render-env";
 import { ffmpegIdentity, fontFingerprint, nativeCacheEnvironment } from "./native-cache";
 
 const CLI = fileURLToPath(new URL("./glint.ts", import.meta.url));
@@ -79,3 +80,27 @@ it("creates and verifies a byte lock without overwriting user files", async () =
     expect(run("--font-lock-verify=invalid.json").status).not.toBe(0);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }, 120_000);
+
+
+describe("environment lock create and verify", () => {
+  const lock = (environment: Record<string, unknown>): EnvironmentLock => ({ version: 1, environment });
+  it("snapshots the nine lockable fields with a stable fonts hash", () => {
+    const snapshot = environmentSnapshot();
+    for (const field of ["platform", "node", "ffmpeg", "browser", "browserPath", "resvg", "designTokens", "scenescript", "fontsHash"]) expect(String(snapshot[field] ?? "")).not.toBe("");
+  });
+  it("verifies a matching lock and reports per-field diffs on mismatch", () => {
+    const snapshot = environmentSnapshot() as Record<string, string>;
+    expect(verifyEnvironmentLock(lock(snapshot)).ok).toBe(true);
+    const tampered = lock({ ...snapshot, node: "v0.0.0-test", ffmpeg: "deadbeef" });
+    const result = verifyEnvironmentLock(tampered);
+    expect(result.ok).toBe(false);
+    expect(result.diffs.map(d => d.field)).toEqual(["node", "ffmpeg"]);
+    expect(result.diffs[0]).toEqual({ field: "node", expected: "v0.0.0-test", actual: snapshot.node });
+  });
+  it("rejects malformed locks and unknown families only change the fonts fingerprint", () => {
+    expect(() => parseEnvironmentLock("not json")).toThrow("环境锁文件不是有效 JSON");
+    expect(() => parseEnvironmentLock('{"version":2}')).toThrow("环境锁文件格式无效");
+    const withFamily = environmentSnapshot(["Arial"]);
+    expect(verifyEnvironmentLock(lock(withFamily as Record<string, unknown>), ["Arial"]).ok).toBe(true);
+  });
+});

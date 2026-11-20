@@ -1,7 +1,7 @@
 import { TimelineDock } from "./TimelineDock";
 import { t } from "./ui/i18n";
 import { NleRenderOptions } from "./NleRenderOptions";
-import { executeNleRender } from "./nle-render-client";
+import { executeNleRender, type NleRenderResult } from "./nle-render-client";
 import { useNleSharedDocument, type SharedNleBinding } from "./useNleSharedDocument";
 import { isLocalAgentAvailable } from "./local-agent-client";
 import { applicationUrl } from "./app-url";
@@ -246,7 +246,7 @@ export function NleEditor({ onClose, active = true, openRequest, shared }: { onC
   const [rendering, setRendering] = useState(false);
   const [renderMotion, setRenderMotion] = useState({ motionSamples: 1, shutterAngle: 180 });
   const [exporting, setExporting] = useState<"fcpxml" | "edl" | null>(null);
-  const [result, setResult] = useState<{ url: string; file: string; coverUrl?: string } | null>(null);
+  const [result, setResult] = useState<NleRenderResult | null>(null);
   const [timelineResult, setTimelineResult] = useState<{ url: string; file: string; clips: number; textClips: number; warning?: string } | null>(null);
   const [historyTick, setHistoryTick] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -906,7 +906,7 @@ export function NleEditor({ onClose, active = true, openRequest, shared }: { onC
         <div className="nle-status">
           {status && <span role="status">{status}</span>}
           {result && <a href={applicationUrl(result.url)} download={result.file}>下载 {result.file.endsWith(".webm") ? "透明 WebM" : "MP4"}</a>}
-          {result && <DeliveryPanel receipt={{ file: result.file, url: result.url, coverUrl: result.coverUrl }} />}
+          {result && <DeliveryPanel receipt={{ file: result.file, url: result.url, coverUrl: result.coverUrl, verify: result.verify }} />}
           {timelineResult && <a href={applicationUrl(timelineResult.url)} download={timelineResult.file}>下载 {timelineResult.file.endsWith(".fcpxml") ? "FCPXML" : "EDL"}（{timelineResult.clips} 事件）</a>}
         </div>
         <details className="nle-beat-panel">

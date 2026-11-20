@@ -103,9 +103,70 @@ function parseFontLock(text: string): FontLockEntry[] {
   return lock.files as FontLockEntry[];
 }
 
+/** Full environment snapshot for reproducibility locks; fonts stay fingerprinted, not enumerated. */
+export function environmentSnapshot(families: string[] = []): Record<string, string | Array<{ family: string; available: boolean; via: string | null }>> {
+  const browserFile = (() => { try { return findSystemBrowser(); } catch { return null; } })();
+  return {
+    platform: process.platform,
+    node: process.version,
+    ffmpeg: ffmpegIdentity() || "missing",
+    browser: browserIdentity() ?? "missing",
+    browserPath: browserFile ?? "missing",
+    resvg: packageVersion("@resvg/resvg-js") ?? "unknown",
+    designTokens: packageVersion("@glintai/design-tokens") ?? "unknown",
+    scenescript: packageVersion("@glintai/scenescript") ?? "unknown",
+    ...(families.length ? { fonts: fontAvailability(families) } : {}),
+    fontsHash: createHash("sha256").update(systemFontFiles().sort().join("\n")).digest("hex").slice(0, 16),
+  };
+}
+
+const ENV_LOCK_FIELDS = ["platform", "node", "ffmpeg", "browser", "browserPath", "resvg", "designTokens", "scenescript", "fontsHash"] as const;
+export type EnvironmentLock = { version: 1; environment: Record<string, unknown> };
+
+export function parseEnvironmentLock(text: string): EnvironmentLock {
+  let value: unknown;
+  try { value = JSON.parse(text); } catch { throw new Error("环境锁文件不是有效 JSON"); }
+  const lock = value as EnvironmentLock | null;
+  if (!lock || lock.version !== 1 || typeof lock.environment !== "object" || !lock.environment) throw new Error("环境锁文件格式无效");
+  return lock;
+}
+
+/** Compares the recorded environment with the current one; empty families keep fontsHash only. */
+export function verifyEnvironmentLock(expected: EnvironmentLock, families: string[] = []): { ok: boolean; diffs: Array<{ field: string; expected: string; actual: string }> } {
+  const actual = environmentSnapshot(families);
+  const diffs = ENV_LOCK_FIELDS
+    .filter(field => String(actual[field] ?? "") !== String(expected.environment?.[field] ?? ""))
+    .map(field => ({ field, expected: String(expected.environment?.[field] ?? ""), actual: String(actual[field] ?? "") }));
+  return { ok: diffs.length === 0, diffs };
+}
+
 export function runRenderEnv(args: string[]): void {
   const createLock = readArg(args, "font-lock-create");
   const verifyLock = readArg(args, "font-lock-verify");
+  const envCreate = readArg(args, "env-lock-create");
+  const envVerify = readArg(args, "env-lock-verify");
+  const fontsArg = readArg(args, "fonts");
+  const families = fontsArg ? fontsArg.split(",").map(item => item.trim()).filter(Boolean) : [];
+  if (envCreate !== undefined || envVerify !== undefined) {
+    if (envCreate !== undefined && envVerify !== undefined) throw new Error("创建与验证环境锁不能同时使用");
+    const lockPath = envCreate ?? envVerify;
+    if (!lockPath?.trim()) throw new Error("请指定环境锁文件路径");
+    if (envCreate !== undefined) {
+      try { fs.writeFileSync(lockPath, JSON.stringify({ version: 1, environment: environmentSnapshot(families) }, null, 2) + "\n", { flag: "wx" }); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new Error(`环境锁文件已存在，不会覆盖：${lockPath}`);
+        throw error;
+      }
+      console.log(JSON.stringify({ status: "created", note: "环境锁只记录指纹；不锁定字体文件字节（字体锁另行使用 --font-lock-create）。" }, null, 2));
+    } else {
+      let text: string;
+      try { text = fs.readFileSync(lockPath, "utf8"); } catch { throw new Error(`无法读取环境锁文件：${lockPath}`); }
+      const { ok, diffs } = verifyEnvironmentLock(parseEnvironmentLock(text), families);
+      console.log(JSON.stringify({ status: ok ? "match" : "mismatch", diffs, note: "验证的是环境指纹；不保证跨机器像素逐字节一致。" }, null, 2));
+      if (!ok) process.exitCode = 1;
+    }
+    return;
+  }
   if (createLock !== undefined || verifyLock !== undefined) {
     if (createLock !== undefined && verifyLock !== undefined) throw new Error("创建与验证字体锁不能同时使用");
     const lockPath = createLock ?? verifyLock;
@@ -136,20 +197,5 @@ export function runRenderEnv(args: string[]): void {
     }
     return;
   }
-  const fontsArg = readArg(args, "fonts");
-  const families = fontsArg ? fontsArg.split(",").map(item => item.trim()).filter(Boolean) : [];
-  const browserFile = (() => { try { return findSystemBrowser(); } catch { return null; } })();
-  const output = {
-    platform: process.platform,
-    node: process.version,
-    ffmpeg: ffmpegIdentity() || "missing",
-    browser: browserIdentity() ?? "missing",
-    browserPath: browserFile ?? "missing",
-    resvg: packageVersion("@resvg/resvg-js") ?? "unknown",
-    designTokens: packageVersion("@glintai/design-tokens") ?? "unknown",
-    scenescript: packageVersion("@glintai/scenescript") ?? "unknown",
-    ...(families.length ? { fonts: fontAvailability(families) } : {}),
-    fontsHash: createHash("sha256").update(systemFontFiles().sort().join("\n")).digest("hex").slice(0, 16),
-  };
-  console.log(JSON.stringify(output, null, 2));
+  console.log(JSON.stringify(environmentSnapshot(families), null, 2));
 }

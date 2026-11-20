@@ -1,5 +1,6 @@
 import { handleNleRender } from "./nle-render-route.mjs";
 import { nleMotionArgs } from "./nle-render-options.ts";
+import { verifyNleRenderer, NLE_RENDER_BUDGET_MS } from "./nle-render-verify.mjs";
 import { composeInputHash, readComposeCache, writeComposeCache } from "./compose-cache.mjs";
 import { logApiRequest, sendJson, readBody, sendEvent } from "./index-http.mjs";
 import http from "node:http";
@@ -222,7 +223,8 @@ function exportNleVideo({ project, assetFor, signal, alpha = false, motionSample
     };
     const abort = () => stop("NLE render cancelled");
     signal?.addEventListener("abort", abort, { once: true });
-    const timer = setTimeout(() => stop("NLE render timed out"), 300_000);
+    // Same budget the post-render technical verification (V-04a) draws from.
+    const timer = setTimeout(() => stop("NLE render timed out"), NLE_RENDER_BUDGET_MS);
     const cleanup = () => { clearTimeout(timer); clearTimeout(forceTimer); signal?.removeEventListener("abort", abort); };
     if (signal?.aborted) abort();
     child.once("error", error => { spawnError = error; });
@@ -239,7 +241,9 @@ function exportNleVideo({ project, assetFor, signal, alpha = false, motionSample
       if (code === 0 && fs.existsSync(output) && fs.statSync(output).size > 0) {
         // DELIVER-03: nle-render also writes a cover still next to the video.
         const coverFile = path.join(directory, `${id}.cover.jpg`);
-        resolve({ id, file: `${id}.${ext}`, bytes: fs.statSync(output).size, url: `/api/project/export/${id}/${id}.${ext}`, ...(fs.existsSync(coverFile) ? { coverUrl: `/api/project/export/${id}/${id}.cover.jpg` } : {}) });
+        // outputPath stays server-side: the V-04a verification wrapper consumes and
+        // strips it before the receipt reaches the client.
+        resolve({ id, file: `${id}.${ext}`, bytes: fs.statSync(output).size, url: `/api/project/export/${id}/${id}.${ext}`, outputPath: output, ...(fs.existsSync(coverFile) ? { coverUrl: `/api/project/export/${id}/${id}.cover.jpg` } : {}) });
       }
       else { fs.rmSync(directory, { recursive: true, force: true }); reject(new Error(`NLE render failed (${code ?? "signal"}): ${stderr.slice(-300)}`)); }
     });
@@ -257,6 +261,8 @@ export function createWebServer({
   engineForProject = getEngine,
   nleExporter = exportProjectNle,
   projectExporter = exportProject,
+  nleExportVerifier = async (input) =>
+    (await import("../../studio/scripts/verify-export.ts")).verifyExport(input),
   nleVideoRenderer = exportNleVideo,
   timeoutMs = 65_000,
   makeRunner = getDefaultMakeRunner(),
@@ -745,7 +751,7 @@ export function createWebServer({
         return sendJson(res, 400, { error: error instanceof Error ? error.message : "Export failed" });
       } finally { res.off("close", stop); }
     }
-    if (await handleNleRender(req, res, url, { renderer: nleVideoRenderer, assetFor: name => mediaJobs.asset(name), readBody, sendJson })) return;
+    if (await handleNleRender(req, res, url, { renderer: verifyNleRenderer(nleVideoRenderer, nleExportVerifier), assetFor: name => mediaJobs.asset(name), readBody, sendJson })) return;
     if (req.method === "POST" && url.pathname === "/api/nle/timeline") {
       try {
         const body = JSON.parse(await readBody(req, new AbortController().signal, 400_000));
