@@ -5,6 +5,9 @@ import vm from "node:vm";
 import { build, createServer } from "vite";
 import { expect, it } from "vitest";
 import { threeRuntime } from "./three-runtime";
+
+// Full Three runtime build/serve exceeds 15s on hosted runners; scale like the global budget.
+const scaledTimeout = (ms: number) => ms * (process.env.GLINT_CI_SLOW ? 3 : 1);
 import { buildThreeRuntime } from "../../studio/scripts/decoders";
 
 it("emits and serves the same executable Three runtime without a pre-staged public file", async () => {
@@ -45,4 +48,4 @@ it("emits and serves the same executable Three runtime without a pre-staged publ
     await server.close();
     await fs.rm(root, { recursive: true, force: true });
   }
-});
+}, scaledTimeout(45_000));
