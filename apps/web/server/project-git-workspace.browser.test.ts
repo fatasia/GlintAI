@@ -13,6 +13,22 @@ import { createProjectGitHost } from "./project-git-host.mjs";
 
 const puppeteer = createRequire(new URL("../../studio/package.json", import.meta.url))("puppeteer-core");
 
+/** Nested srcdoc iframes mount asynchronously; poll instead of trusting one lookup. */
+async function nestedFrame(page: import("puppeteer-core").Page, outerTitle: string, innerTitle: string) {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const outerHandle = await page.$(`iframe[title="${outerTitle}"]`);
+    const outer = outerHandle ? await outerHandle.contentFrame() : null;
+    if (outer) {
+      const innerHandle = await outer.$(`iframe[title="${innerTitle}"]`);
+      const inner = innerHandle ? await innerHandle.contentFrame() : null;
+      if (inner) return inner;
+    }
+    if (Date.now() > deadline) throw new Error(`nested iframe missing: ${outerTitle} > ${innerTitle}`);
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+}
+
 it.skipIf(!browserGated)("真实 Chromium + 真实 Git：草稿备份、完整版本恢复、清理失败重启和独立副本", async () => {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "glint-git-browser-"));
   const host = createProjectGitHost({ dataDir });
@@ -420,8 +436,7 @@ it.skipIf(!browserGated)("真实 IdeaStudio + Chromium + Git：副本登记、�
     // Local annotation text never enters pendingDesignDrafts until “保存批注”.
     // The retained, hidden editor must still veto remounting without a confirmation dialog.
     await click("可视编辑");
-    const propertyOuter = await (await page.$('iframe[title="设计预览"]')).contentFrame();
-    const propertyInner = await (await propertyOuter.$('iframe[title="设计页面内容"]')).contentFrame();
+    const propertyInner = await nestedFrame(page, "设计预览", "设计页面内容");
     await propertyInner.waitForSelector("main"); await propertyInner.click("main");
     await page.waitForSelector('[aria-label="圆角"]', { visible: true });
     for (const [label, value] of [["字体", "Arial, sans-serif"], ["圆角", "12px"], ["阴影", "0 4px 16px #00000033"], ["旋转", "15deg"]]) {
@@ -430,8 +445,7 @@ it.skipIf(!browserGated)("真实 IdeaStudio + Chromium + Git：副本登记、�
     }
     await click("应用属性", ".design-editor"); await click("保存", ".design-editor");
     expect(JSON.parse((await disk())[`glint.project-designs.v1:${copy.id}`]).documents[0].pages[0].html).toContain("rotate: 15deg");
-    const appliedOuter = await (await page.$('iframe[title="设计预览"]')).contentFrame();
-    const appliedInner = await (await appliedOuter.$('iframe[title="设计页面内容"]')).contentFrame();
+    const appliedInner = await nestedFrame(page, "设计预览", "设计页面内容");
     await appliedInner.waitForFunction(() => document.querySelector<HTMLElement>("main")?.style.rotate === "15deg");
     if (process.env.GLINT_EVIDENCE_DIR) {
       await mkdir(process.env.GLINT_EVIDENCE_DIR, { recursive: true });
