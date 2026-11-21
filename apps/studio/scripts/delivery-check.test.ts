@@ -18,6 +18,10 @@ vi.mock("node:child_process", async original => {
 // timeouts the same way vitest.config scales the global default (Q-06c).
 const timeoutScale = process.env.GLINT_CI_SLOW ? 3 : 1;
 const scaledTimeout = (ms: number) => ms * timeoutScale;
+// Q-06c diagnostics: two hosted-run failures timed out at exactly 15000ms although the
+// explicit timeouts were scaled to 45s. Log the computed scale once per suite so the
+// next CI log states whether GLINT_CI_SLOW is visible inside the vitest worker.
+console.error(`[delivery-check] timeoutScale=${timeoutScale} GLINT_CI_SLOW=${JSON.stringify(process.env.GLINT_CI_SLOW)}`);
 const installed = ["ffmpeg", "ffprobe"].every(command => {
   const result = childProcess.spawnSync(command, ["-version"], { stdio: "ignore" });
   if (result.error && (result.error as NodeJS.ErrnoException).code === "ENOENT") return false;
