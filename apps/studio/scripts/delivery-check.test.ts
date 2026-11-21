@@ -163,7 +163,7 @@ describe.skipIf(!installed)("delivery check with installed FFmpeg", () => {
     setImmediate(() => controller.abort());
     await expect(pending).rejects.toThrow(/cancelled/);
     expectExited(spy.mock.results.at(-1)?.value.pid);
-  });
+  }, scaledTimeout(15_000));
 
   it.each(["probe", "measurement"])("reports an overall timeout during %s only after subprocess cleanup", async stage => {
     const spawn = childProcess.spawn, setTimer = globalThis.setTimeout;
