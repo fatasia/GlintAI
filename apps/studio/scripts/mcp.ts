@@ -4,6 +4,7 @@ import { proveProject } from "./prove";
 import { taskTools } from "./task-mcp";
 import { containerTools } from "./container-mcp";
 import { toolMeta } from "./mcp-registry";
+import { INLINE_PLAYER_URI, inlinePlayerResource, isMcpAppClient, readInlinePlayerResource, showVideoResultPayload, showVideoTool } from "./mcp-apps";
 /**
  * Minimal MCP (Model Context Protocol) server over stdio: newline-delimited
  * JSON-RPC 2.0. Glint exposes the four verbs agents actually need (plan, apply,
@@ -94,6 +95,8 @@ export function defaultTools(options: { sessionDirectory?: string } = {}): McpTo
 
 export function createMcpHandler(tools: McpTool[] = defaultTools()): (request: unknown) => Promise<JsonRpcResponse | null> {
   const byName = new Map(tools.map(tool => [tool.name, tool]));
+  // MCP Apps negotiation is per-connection state; the stdio server serves one connection.
+  let appCapable = false;
   return async (request: unknown): Promise<JsonRpcResponse | null> => {
     let parsed: { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown };
     try {
@@ -108,24 +111,39 @@ export function createMcpHandler(tools: McpTool[] = defaultTools()): (request: u
     try {
       if (parsed.method === "initialize") {
         const requested = typeof params.protocolVersion === "string" ? params.protocolVersion : "2025-06-18";
-        return respond(id, { protocolVersion: requested, capabilities: { tools: {} }, serverInfo: { name: "glint", version: "0.1.0" } });
+        appCapable = isMcpAppClient(params);
+        return respond(id, { protocolVersion: requested, capabilities: { tools: {}, resources: {} }, serverInfo: { name: "glint", version: "0.1.0" } });
       }
       if (parsed.method === "ping") return respond(id, {});
       if (parsed.method.startsWith("notifications/")) return isNotification ? null : respond(id, {});
       if (parsed.method === "tools/list") {
-        return respond(id, { tools: tools.map(tool => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema })) });
+        const listed = appCapable ? [...tools, showVideoTool()] : tools;
+        return respond(id, { tools: listed.map(tool => ({
+          name: tool.name, description: tool.description, inputSchema: tool.inputSchema,
+          ...(tool.name === "glint_show_video" ? { _meta: { ui: { resourceUri: INLINE_PLAYER_URI } } } : {}),
+        })) });
       }
       if (parsed.method === "tools/call") {
         const name = typeof params.name === "string" ? params.name : "";
-        const tool = byName.get(name);
+        const tool = byName.get(name) ?? (appCapable && name === "glint_show_video" ? showVideoTool() : undefined);
         if (!tool) return error(id, -32602, `Unknown tool: ${name || "(missing name)"}`);
         const args = (params.arguments && typeof params.arguments === "object" ? params.arguments : {}) as Record<string, unknown>;
         try {
           const result = await tool.call(args);
+          if (name === "glint_show_video") return respond(id, showVideoResultPayload(result));
           return respond(id, { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], isError: false });
         } catch (callError) {
           return respond(id, { content: [{ type: "text", text: callError instanceof Error ? callError.message : String(callError) }], isError: true });
         }
+      }
+      if (parsed.method === "resources/list") {
+        return respond(id, { resources: [inlinePlayerResource()] });
+      }
+      if (parsed.method === "resources/read") {
+        const uri = typeof params.uri === "string" ? params.uri : "";
+        const resource = readInlinePlayerResource(uri);
+        if (!resource) return error(id, -32602, `Unknown resource: ${uri || "(missing uri)"}`);
+        return respond(id, { contents: [resource] });
       }
       return error(id, -32601, `Method not found: ${parsed.method}`);
     } catch (internal) {
