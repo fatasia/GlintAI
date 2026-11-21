@@ -31,11 +31,13 @@ export function killMediaProcess(child: ChildProcess, posixSignal: NodeJS.Signal
     child.kill(posixSignal);
     return;
   }
-  child.kill();
+  // Tree-kill FIRST: child.kill() terminates only the launcher, orphaning the real
+  // binary which keeps the stdio pipes open and the "close" event never fires.
   const pid = child.pid;
   if (pid !== undefined) {
     try { spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], { stdio: "ignore", windowsHide: true }); } catch { /* process already gone */ }
   }
+  child.kill();
 }
 
 export function runMediaProcess(command: string, args: string[], options: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<void> {

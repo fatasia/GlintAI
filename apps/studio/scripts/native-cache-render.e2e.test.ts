@@ -78,7 +78,12 @@ it("keeps build and render cache keys aligned for fractional rates", async () =>
   } finally { if (previous === undefined) delete process.env.GLINT_CACHE_DIR; else process.env.GLINT_CACHE_DIR = previous; fs.rmSync(root, { recursive: true, force: true }); }
 }, 180_000 * slowScale);
 
-it("invalidates scene and container when ffmpeg bytes change in the same process", async () => {
+// Hosted Windows runners (Defender) terminate a modified binary mid-encode even
+// though it launches fine, so the append-marker invalidation cannot complete there.
+// The same invalidation semantics stay fully covered on Linux (verify) and on
+// non-CI Windows dev machines; owner-approved skip decision 2026-11-22 (Q-06c).
+const invalidationBlocked = process.platform === "win32" && process.env.CI === "true";
+it.skipIf(invalidationBlocked)("invalidates scene and container when ffmpeg bytes change in the same process", async () => {
   const result = spawnSync(process.platform === "win32" ? "where" : "which", ["ffmpeg"], { encoding: "utf8" });
   expect(result.status).toBe(0);
   // Hosted Windows runners put a choco shim first in PATH; corrupting the shim breaks
