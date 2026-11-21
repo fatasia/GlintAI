@@ -10,9 +10,9 @@ import { TEMPLATES, isTemplateId, type SceneTemplate } from "./templates";
 /**
  * 模板目录形制:照抄 OpenMotion library/templates/catalog 的 catalog.json + <entry-id>/template.json
  * + 条目指引文档三层结构;条目内容全部来自 Glint 自有配方/结构模板/风格包,不搬上游条目。
- * MotionBrief 是 R-09a(wp/R-09-motion-brief)的分支内联等价 schema,合入后替换为共享定义;见 docs/plan/cards/R-09b.md。
+ * 条目的 brief 是目录摘要 schema(CatalogBrief);完整 Motion.md 简报 schema 见同包 motion-brief.ts(照抄 OpenMotion docs/motion-md.md 形制)。
  */
-export const MotionBrief = z.object({
+export const CatalogBrief = z.object({
   summary: z.string().min(1).max(2000),
   requires: z.string().min(1).max(500).optional(),
   structureId: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/).optional(),
@@ -21,7 +21,7 @@ export const MotionBrief = z.object({
   sceneCount: z.number().int().positive().max(200).optional(),
   durationMs: z.number().int().positive().max(600000).optional(),
 }).strict();
-export type MotionBrief = z.infer<typeof MotionBrief>;
+export type CatalogBrief = z.infer<typeof CatalogBrief>;
 
 const sourceId = z.string().regex(/^[a-z][a-z0-9-]{0,79}$/);
 /** 参数 key 对齐创作包既有输入名(camelCase,如 productName),目录不做改名改写。 */
@@ -49,7 +49,7 @@ export const CatalogEntry = z
     title: z.string().min(1).max(200),
     kind: z.enum(["recipe", "structure", "style"]),
     tags: z.array(z.string().min(1).max(40)).max(24),
-    brief: MotionBrief,
+    brief: CatalogBrief,
     params: z.array(CatalogParam).max(64),
     presets: z.array(CatalogPreset).max(24),
     cover: z.string().max(200).optional(),

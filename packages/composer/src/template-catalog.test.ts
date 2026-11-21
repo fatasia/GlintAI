@@ -7,7 +7,7 @@ import { STYLE_PACKS } from "@glintai/design-tokens";
 import { listCreationPacks } from "./creation-packs";
 import { TEMPLATES } from "./templates";
 import {
-  buildCatalog, CatalogEntry, CatalogFile, MotionBrief, readCatalog, RecipeCatalogFile,
+  buildCatalog, CatalogBrief, CatalogEntry, CatalogFile, readCatalog, RecipeCatalogFile,
   validateCatalog, writeCatalog, type CatalogEntry as CatalogEntryType,
 } from "./template-catalog";
 
@@ -198,8 +198,8 @@ describe("schema rejections", () => {
   });
 
   it("rejects briefs without a summary and presets referencing undeclared params", () => {
-    expect(MotionBrief.safeParse({ summary: "" }).success).toBe(false);
-    expect(MotionBrief.safeParse({}).success).toBe(false);
+    expect(CatalogBrief.safeParse({ summary: "" }).success).toBe(false);
+    expect(CatalogBrief.safeParse({}).success).toBe(false);
     expect(CatalogEntry.safeParse(entryFixture({ presets: [{ label: "空引用", values: { missing: "x" } }] })).success).toBe(false);
     expect(CatalogEntry.safeParse(entryFixture({ params: [
       { key: "title", label: "标题", type: "text", value: "a", maxLength: 40 },
