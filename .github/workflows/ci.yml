@@ -47,8 +47,9 @@ jobs:
   windows:
     # The shipping target is Windows; this job proves the same unit suite and
     # typecheck there. Opt-in browser/4K/long render gates stay off.
+    # GLINT_CI_SLOW scales the suite budgets (Q-06c), so the job window grew with it.
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       # Hosted runners are 2-4x slower than a dev box and Defender scans freshly
       # copied executables; scale test budgets without relaxing any assertion.
