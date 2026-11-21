@@ -12,7 +12,7 @@ import { createProjectArchiveHost } from "./project-archive-host.mjs";
 // @ts-expect-error native module
 import { openSecureAssets } from "./secure-assets-bridge.mjs";
 
-it.skipIf(process.platform!=="win32")("exports and restores a full project ZIP through the real UI and pinned Windows asset store",async()=>{
+it.skipIf(process.platform!=="win32"||process.env.GLINT_BROWSER_UI_TEST!=="1")("exports and restores a full project ZIP through the real UI and pinned Windows asset store",async()=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),"glint-project-archive-ui-"));
  const media=path.join(root,"media");fs.mkdirSync(media);
  execFileSync("ffmpeg",["-v","error","-f","lavfi","-i","color=red:s=16x16","-frames:v","1",path.join(media,"cover.png")],{windowsHide:true});

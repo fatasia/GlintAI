@@ -106,6 +106,10 @@ it("invalidates scene and container when ffmpeg bytes change in the same process
     const firstClip = fs.readFileSync(path.join(root, "cache", "native-scenes", `${first.scenes[0]!.key}.mp4`));
     const unchanged = await run("unchanged.mp4"); expect(unchanged.metrics.containerHit).toBe(true);
     fs.appendFileSync(executable, Buffer.from("glint isolated test marker"));
+    // Q-06c diagnostics: if the appended binary no longer launches on a runner,
+    // surface its exit status in the failure instead of a bare EPIPE downstream.
+    const probe = spawnSync(executable, ["-version"], { stdio: "ignore" });
+    if (probe.status !== 0 || probe.error) throw new Error(`appended ffmpeg cannot launch on ${process.platform}: status=${probe.status} error=${probe.error?.message ?? "none"}`);
     const changed = await run("changed.mp4");
     expect(changed.environment.ffmpeg).not.toBe(first.environment.ffmpeg);
     expect(changed.scenes[0]!.key).not.toBe(first.scenes[0]!.key);

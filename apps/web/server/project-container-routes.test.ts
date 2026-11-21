@@ -14,7 +14,11 @@ let root: string, server: Server | undefined, base: string, factories: number;
 const document = { schemaVersion: 1, id: "original", title: "原作品", aspect: "16:9", knowledgeSources: [], scenes: [{ id: "scene", kind: "title", title: "原内容", narration: { text: "保留", durationMs: 1000 } }] };
 beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), "container-http-")); factories = 0; });
 async function stop() { if (server) { server.closeAllConnections(); await new Promise<void>(resolve => server!.close(() => resolve())); server = undefined; } }
-afterEach(async () => { await stop(); fs.rmSync(root, { recursive: true, force: true }); });
+afterEach(async () => {
+  await stop();
+  // Windows holds request-log handles open briefly after server close; retry the sweep.
+  fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+});
 async function start(options: Record<string, unknown> = {}) {
   server = createWebServer({ requestLogDir: path.join(root, "logs"), projectContainerStoreFactory: () => { factories++; return createProjectContainerStore(path.join(root, "containers")); }, ...options });
   await new Promise<void>(resolve => server!.listen(0, "127.0.0.1", resolve));
