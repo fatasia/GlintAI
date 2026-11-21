@@ -5,6 +5,7 @@ import os from "node:os";
 import net from "node:net";
 import { spawn } from "node:child_process";
 import { createCliRuntime } from "./glint-runtime";
+import { killMediaProcess } from "./native-process";
 const out = fs.mkdtempSync(path.join(os.tmpdir(), "glint-preview-check-")),
   root = path.join(out, "repo");
 fs.mkdirSync(root);
@@ -45,7 +46,7 @@ const runtime = createCliRuntime(new URL("./glint.ts", import.meta.url).href),
 let stderr = "";
 child.stderr.on("data", (c) => (stderr += c));
 let stdout = "";
-const timer = setTimeout(() => child.kill(), 90_000);
+const timer = setTimeout(() => killMediaProcess(child), 90_000);
 try {
   await new Promise<void>((resolve, reject) => {
     child.once("error", reject);
@@ -83,5 +84,5 @@ try {
   );
 } finally {
   clearTimeout(timer);
-  child.kill();
+  killMediaProcess(child);
 }

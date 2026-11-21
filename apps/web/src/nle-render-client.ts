@@ -13,7 +13,8 @@ export type NleVerifyReceipt = {
   remainingChecks: string[];
   error?: string;
 };
-export type NleRenderResult = { url: string; file: string; coverUrl?: string; verify?: NleVerifyReceipt };
+/** elapsedMs (K-03) is the receipt's actual wall time, for preview-vs-actual comparison. */
+export type NleRenderResult = { url: string; file: string; coverUrl?: string; verify?: NleVerifyReceipt; elapsedMs?: number };
 type RenderContext = {
   project: NleProject;
   alpha: boolean;
@@ -73,6 +74,7 @@ export async function executeNleRender(context: RenderContext) {
       file: data.file,
       ...(typeof data.coverUrl === "string" ? { coverUrl: data.coverUrl } : {}),
       ...(isNleVerifyReceipt(data.verify) ? { verify: data.verify } : {}),
+      ...(typeof data.elapsedMs === "number" && data.elapsedMs > 0 ? { elapsedMs: data.elapsedMs } : {}),
     });
     setStatus(t("nleRender.ready", { size: Math.round(Number(data.bytes) / 1024) }));
   } catch (cause) {

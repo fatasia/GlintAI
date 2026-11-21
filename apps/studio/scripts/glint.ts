@@ -422,9 +422,25 @@ async function main(): Promise<void> {
       await runReferenceProject(rest);
       return;
     }
+    case "analyze-reference": {
+      // R-10 参考片复刻：数字测量（本地 ffmpeg，无 LLM）。
+      const { runAnalyzeReference } = await import("@glintai/composer/recreate");
+      await runAnalyzeReference(rest);
+      return;
+    }
+    case "recreate-plan": {
+      const { runRecreatePlan } = await import("@glintai/composer/recreate");
+      await runRecreatePlan(rest);
+      return;
+    }
     case "packs": {
       const { runCreationPacks } = await import("./creation-packs-cli");
       return void runCreationPacks(rest);
+    }
+    case "catalog-import":
+    case "catalog-check": {
+      const { runCatalogCli } = await import("./template-catalog-cli");
+      return void runCatalogCli(rest, command === "catalog-import" ? "import" : "check");
     }
     case "look": return (await import("./look")).runLook(rest).then(() => undefined);
     case "project-migrate": return (await import("./project-container-io")).runProjectMigration(rest).then(() => undefined);

@@ -17,6 +17,9 @@ export function serviceEnvironment(env: NodeJS.ProcessEnv): ServiceOptions {
   if (!endpoint) throw new ServiceRequestError("endpoint-required");
   return { endpoint, token: env.GLINT_ACCESS_TOKEN };
 }
+/** The task actions shared by the CLI, MCP tools and this client; M-06d cross-checks mcp-registry against them. */
+export const TASK_ACTIONS = ["list", "status", "cancel"] as const;
+export type TaskAction = (typeof TASK_ACTIONS)[number];
 function taskTransport(options: ServiceOptions): TaskRequest {
   return async (route, signal, method = "GET") => {
     const response = await serviceJson(
@@ -33,11 +36,11 @@ function taskTransport(options: ServiceOptions): TaskRequest {
   };
 }
 export async function taskRequest(
-  action: "list" | "status" | "cancel",
+  action: TaskAction,
   args: { family?: unknown; id?: unknown; confirm?: unknown },
   options: ServiceOptions,
 ) {
-  if (!["list", "status", "cancel"].includes(action))
+  if (!TASK_ACTIONS.includes(action))
     throw new ServiceRequestError("invalid-action");
   if (
     Object.keys(args).some(

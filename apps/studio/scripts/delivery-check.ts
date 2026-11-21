@@ -3,7 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { captureProcess } from "./frame-diff";
-import { runMediaProcess } from "./native-process";
+import { killMediaProcess, runMediaProcess } from "./native-process";
 
 export interface DeliveryCheckInput {
   videoPath: string;
@@ -68,7 +68,7 @@ function captureLoudness(args: string[], signal: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"], shell: false });
     let stderr = "";
-    const abort = () => { child.kill("SIGKILL"); };
+    const abort = () => { killMediaProcess(child, "SIGKILL"); };
     const timer = setTimeout(abort, TIMEOUT_MS);
     const cleanup = () => { clearTimeout(timer); signal.removeEventListener("abort", abort); };
     signal.addEventListener("abort", abort, { once: true });

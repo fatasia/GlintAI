@@ -11,6 +11,7 @@ Glint 自有代码使用 [MIT](LICENSE)；第三方代码、字体、解码器�
 | [GSAP](https://gsap.com/standard-license) | HTML 场景时间线（由用户以代码定义动画的渲染运行时） | GSAP 标准许可：含商用在内免费；其「禁止用途」针对免代码可视化动画构建工具，Glint 的 HTML 场景动画由用户代码定义，不在该范围；无代码的设计对象动画与页间转场使用 Glint 自研运行时 |
 | 设计对象动画与页间转场运行时 | Glint 自研的小型可按帧求值运行时 | MIT（随 Glint） |
 | 本地编码 Agent 适配器（Claude Code / Codex ACP） | 连接用户已安装的编码 Agent | 适配器代码随本仓库 MIT；被连接的 Agent 与其 SDK 各自的许可由用户自行遵守，便携包只在构建机上已安装相应 SDK 时才包含它 |
+| [OpenMotion](https://github.com/nexu-io/openmotion) | Motion 简报格式、模板目录形制、参考片复刻工作流（`packages/composer/src/motion-brief.ts`、`template-catalog.ts`、`recreate.ts` 及相关测试） | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0)：Glint 中对应文件标注 "Portions derived from OpenMotion (nexu-io/openmotion)"；修改以适配 Glint（SceneScript、zh-CN、自研目录内容）。其模板目录内嵌的第三方素材与品牌引用保留各自权利，未随本仓库分发 |
 
 便携包实际包含 FFmpeg 组件、resvg 原生模块及字体，不能只检查 npm 顶层依赖；打包前建议运行 `node scripts/license-inventory.mjs`（只读本地文件，不安装依赖或运行包内程序）核对实际边界。
 

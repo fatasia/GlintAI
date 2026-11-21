@@ -27,7 +27,11 @@ it("bundles root and project-container contract exports together", async () => {
   try {
     const bundle = path.join(root, "contracts.mjs");
     fs.writeFileSync(bundle, result.outputFiles![0]!.text);
-    const module = await import(/* @vite-ignore */ pathToFileURL(bundle).href);
+    // Load through Node's own module machinery, not vitest's vite-node loader:
+    // hosted runners expose temp paths with 8.3 short names (RUNNER~1), whose
+    // tilde percent-encoding breaks vite module ids, and a bundle must anyway
+    // prove it runs under plain Node.
+    const module = createRequire(import.meta.url)(bundle) as { parserType: string; canonical: string };
     expect(module.parserType).toBe("function");
     expect(module.canonical).toBe('{"a":1,"b":2}');
   } finally { cleanup(root); }
@@ -91,7 +95,9 @@ it.runIf(process.platform === "win32")("bundled isolated adapter runs the copied
   const library = path.join(root, "library"); fs.mkdirSync(library);
   fs.copyFileSync(path.join(repo, "apps/desktop/secure-assets/target/release/glint-secure-assets.exe"), executable, fs.constants.COPYFILE_EXCL);
   await build(portableChapterBuildOptions(repo, bundle));
-  const adapter = await import(/* @vite-ignore */ pathToFileURL(bundle).href);
+  // Same as the contract bundle: plain-Node load, resilient to tilde temp paths.
+  type SecureStore = { publish(name: string, data: Buffer): Promise<void>; read(name: string): Promise<Buffer>; close(): Promise<void> };
+  const adapter = createRequire(import.meta.url)(bundle) as { openSecureAssets(executable: string, library: string): Promise<SecureStore> };
   const store = await adapter.openSecureAssets(executable, library);
   try {
     await store.publish("asset.png", Buffer.from("original"));

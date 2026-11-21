@@ -17,6 +17,14 @@ const fixturePresent = (...names: string[]) => names.every(name => existsSync(pa
 const roots: string[] = [];
 async function root() { const dir = await fs.mkdtemp(path.join(os.tmpdir(), "glint-reference-test-")); roots.push(dir); return dir; }
 const exists = async (file: string) => !!await fs.lstat(file).catch(() => undefined);
+// analyzeReference canonicalizes paths through fs.realpath, which on Windows
+// expands 8.3 short names (RUNNER~1 -> runneradmin). Mocks that string-compare
+// against the requested outDir would never match on such runners, so match by
+// realpath identity instead of raw text.
+const isSamePath = async (candidate: string, expected: string) => {
+  const [left, right] = await Promise.all([fs.realpath(candidate).catch(() => undefined), fs.realpath(expected).catch(() => undefined)]);
+  return left !== undefined && right !== undefined && path.normalize(left) === path.normalize(right);
+};
 afterAll(async () => { for (const dir of roots) await fs.rm(dir, { recursive: true, force: true }); });
 const installed = await Promise.all(["ffmpeg", "ffprobe"].map(async command => {
   try { await captureProcess(command, ["-version"], { timeoutMs: 5000 }); return true; }
@@ -328,7 +336,7 @@ describe.skipIf(!installed.every(Boolean))("real local ffmpeg reference analysis
   it("cleans cancellation after exclusive output creation", async () => {
     const dir = await root(), videoPath = await synthetic(dir), outDir = path.join(dir, "out"), controller = new AbortController();
     const mkdir = fs.mkdir.bind(fs), spy = vi.spyOn(fs, "mkdir").mockImplementation(async (...args: Parameters<typeof fs.mkdir>) => {
-      const result = await mkdir(...args); if (String(args[0]) === outDir) controller.abort(); return result;
+      const result = await mkdir(...args); if (await isSamePath(String(args[0]), outDir)) controller.abort(); return result;
     });
     try { await expect(analyzeReference({ videoPath, outDir, signal: controller.signal })).rejects.toThrow(); }
     finally { spy.mockRestore(); }
@@ -373,7 +381,7 @@ describe.skipIf(!installed.every(Boolean))("real local ffmpeg reference analysis
   it("does not recursively remove unexpected files on failure", async () => {
     const dir = await root(), videoPath = path.join(dir, "bad.mp4"), outDir = path.join(dir, "out"); await fs.writeFile(videoPath, "bad");
     const mkdir = fs.mkdir.bind(fs), spy = vi.spyOn(fs, "mkdir").mockImplementation(async (...args: Parameters<typeof fs.mkdir>) => {
-      const result = await mkdir(...args); if (String(args[0]) === outDir) await fs.writeFile(path.join(outDir, "unexpected.txt"), "keep"); return result;
+      const result = await mkdir(...args); if (await isSamePath(String(args[0]), outDir)) await fs.writeFile(path.join(outDir, "unexpected.txt"), "keep"); return result;
     });
     try { await expect(analyzeReference({ videoPath, outDir })).rejects.toThrow(); } finally { spy.mockRestore(); }
     expect(await fs.readFile(path.join(outDir, "unexpected.txt"), "utf8")).toBe("keep");

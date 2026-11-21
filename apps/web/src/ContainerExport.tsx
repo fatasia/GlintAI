@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { assertAllAuthoringCanLeave } from "./authoring-leave";
 import { readContainer } from "./container-workspace-client";
 import { downloadJson } from "./editor-model";
+import { ContainerPlanPreview } from "./ContainerPlanPreview";
 import { Button } from "./ui/Button";
 import { t } from "./ui/i18n";
 
@@ -32,6 +33,7 @@ export function ContainerExport({ projectId }: { projectId: string }) {
     }
   };
   return <section className="ws-group" aria-label={t("container.exportSaved")}>
+    <ContainerPlanPreview projectId={projectId} />
     <div className="ws-actions"><Button disabled={busy} onClick={() => void run()}>{busy ? t("container.exportReading") : t("container.exportSaved")}</Button></div>
     <p className="ws-note">{t("container.exportSavedHint")}</p>
     {error && <p role="alert" className="ws-note">{error}</p>}

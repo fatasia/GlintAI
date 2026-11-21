@@ -10,6 +10,11 @@ import { parseProject } from "@glintai/scenescript";
 import { build } from "esbuild";
 import { createRequire } from "node:module";
 
+// Hosted Windows runners are far slower at spawning freshly copied ffmpeg
+// binaries and at cold-starting the bundled CLI; scale budgets for
+// GLINT_CI_SLOW instead of weakening any cache/render assertion.
+const slowScale = process.env.GLINT_CI_SLOW ? 3 : 1;
+
 it("bypasses every render cache and distinguishes fast encoding at fixed resolution", async () => {
   expect(spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status).toBe(0);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "glint-render-cache-isolated-"));
@@ -53,7 +58,7 @@ it("bypasses every render cache and distinguishes fast encoding at fixed resolut
     if (previous === undefined) delete process.env.GLINT_CACHE_DIR; else process.env.GLINT_CACHE_DIR = previous;
     fs.rmSync(root, { recursive: true, force: true });
   }
-}, 180_000);
+}, 180_000 * slowScale);
 
 it("keeps build and render cache keys aligned for fractional rates", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "glint-ntsc-cache-"));
@@ -71,7 +76,7 @@ it("keeps build and render cache keys aligned for fractional rates", async () =>
       expect(actual.receipt.plan.actual).not.toContain("scene:one");
     }
   } finally { if (previous === undefined) delete process.env.GLINT_CACHE_DIR; else process.env.GLINT_CACHE_DIR = previous; fs.rmSync(root, { recursive: true, force: true }); }
-}, 180_000);
+}, 180_000 * slowScale);
 
 it("invalidates scene and container when ffmpeg bytes change in the same process", async () => {
   const result = spawnSync(process.platform === "win32" ? "where" : "which", ["ffmpeg"], { encoding: "utf8" });
@@ -104,7 +109,7 @@ it("invalidates scene and container when ffmpeg bytes change in the same process
     if (previousCache === undefined) delete process.env.GLINT_CACHE_DIR; else process.env.GLINT_CACHE_DIR = previousCache;
     fs.rmSync(root, { recursive: true, force: true });
   }
-}, 180_000);
+}, 180_000 * slowScale);
 
 it("reuses the NTSC scene cache in an isolated packaged CLI", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "glint-packaged-ntsc-"));
@@ -125,7 +130,7 @@ it("reuses the NTSC scene cache in an isolated packaged CLI", async () => {
     const projectPath = path.join(root, "project.json");
     fs.writeFileSync(projectPath, JSON.stringify({ schemaVersion: 1, id: "portable-ntsc", title: "Portable", aspect: "16:9", fps: 29.97, knowledgeSources: [], scenes: [{ id: "one", kind: "title", title: "Portable", narration: { text: "x", durationMs: 200 } }] }));
     const env = { ...process.env, GLINT_STUDIO_DIR: studio, GLINT_CACHE_DIR: path.join(root, "cache"), GLINT_CLI_ENTRY: entry, INIT_CWD: root, TEMP: root, TMP: root };
-    const run = (name: string, flags: string[] = []) => spawnSync(process.execPath, [entry, "build", `--project=${projectPath}`, `--out=${path.join(root, name)}`, ...flags, "--assert-budget"], { cwd: studio, env, encoding: "utf8", timeout: 120_000, windowsHide: true });
+    const run = (name: string, flags: string[] = []) => spawnSync(process.execPath, [entry, "build", `--project=${projectPath}`, `--out=${path.join(root, name)}`, ...flags, "--assert-budget"], { cwd: studio, env, encoding: "utf8", timeout: 120_000 * slowScale, windowsHide: true });
     const first = run("first.mp4", ["--fast", "--resolution=540", "--tts=mock", "--music=off"]); expect(first.status, `${first.stdout}\n${first.stderr}`).toBe(0);
     const second = run("second.mp4"); expect(second.status, `${second.stdout}\n${second.stderr}`).toBe(0);
     const metrics = JSON.parse(fs.readFileSync(path.join(root, "second.mp4.metrics.json"), "utf8"));
@@ -148,4 +153,4 @@ it("reuses the NTSC scene cache in an isolated packaged CLI", async () => {
     expect(fourthMetrics.height).toBe(720); expect(fourthMetrics.cacheHits).toBe(1);
     expect(fourthReceipt.plan.matches).toBe(true); expect(fourthReceipt.recipe.music).toBe("synth");
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
-}, 180_000);
+}, 180_000 * slowScale);

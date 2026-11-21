@@ -3,7 +3,9 @@ import { createHash } from "node:crypto";
 import { canonicalJson, ProjectSession, type SessionSnapshot, type SessionLook, type TaskReceipt } from "@glintai/session";
 import { parseUnifiedContainer, type UnifiedProjectContainer } from "@glintai/scenescript/project-container-v2";
 
-export type ContainerAction = "snapshot" | "open" | "append" | "undo" | "redo" | "lifecycle" | "migrate-copy";
+/** The container service route actions; M-06d cross-checks these against mcp-registry. */
+export const CONTAINER_API_ACTIONS = ["snapshot", "open", "append", "undo", "redo", "lifecycle", "migrate-copy"] as const;
+export type ContainerAction = (typeof CONTAINER_API_ACTIONS)[number];
 export type ContainerApiResult = { snapshot: SessionSnapshot<UnifiedProjectContainer>; look: SessionLook; receipt?: TaskReceipt; conflict?: boolean };
 export type ContainerRequestOptions = { endpoint: string; token?: string; signal?: AbortSignal };
 export const CONTAINER_REQUEST_LIMIT = 16 * 1024 * 1024;
@@ -57,7 +59,7 @@ export async function containerRequest(
   body: Record<string, unknown>,
   options: ContainerRequestOptions,
 ): Promise<ContainerApiResult> {
-  if (!["snapshot", "open", "append", "undo", "redo", "lifecycle", "migrate-copy"].includes(action))
+  if (!CONTAINER_API_ACTIONS.includes(action))
     return fail("invalid-action");
   object(body);
   const projectId = identity(body.projectId),

@@ -49,6 +49,10 @@ jobs:
     # typecheck there. Opt-in browser/4K/long render gates stay off.
     runs-on: windows-latest
     timeout-minutes: 30
+    env:
+      # Hosted runners are 2-4x slower than a dev box and Defender scans freshly
+      # copied executables; scale test budgets without relaxing any assertion.
+      GLINT_CI_SLOW: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

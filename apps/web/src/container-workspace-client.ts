@@ -62,6 +62,52 @@ async function openNewContainer(project: UnifiedProjectContainer, transport: Tra
   return reply;
 }
 
+export type PlanPreviewIntent = { objectIds?: string[]; sceneIds?: string[] };
+export type PlanPreviewReply = {
+  version: 1;
+  projectId: string;
+  revision: number;
+  scope: "all" | "intent";
+  impact: {
+    totalNodes: number;
+    predicted: string[];
+    reusedCount: number;
+    estimatedMs: number;
+    costCny: number;
+    costType: "local-free" | "quote-required";
+    quoteRequired: { nodeId: string; sceneId: string }[];
+    affectedObjects: string[];
+  };
+  timelineExports: { objectId: string; clips: number; durationMs: number }[];
+  unmappedIntents: string[];
+  notes: string[];
+};
+
+const integer = (item: unknown): item is number => Number.isSafeInteger(item) && (item as number) >= 0;
+
+/** K-03 read-only impact preview; a malformed reply is refused, never guessed. */
+export async function previewContainerPlan(projectId: string, intent: PlanPreviewIntent | undefined, signal?: AbortSignal, transport: Transport = appFetch): Promise<PlanPreviewReply> {
+  const invalid = () => new Error(t("planPreview.unavailable"));
+  const response = await transport("/api/project/plan-preview", {
+    ...(signal ? { signal } : {}),
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId, ...(intent ? { intent } : {}) }),
+  });
+  let value: unknown;
+  try { value = await response.json(); } catch { throw invalid(); }
+  if (!response.ok) throw new Error((value as { error?: string })?.error ?? invalid().message);
+  const reply = value as PlanPreviewReply;
+  if (reply?.version !== 1 || reply.projectId !== projectId || !integer(reply.revision)
+    || !["all", "intent"].includes(reply.scope) || !reply.impact
+    || !integer(reply.impact.totalNodes) || !Array.isArray(reply.impact.predicted)
+    || !integer(reply.impact.reusedCount) || !integer(reply.impact.estimatedMs)
+    || !["local-free", "quote-required"].includes(reply.impact.costType)
+    || !Array.isArray(reply.impact.quoteRequired) || !Array.isArray(reply.impact.affectedObjects)
+    || !Array.isArray(reply.timelineExports) || !Array.isArray(reply.notes)) throw invalid();
+  return reply;
+}
+
 export type ContainerProjectSummary = { projectId: string; revision: number; title: string; sceneCount: number; timelineCount: number; firstDocumentId?: string };
 export type ContainerProjectPage = { projects: ContainerProjectSummary[]; nextCursor: string | null };
 const listId = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;

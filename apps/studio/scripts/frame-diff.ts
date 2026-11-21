@@ -3,6 +3,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { diffFingerprints, fingerprintDistance, frameFingerprint, frameTimecode, type FrameDiff } from "@glintai/mediadiff";
 import { readArg } from "./glint-runtime";
+import { killMediaProcess } from "./native-process";
 
 /** Runs a media tool and returns stdout bytes; stderr is kept only for the error message. */
 export function captureProcess(command: string, args: string[], options: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<Buffer> {
@@ -11,9 +12,9 @@ export function captureProcess(command: string, args: string[], options: { signa
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], shell: false });
     const chunks: Buffer[] = [];
     let stderr = "";
-    const abort = () => child.kill();
+    const abort = () => killMediaProcess(child);
     options.signal?.addEventListener("abort", abort, { once: true });
-    const timer = setTimeout(() => child.kill(), options.timeoutMs ?? 180_000);
+    const timer = setTimeout(() => killMediaProcess(child), options.timeoutMs ?? 180_000);
     child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => { stderr = (stderr + chunk).slice(-4000); });
     const cleanup = () => { clearTimeout(timer); options.signal?.removeEventListener("abort", abort); };

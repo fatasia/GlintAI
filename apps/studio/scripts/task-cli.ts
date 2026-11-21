@@ -1,4 +1,4 @@
-import { taskRequest, serviceEnvironment } from "./task-api-client";
+import { taskRequest, serviceEnvironment, TASK_ACTIONS, type TaskAction } from "./task-api-client";
 import { ServiceRequestError } from "./service-http";
 
 export async function runTasks(
@@ -7,8 +7,8 @@ export async function runTasks(
   write: (line: string) => void = console.log,
 ): Promise<number> {
   try {
-    const action = args[0];
-    if (action !== "list" && action !== "status" && action !== "cancel")
+    const action = args[0] as TaskAction;
+    if (!TASK_ACTIONS.includes(action))
       throw new ServiceRequestError("invalid-action");
     const input: Record<string, unknown> = {};
     for (const arg of args.slice(1)) {

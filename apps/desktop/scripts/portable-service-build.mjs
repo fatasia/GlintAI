@@ -1,5 +1,13 @@
 import { join } from "node:path";
 
+/**
+ * Banner for node-target ESM bundles: esbuild emits ESM but bundled CJS deps
+ * (and their code paths) still expect `require`, `__filename` and `__dirname`.
+ * Shared verbatim by the packager and the bundled-entry regression tests so
+ * tests exercise exactly what ships.
+ */
+export const esmNodeShim = `import { createRequire as __glintCreateRequire } from "node:module";\nimport { fileURLToPath as __glintFileURLToPath } from "node:url";\nconst require = __glintCreateRequire(import.meta.url);\nconst __filename = __glintFileURLToPath(import.meta.url);\nconst __dirname = __filename.slice(0, Math.max(__filename.lastIndexOf("/"), __filename.lastIndexOf("\\\\")));`;
+
 /** Shared by the packager and the bundled-entry regression test. */
 export function desktopServiceBuildOptions(repo, outfile) {
   return {

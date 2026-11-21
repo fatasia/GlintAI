@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     "./templates": "./src/templates.ts",
+    "./template-catalog": "./src/template-catalog.ts",
     "./creation-packs": "./src/creation-packs.ts",
     "./imported-packs": "./src/imported-packs.ts",
     "./exported-packs": "./src/exported-packs.ts",
@@ -19,6 +20,7 @@
     "./batch": "./src/batch.ts",
     "./chart-table": "./src/chart-table.ts",
     "./blind": "./src/blind.ts",
+    "./recreate": "./src/recreate.ts",
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"

@@ -4,7 +4,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { captureProcess } from "./frame-diff";
-import { runMediaProcess } from "./native-process";
+import { killMediaProcess, runMediaProcess } from "./native-process";
 import { readArg } from "./glint-runtime";
 import { parseProject, type SceneScriptProject } from "@glintai/scenescript";
 import { reviewTemporalFrames } from "./reference-temporal";
@@ -87,15 +87,15 @@ function sceneScores(video: string, threshold: number, adaptive: boolean, signal
       "-map", "0:v:0", "-an", "-sn", "-dn", "-t", "600.001", "-vf", `setpts=PTS-STARTPTS,${filter}`, "-f", "null", "-"], { shell: false, stdio: ["ignore", "ignore", "pipe"] });
     let pending = "", tail = "", bytes = 0, failure: Error | undefined, timeMs: number | undefined;
     const scores: SceneScore[] = [];
-    const abort = () => child.kill();
+    const abort = () => killMediaProcess(child);
     signal.addEventListener("abort", abort, { once: true });
     if (signal.aborted) abort();
     child.stderr.on("data", (chunk: Buffer) => {
       bytes += chunk.length; tail = (tail + chunk.toString("utf8")).slice(-4000);
-      if (bytes > MAX_STDERR_BYTES) { failure = new Error("Scene detection exceeded its bounded stderr budget"); child.kill(); return; }
+      if (bytes > MAX_STDERR_BYTES) { failure = new Error("Scene detection exceeded its bounded stderr budget"); killMediaProcess(child); return; }
       pending += chunk.toString("utf8");
       const lines = pending.split(/\r?\n/); pending = lines.pop() ?? "";
-      if (pending.length > 16_384) { failure = new Error("Scene detection emitted an oversized log line"); child.kill(); return; }
+      if (pending.length > 16_384) { failure = new Error("Scene detection emitted an oversized log line"); killMediaProcess(child); return; }
       for (const line of lines) {
         if (!line.includes("Parsed_metadata")) continue;
         const time = /\bpts_time:([\d.e+-]+)/.exec(line);

@@ -16,7 +16,9 @@ export function verifyNleRenderer(renderer, verifier) {
     const startedAt = Date.now();
     const result = await renderer(options);
     const { outputPath, ...receipt } = result ?? {};
-    return { ...receipt, verify: await runVerification(outputPath, options, verifier, startedAt) };
+    // K-03: actual wall time (render + verification), so plan previews can be
+    // compared with what execution really took.
+    return { ...receipt, elapsedMs: Date.now() - startedAt, verify: await runVerification(outputPath, options, verifier, startedAt) };
   };
 }
 

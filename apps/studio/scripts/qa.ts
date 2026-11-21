@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { killMediaProcess } from "./native-process";
 
 /**
  * Delivery QA gates, modeled on dashi's 自检 pipeline: sample frames every
@@ -110,7 +111,7 @@ export async function extractFrames(videoPath: string, spec: SpecInfo): Promise<
     ], { stdio: ["ignore", "pipe", "pipe"] });
     const chunks: Buffer[] = [];
     let stderr = "";
-    const timer = setTimeout(() => { child.kill(); reject(new Error("frame extraction timed out")); }, 180_000);
+    const timer = setTimeout(() => { killMediaProcess(child); reject(new Error("frame extraction timed out")); }, 180_000);
     child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => (stderr += chunk));
     child.on("error", (error) => { clearTimeout(timer); reject(error); });

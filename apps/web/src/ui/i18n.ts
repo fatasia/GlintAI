@@ -8,10 +8,12 @@ import { timelineDockMessages } from "../timeline-dock-i18n";
 import { storyboardPrevizMessages } from "../storyboard-previz-i18n";
 import { nleRenderMessages } from "../nle-render-i18n";
 import { sceneTimelineMessages } from "../scene-timeline-i18n";
+import { planPreviewMessages } from "../plan-preview-i18n";
 const zhCN = {
   ...containerV2Messages,
   ...storyboardPrevizMessages,
   ...nleRenderMessages,
+  ...planPreviewMessages,
   ...sceneTimelineMessages,
   ...timelineDockMessages,
   ...registryMessages,

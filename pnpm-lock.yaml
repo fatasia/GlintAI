@@ -147,6 +147,9 @@ importers:
       '@fontsource-variable/geist-mono':
         specifier: 5.3.0
         version: 5.3.0
+      '@glintai/buildgraph':
+        specifier: workspace:*
+        version: link:../../packages/buildgraph
       '@glintai/composer':
         specifier: workspace:*
         version: link:../../packages/composer

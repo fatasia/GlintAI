@@ -9,7 +9,12 @@ param(
 $ErrorActionPreference = "Stop"
 $source = (Resolve-Path $Source).Path
 $target = [System.IO.Path]::GetFullPath($Target)
-$sourceRoot = $source.TrimEnd('\', '/')
+# Get-ChildItem -Recurse reports FullName with the expanded long path (8.3
+# short names like RUNNER~1 become runneradmin), while Resolve-Path keeps the
+# short form; deriving $relative by Substring($sourceRoot.Length) would then
+# slice at the wrong offset and install files to corrupted subpaths. Anchor
+# the prefix on Get-Item's FullName so both sides share the same expansion.
+$sourceRoot = (Get-Item -LiteralPath $source -Force).FullName.TrimEnd('\', '/')
 $targetRoot = $target.TrimEnd('\', '/')
 if ($sourceRoot.Equals($targetRoot, [StringComparison]::OrdinalIgnoreCase) -or
     $sourceRoot.StartsWith($targetRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
@@ -42,6 +47,9 @@ if ((Get-Item -LiteralPath $target -Force).Attributes -band [IO.FileAttributes]:
 # cache directories; leave other existing files alone instead of deleting them.
 $installedFiles = [System.Collections.Generic.List[string]]::new()
 foreach ($file in Get-ChildItem -LiteralPath $source -Recurse -File -Force) {
+  if (-not $file.FullName.StartsWith($sourceRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Install source enumeration escaped the source directory: $($file.FullName)"
+  }
   $relative = $file.FullName.Substring($sourceRoot.Length).TrimStart('\', '/')
   if ($relative -match '^(\.smoke-data|app[\\/]+studio[\\/]+(out|\.cache))([\\/]|$)') { continue }
   $destination = Join-Path $target $relative

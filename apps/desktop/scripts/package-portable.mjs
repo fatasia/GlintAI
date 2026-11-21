@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { portableLauncher, chapterLauncher } from "./portable-launcher.mjs";
-import { desktopServiceBuildOptions, portableChapterBuildOptions, localChapterToolBuildOptions } from "./portable-service-build.mjs";
+import { desktopServiceBuildOptions, portableChapterBuildOptions, localChapterToolBuildOptions, esmNodeShim } from "./portable-service-build.mjs";
 import { createPortableOutput } from "./portable-output.mjs";
 import { createPortableArchive } from "./portable-archive.mjs";
 import { buildDesktopAgentAdapters } from "./portable-agents.mjs";
@@ -30,7 +30,7 @@ const zip = process.argv.includes("--zip");
 const archive = zip ? resolve(process.env.GLINT_PORTABLE_ARCHIVE ?? join(repo, "dist-portable", `${lite ? "Glint-lite" : "Glint"}.zip`)) : undefined;
 const nonce = "portable-smoke-0123456789abcdef";
 const nodePath = lite ? "node" : join(out, "node.exe");
-const ESM_SHIM = `import { createRequire as __glintCreateRequire } from "node:module";\nimport { fileURLToPath as __glintFileURLToPath } from "node:url";\nconst require = __glintCreateRequire(import.meta.url);\nconst __filename = __glintFileURLToPath(import.meta.url);\nconst __dirname = __filename.slice(0, Math.max(__filename.lastIndexOf("/"), __filename.lastIndexOf("\\\\")));`;
+const ESM_SHIM = esmNodeShim;
 
 if (!existsSync(join(webDist, "index.html"))) throw new Error("Build the web UI first: pnpm --filter glint-web build");
 if (!existsSync(exe)) throw new Error("Build the desktop host first: cargo build --release --manifest-path apps/desktop/Cargo.toml");

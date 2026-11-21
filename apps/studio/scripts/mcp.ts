@@ -3,12 +3,14 @@ import { applySessionChanges, buildProject, planProject, verifyReceipt, type Bui
 import { proveProject } from "./prove";
 import { taskTools } from "./task-mcp";
 import { containerTools } from "./container-mcp";
+import { toolMeta } from "./mcp-registry";
 /**
  * Minimal MCP (Model Context Protocol) server over stdio: newline-delimited
  * JSON-RPC 2.0. Glint exposes the four verbs agents actually need (plan, apply,
  * build, prove) plus verify, and every tool returns a machine-readable result.
  *
  * stdout carries protocol messages only; tool logs go to stderr.
+ * Tool metadata (name/description/inputSchema) comes from ./mcp-registry (M-06d).
  */
 export interface McpTool {
   name: string;
@@ -24,9 +26,6 @@ export interface JsonRpcResponse {
   result?: unknown;
   error?: { code: number; message: string };
 }
-
-const PROJECT = { type: "string", description: "Path to a SceneScript project JSON file" } as const;
-const CHANGES = { type: "array", items: { type: "string" }, description: "Typed path=value edits, e.g. scenes[1].title=\"New\"" } as const;
 
 function stringArg(args: Record<string, unknown>, name: string, required = true): string | undefined {
   const value = args[name];
@@ -59,24 +58,18 @@ export function defaultTools(options: { sessionDirectory?: string } = {}): McpTo
     ...containerTools(),
     ...taskTools(),
     {
-      name: "glint_plan",
-      description: "Predict which build nodes a change will execute, what it costs and how long it takes. Does not render.",
-      inputSchema: { type: "object", properties: { project: PROJECT, changes: CHANGES, tts: { type: "string" }, music: { type: "string" }, fast: { type: "boolean" } }, required: ["project"] },
+      ...toolMeta("glint_plan"),
       call: async (args) => {
         const report = planProject({ projectPath: stringArg(args, "project")!, changes: changesArg(args), tts: stringArg(args, "tts", false), music: stringArg(args, "music", false), fast: boolArg(args, "fast") });
         return { project: report.projectId, revision: report.revision, exact: report.exact, predicted: report.plan.predicted, changed: report.plan.changed, forced: report.plan.forced, reused: report.plan.reused, costCny: report.plan.costCny, modelCalls: report.modelCalls, estimatedMs: report.plan.estimatedMs, notes: report.notes };
       },
     },
     {
-      name: "glint_apply",
-      description: "Apply path=value edits through the shared session domain (same undo history as the studio) and write the project back, with compare-and-swap on the revision.",
-      inputSchema: { type: "object", properties: { project: PROJECT, changes: CHANGES, expectedRevision: { type: "string" } }, required: ["project", "changes"] },
+      ...toolMeta("glint_apply"),
       call: (args) => applySessionChanges({ projectPath: stringArg(args, "project")!, changes: changesArg(args), expectedRevision: stringArg(args, "expectedRevision", false), sessionDirectory: options.sessionDirectory }),
     },
     {
-      name: "glint_build",
-      description: "Build (render) a project, write a receipt next to the output, and compare actual execution with the predicted change set.",
-      inputSchema: { type: "object", properties: { project: PROJECT, out: { type: "string" }, changes: CHANGES, tts: { type: "string" }, music: { type: "string" }, fast: { type: "boolean" }, plate: { type: "boolean" }, assertBudget: { type: "boolean" } }, required: ["project", "out"] },
+      ...toolMeta("glint_build"),
       call: async (args) => {
         const input: BuildInput = {
           projectPath: stringArg(args, "project")!, output: stringArg(args, "out")!, changes: changesArg(args),
@@ -89,15 +82,11 @@ export function defaultTools(options: { sessionDirectory?: string } = {}): McpTo
       },
     },
     {
-      name: "glint_prove",
-      description: "Evaluate a glint.tests.json assertion file against a project, plan and optional receipt.",
-      inputSchema: { type: "object", properties: { project: PROJECT, tests: { type: "string" }, receipt: { type: "string" }, changes: CHANGES }, required: ["project", "tests"] },
+      ...toolMeta("glint_prove"),
       call: (args) => proveProject({ projectPath: stringArg(args, "project")!, testsPath: stringArg(args, "tests")!, receiptPath: stringArg(args, "receipt", false), changes: changesArg(args) }),
     },
     {
-      name: "glint_verify",
-      description: "Validate a build receipt: output hash, environment drift, and optionally rebuild and compare.",
-      inputSchema: { type: "object", properties: { receipt: { type: "string" }, rebuild: { type: "boolean" }, skipEnv: { type: "boolean" } }, required: ["receipt"] },
+      ...toolMeta("glint_verify"),
       call: (args) => verifyReceipt({ receiptPath: stringArg(args, "receipt")!, rebuild: boolArg(args, "rebuild"), skipEnvironment: boolArg(args, "skipEnv"), log }),
     },
   ];

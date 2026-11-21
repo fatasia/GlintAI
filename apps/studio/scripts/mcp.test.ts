@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { FileSessionStore } from "@glintai/session/node";
 import { createMcpHandler, defaultTools, type McpTool } from "./mcp";
+import { MCP_TOOL_REGISTRY } from "./mcp-registry";
 
 const echo: McpTool = {
   name: "echo",
@@ -56,32 +57,17 @@ describe("MCP handler", () => {
 });
 
 describe("default tools", () => {
-  it("exposes the four verbs plus verify with schemas", () => {
+  it("assembles exactly the registry catalog (M-06d) with schemas", () => {
     const tools = defaultTools();
-    expect(tools.map((tool) => tool.name).sort()).toEqual(
-      [
-        "glint_apply",
-        "glint_build",
-        "glint_container_append",
-        "glint_container_lifecycle",
-        "glint_container_list",
-        "glint_container_migrate_copy",
-        "glint_tasks_list",
-        "glint_tasks_status",
-        "glint_tasks_cancel",
-        "glint_container_open",
-        "glint_container_redo",
-        "glint_container_snapshot",
-        "glint_container_undo",
-        "glint_plan",
-        "glint_prove",
-        "glint_verify",
-      ].sort(),
-    );
+    // The hand-copied list is gone: the registry is the single source the test derives from.
+    expect(tools.map((tool) => tool.name).sort()).toEqual(MCP_TOOL_REGISTRY.map((spec) => spec.name).sort());
     for (const tool of tools) {
       expect(tool.description.length).toBeGreaterThan(10);
       expect((tool.inputSchema as { type?: string }).type).toBe("object");
     }
+  });
+  it("keeps one registry entry per default tool (count guard)", () => {
+    expect(MCP_TOOL_REGISTRY).toHaveLength(defaultTools().length);
   });
   it("routes glint_apply through the shared session domain (CORE-09)", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "glint-mcp-"));

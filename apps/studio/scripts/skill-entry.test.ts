@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
 import { afterEach, expect, it } from "vitest";
 import { resolveRuntime, invocation } from "../../../skills/glint-video/scripts/glint.mjs";
@@ -24,7 +25,10 @@ it("keeps the shebang launcher LF after a real autocrlf checkout and runs it out
   const bytes = fs.readFileSync(launcher, "utf8");
   expect(bytes.startsWith("#!/usr/bin/env node\n")).toBe(true);
   expect(bytes).not.toContain("\r");
-  const imported = await import(/* @vite-ignore */ pathToFileURL(launcher).href);
+  // Load the copied launcher with Node's own module machinery, not vitest's
+  // vite-node loader: hosted runners expose temp paths with 8.3 short names
+  // (RUNNER~1), whose tilde percent-encoding breaks vite module ids.
+  const imported = createRequire(import.meta.url)(launcher) as typeof import("../../../skills/glint-video/scripts/glint.mjs");
   expect(imported.resolveRuntime({ root: repo, cwd: root, env: {} })).toBe(path.resolve(repo));
   const output = execFileSync(process.execPath, [launcher, `--root=${repo}`, "help"], { cwd: root, env: { ...process.env, NODE_OPTIONS: "" }, timeout: 20_000, windowsHide: true, encoding: "utf8" });
   expect(output).toContain("pnpm glint make");

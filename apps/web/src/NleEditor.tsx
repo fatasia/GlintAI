@@ -9,6 +9,7 @@ import { appFetch as fetch } from "./app-url";
 import { ProjectArchivePanel } from "./ProjectArchivePanel";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { DeliveryPanel } from "./DeliveryPanel";
+import { ContainerPlanPreview } from "./ContainerPlanPreview";
 import "./nle-theme.css";
 import { NlePreview } from "./NlePreview";
 import { NleLibrary } from "./NleLibrary";
@@ -905,6 +906,9 @@ export function NleEditor({ onClose, active = true, openRequest, shared }: { onC
         </div>
         <div className="nle-status">
           {status && <span role="status">{status}</span>}
+          {/* K-03: read-only impact preview for the shared container timeline; after an
+              export the receipt's elapsedMs feeds the preview-vs-actual line. */}
+          {shared && <ContainerPlanPreview projectId={shared.projectId} intent={{ objectIds: [shared.objectId] }} actualMs={result?.elapsedMs ?? null} />}
           {result && <a href={applicationUrl(result.url)} download={result.file}>下载 {result.file.endsWith(".webm") ? "透明 WebM" : "MP4"}</a>}
           {result && <DeliveryPanel receipt={{ file: result.file, url: result.url, coverUrl: result.coverUrl, verify: result.verify }} />}
           {timelineResult && <a href={applicationUrl(timelineResult.url)} download={timelineResult.file}>下载 {timelineResult.file.endsWith(".fcpxml") ? "FCPXML" : "EDL"}（{timelineResult.clips} 事件）</a>}

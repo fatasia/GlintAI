@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -17,15 +17,36 @@ export function recordProcessLedger(command: string, pid: number | undefined, ar
   }
 }
 
+/**
+ * Forcefully terminates a media subprocess and waits for the whole tree to be
+ * gone before returning. On Windows the PATH lookup for ffmpeg/ffprobe can
+ * resolve to a chocolatey shim whose grandchild keeps the inherited stdio
+ * handles open, so a bare child.kill() never fires the parent's "close" event.
+ * taskkill /F /T terminates the entire tree; spawnSync is used deliberately so
+ * tests that spy on child_process.spawn still observe only the media process.
+ */
+export function killMediaProcess(child: ChildProcess, posixSignal: NodeJS.Signals = "SIGKILL"): void {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  if (process.platform !== "win32") {
+    child.kill(posixSignal);
+    return;
+  }
+  child.kill();
+  const pid = child.pid;
+  if (pid !== undefined) {
+    try { spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], { stdio: "ignore", windowsHide: true }); } catch { /* process already gone */ }
+  }
+}
+
 export function runMediaProcess(command: string, args: string[], options: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<void> {
   options.signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["ignore", "ignore", "pipe"], shell: false });
     recordProcessLedger(command, child.pid, args);
     let stderr = "";
-    const abort = () => child.kill();
+    const abort = () => killMediaProcess(child);
     options.signal?.addEventListener("abort", abort, { once: true });
-    const timer = setTimeout(() => child.kill(), options.timeoutMs ?? 180000);
+    const timer = setTimeout(() => killMediaProcess(child), options.timeoutMs ?? 180000);
     child.stderr.on("data", (chunk: Buffer) => { stderr = (stderr + chunk).slice(-4000); });
     const cleanup = () => { clearTimeout(timer); options.signal?.removeEventListener("abort", abort); };
     child.once("error", error => { cleanup(); reject(error); });
@@ -56,28 +77,50 @@ export function startPngEncoder(options: { fps: number; frameRateText?: string; 
   const child = spawn("ffmpeg", args, { stdio: ["pipe", "ignore", "pipe"], shell: false });
   recordProcessLedger("ffmpeg", child.pid, args);
   let stderr = "", bytes = 0, failed = false, pipeError: Error | undefined;
+  // Writers waiting out backpressure must settle when the encoder dies, and
+  // `done` must never surface as an unhandled rejection before finish() —
+  // either case crashes the whole CLI process instead of failing one encode.
+  type DrainWaiter = { settle(error?: Error): void };
+  const drainQueue = new Set<DrainWaiter>();
+  const settleWriters = (error?: Error) => { const pending = [...drainQueue]; drainQueue.clear(); for (const waiter of pending) waiter.settle(error); };
   const done = new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => child.kill(), 600000);
-    const abort = () => child.kill();
+    const timer = setTimeout(() => killMediaProcess(child), 600000);
+    const abort = () => killMediaProcess(child);
     options.signal?.addEventListener("abort", abort, { once: true });
     child.stderr.on("data", (chunk: Buffer) => { stderr = (stderr + chunk).slice(-4000); });
-    child.stdin.on("error", error => { pipeError = error; child.kill(); });
+    child.stdin.on("error", error => {
+      pipeError = error;
+      settleWriters(new Error(`ffmpeg encoder input failed: ${error.message}`));
+      killMediaProcess(child);
+    });
     child.once("error", error => { failed = true; clearTimeout(timer); reject(error); });
     child.once("close", code => {
       clearTimeout(timer); options.signal?.removeEventListener("abort", abort);
-      if (pipeError) reject(new Error(`ffmpeg encoder input failed: ${pipeError.message}`));
-      else if (options.signal?.aborted || failed) reject(new Error("Encoding cancelled"));
-      else if (code === 0) resolve();
-      else reject(new Error(`ffmpeg encoder failed (${code}): ${stderr}`));
+      const failure = pipeError ? new Error(`ffmpeg encoder input failed: ${pipeError.message}`)
+        : options.signal?.aborted || failed ? new Error("Encoding cancelled")
+        : code === 0 ? undefined
+        : new Error(`ffmpeg encoder failed (${code}): ${stderr}`);
+      if (failure) reject(failure); else resolve();
+      settleWriters(failure);
     });
   });
+  done.catch(() => {});
   return {
     write(frame) {
       if (failed || pipeError) return Promise.reject(new Error(pipeError ? `ffmpeg encoder input failed: ${pipeError.message}` : "Encoder already failed"));
       bytes += frame.length;
       return new Promise<void>((resolve, reject) => {
         if (child.stdin.write(frame)) return resolve();
-        child.stdin.once("drain", resolve);
+        const waiter: DrainWaiter = {
+          settle(error) {
+            child.stdin.off("drain", onDrain);
+            drainQueue.delete(waiter);
+            if (error) reject(error); else resolve();
+          },
+        };
+        const onDrain = () => waiter.settle();
+        drainQueue.add(waiter);
+        child.stdin.once("drain", onDrain);
       });
     },
     finish: () => new Promise<void>((resolve, reject) => {

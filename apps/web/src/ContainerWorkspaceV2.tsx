@@ -8,6 +8,7 @@ import type { ContainerSnapshot } from "./container-workspace-client";
 import { createContainerDocumentPayload } from "./container-document-seeds";
 import { useContainerActions } from "./useContainerActions";
 import { ContainerDocumentForm } from "./ContainerDocumentForm";
+import { ContainerPlanPreview } from "./ContainerPlanPreview";
 import { ContainerScene } from "./ContainerScene";
 import { ContainerExport } from "./ContainerExport";
 import { AuthoringVisibility } from "./authoring-visibility";
@@ -73,6 +74,12 @@ function DocumentLifecycle({ model }: { model: Workspace }) {
   return (
     <details className="container-document-tools">
       <summary>{t("containerV2.add")}</summary>
+      {selected && (
+        <ContainerPlanPreview
+          projectId={model.snapshot.container.id}
+          intent={{ objectIds: [selected.id] }}
+        />
+      )}
       <ContainerDocumentForm
         busy={actions.pending}
         label="containerV2.add"

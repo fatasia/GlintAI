@@ -130,6 +130,8 @@ v1 之外新增的每镜字段（全部可选，向后兼容）：
 | `pnpm glint report --project=p.json [--video=x.mp4] --out=report.html` | 单页状态报告 |
 | `pnpm glint deck --project=p.json --out=<新目录>` | 离线交互演示（翻页/演讲者视图/理解检查） |
 
+<!-- M-06d：MCP 工具清单以 apps/studio/scripts/mcp-registry.ts 为单源（含 surfaces 标注），本表为摘录，不逐条同步 -->
+
 弃用：剪映草稿导出（`glint jianying`）仅保留为历史实验命令，不作为交付路径；本项目不承诺与其他剪辑软件互操作。
 
 深入细节按需读：`references/workflow.md`、`style-packs.md`（风格选型与审美红线）、`motion-and-charts.md`（运镜/转场/SFX/图表）、`audio.md`（声音）、`qa-gates.md`（门禁阈值）、`assets.md`（素材与网关）、`entry-and-bridge.md`（产品/Skill 接续）。

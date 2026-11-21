@@ -52,3 +52,23 @@
     flex-wrap: wrap;
   }
 }
+
+/* K-03 影响预览条目：只读预测，展开才请求；跟随文档工具确认区。 */
+.plan-preview {
+  margin-block: var(--g-sp-4);
+  padding: var(--g-sp-4);
+  border: 1px solid var(--g-line-2);
+  border-radius: var(--g-r-3);
+}
+.plan-preview > summary {
+  cursor: pointer;
+  font-size: var(--g-fs-2);
+  font-weight: var(--g-fw-medium);
+}
+.plan-preview-list {
+  display: grid;
+  gap: var(--g-sp-2);
+  font-size: var(--g-fs-2);
+  padding: 0;
+  list-style: none;
+}

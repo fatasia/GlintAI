@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { isDeepStrictEqual } from "node:util";
+import { killMediaProcess } from "../../studio/scripts/native-process";
 import { validatePortableChapterBundle, type ValidatedPortableBundle } from "../../../packages/scenescript/src/portable-chapter-validation";
 import { parseProject } from "../../../packages/scenescript/src/parse";
 import { referencedAssets } from "../../../packages/scenescript/src/chapter-bundle";
@@ -26,7 +27,7 @@ function runDecoder(command: string, args: string[], bytes: Buffer, budget: Budg
     let failure: unknown;
     let size = 0;
     const output: Buffer[] = [];
-    const stop = (error: unknown) => { if (!failure) failure = error; child.kill("SIGKILL"); };
+    const stop = (error: unknown) => { if (!failure) failure = error; killMediaProcess(child, "SIGKILL"); };
     const abort = () => stop(budget.signal?.reason ?? new Error("章节迁移已取消。"));
     const timer = setTimeout(() => stop(new Error("章节迁移超过整包处理时限。")), Math.max(0, budget.deadline - performance.now()));
     budget.signal?.addEventListener("abort", abort, { once: true });

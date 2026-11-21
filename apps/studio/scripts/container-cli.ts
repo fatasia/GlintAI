@@ -1,6 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { listContainers, containerRequest, ContainerRequestError, CONTAINER_REQUEST_LIMIT, type ContainerAction } from "./container-api-client";
+import { listContainers, containerRequest, ContainerRequestError, CONTAINER_REQUEST_LIMIT, CONTAINER_API_ACTIONS, type ContainerAction } from "./container-api-client";
+
+/** CLI accepts the API actions plus the dedicated paginated `list` route. */
+export const CONTAINER_CLI_ACTIONS: readonly string[] = ["list", ...CONTAINER_API_ACTIONS];
 
 function arg(args: string[], name: string): string | undefined { return args.find(value => value.startsWith(`--${name}=`))?.slice(name.length + 3); }
 async function readRequest(file: string, callerDir: string): Promise<Record<string, unknown>> {
@@ -23,7 +26,7 @@ async function readRequest(file: string, callerDir: string): Promise<Record<stri
 export async function runContainer(args: string[], env: NodeJS.ProcessEnv = process.env, write: (line: string) => void = console.log): Promise<number> {
   try {
     const action = args[0] as ContainerAction | "list";
-    if (!["list", "snapshot", "open", "append", "undo", "redo", "lifecycle", "migrate-copy"].includes(action)) throw new ContainerRequestError("invalid-action");
+    if (!CONTAINER_CLI_ACTIONS.includes(action)) throw new ContainerRequestError("invalid-action");
     const allowed = new Set(action === "list" ? ["endpoint", "limit", "cursor"] : ["endpoint", "id", "request"]), seen = new Set<string>();
     for (const value of args.slice(1)) {
       const match = /^--([^=]+)=(.+)$/.exec(value);

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { killMediaProcess } from "./native-process";
 
 // Match reference-video's direct-container policy: no playlists or network protocols.
 export const LOOK_LOCAL_INPUT = ["-protocol_whitelist", "file,pipe", "-format_whitelist", "mov,matroska,webm,avi,mpegts,mpeg,mpegvideo,flv,ogg"];
@@ -9,7 +10,7 @@ export function captureLook(command: string, args: string[], signal?: AbortSigna
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], shell: false, windowsHide: true });
     let stdout = "", stderr = "", bytes = 0, failure: Error | undefined;
-    const stop = (error: Error) => { failure ??= error; child.kill(); };
+    const stop = (error: Error) => { failure ??= error; killMediaProcess(child); };
     const abort = () => stop(new Error("Look cancelled"));
     const timer = setTimeout(() => stop(new Error("Look media process timed out")), 180_000);
     signal?.addEventListener("abort", abort, { once: true });

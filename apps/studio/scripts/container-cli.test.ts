@@ -14,8 +14,14 @@ import { runContainer } from "./container-cli";
 import { CONTAINER_REQUEST_LIMIT } from "./container-api-client";
 
 let root: string, server: Server | undefined;
+// Hosted Windows runners spawn a dozen real tsx CLIs in this file; scale the
+// budget for GLINT_CI_SLOW instead of weakening any behavioral assertion.
+const slowScale = process.env.GLINT_CI_SLOW ? 3 : 1;
 beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), "container-cli-")); });
-afterEach(async () => { if (server) { server.closeAllConnections(); await new Promise<void>(resolve => server!.close(() => resolve())); server = undefined; } fs.rmSync(root, { recursive: true, force: true }); });
+afterEach(async () => {
+  if (server) { server.closeAllConnections(); await new Promise<void>(resolve => server!.close(() => resolve())); server = undefined; }
+  fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+});
 const write = (name: string, value: unknown) => { const file = path.join(root, name); fs.writeFileSync(file, JSON.stringify(value)); return file; };
 it("prints structured errors for missing endpoint, credential flags, malformed/oversized files", async () => {
   const lines: string[] = [], output = (line: string) => lines.push(line);
@@ -80,7 +86,7 @@ it("drives open/append/history through the real CLI lazy route with bounded JSON
   expect(lifecycle.code).toBe(0); expect(JSON.parse(lifecycle.out).receipt.stage).toBe("verified");
   const staleLifecycle = await cli(["lifecycle", `--request=${write("stale-lifecycle.json", { projectId: "work-v2", transaction: { id: "stale-add", baseRevision: 0, actor: "cli", scope: {}, intent: "过期" }, change: { action: "archive", objectId: "script" } })}`]);
   expect(staleLifecycle.code).toBe(2); expect(JSON.parse(staleLifecycle.out).result.receipt.stage).toBe("refused");
-}, 30000);
+}, 30000 * slowScale);
 
 it("rejects list flags outside pagination and validates limits before HTTP", async () => {
   const env = { GLINT_CONTAINER_ENDPOINT: "http://127.0.0.1:1" };

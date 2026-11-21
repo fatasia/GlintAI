@@ -4,6 +4,7 @@ import { SessionStoreError, type FileSessionStore } from "@glintai/session/node"
 import { createProjectContainerStore, parseStoredContainer } from "./project-container-session";
 import { isContainerDocument } from "@glintai/scenescript/project-container-v2";
 import { dispatchContainerAction, containerRequestObject as object, containerRequestId as id } from "./project-container-actions";
+import { PlanPreviewError, parsePlanPreviewIntent, previewContainerPlan } from "./project-plan-preview";
 import { modelSettingsFile } from "./model-settings-path";
 
 type Helpers = { readBody(req: IncomingMessage, signal: AbortSignal, maxBytes: number): Promise<string>; sendJson(res: ServerResponse, status: number, body: unknown): unknown };
@@ -41,13 +42,25 @@ export function createProjectContainerRoutes(storeFactory: () => FileSessionStor
   let stored: FileSessionStore | undefined;
   const store = () => stored ??= storeFactory();
   return async (req: IncomingMessage, res: ServerResponse, url: URL, helpers: Helpers): Promise<boolean> => {
-    if (!url.pathname.startsWith("/api/project-containers/")) return false;
-    const action = url.pathname.slice("/api/project-containers/".length);
+    // K-03: the read-only plan preview rides the same handler so it shares one
+    // store instance (and its writer lock) with every container action.
+    const planPreview = url.pathname === "/api/project/plan-preview";
+    if (!url.pathname.startsWith("/api/project-containers/") && !planPreview) return false;
+    const action = planPreview ? "plan-preview" : url.pathname.slice("/api/project-containers/".length);
     const send = (status: number, body: unknown) => { if (!res.destroyed) helpers.sendJson(res, status, body); return true; };
     const controller = new AbortController(), signal = AbortSignal.any([controller.signal, AbortSignal.timeout(65_000)]);
     const stop = () => { if (!res.writableEnded) controller.abort(); };
     res.once("close", stop);
     try {
+      if (action === "plan-preview") {
+        if (req.method !== "POST") return send(405, { error: "Use POST for plan preview" });
+        const body = object(JSON.parse(await helpers.readBody(req, signal, 8 * 1024)));
+        id(body.projectId);
+        signal.throwIfAborted();
+        // Read-only: snapshot + pure prediction. Nothing is written, no manifest is created.
+        const { snapshot } = store().snapshot(id(body.projectId));
+        return send(200, previewContainerPlan({ projectId: snapshot.projectId, revision: snapshot.revision, document: snapshot.document }, parsePlanPreviewIntent(body.intent)));
+      }
       if (action === "list") {
         if (req.method !== "GET") return send(405, { error: "Use GET for list" });
         const { limit, cursor } = pageParameters(url.searchParams);
@@ -65,6 +78,7 @@ export function createProjectContainerRoutes(storeFactory: () => FileSessionStor
       const result = await dispatchContainerAction(store, action, body);
       return send("receipt" in result && result.receipt.stage === "refused" ? 409 : 200, result);
     } catch (error) {
+      if (error instanceof PlanPreviewError) return send(error.status, { error: error.message });
       const code = error instanceof SessionStoreError ? error.code : "invalid-request";
       const status = (error as { status?: number })?.status === 413 ? 413 : code === "not-found" ? 404 : ["busy", "external-change", "project-conflict", "untrusted-import"].includes(code) ? 409 : code === "corrupt" ? 500 : 400;
       return send(status, { code, error: code === "corrupt" ? "Saved project validation failed; keep the original and restore a verified backup" : "Project request refused; check the document, revision and approval state" });
