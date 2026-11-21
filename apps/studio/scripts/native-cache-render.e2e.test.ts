@@ -81,13 +81,22 @@ it("keeps build and render cache keys aligned for fractional rates", async () =>
 it("invalidates scene and container when ffmpeg bytes change in the same process", async () => {
   const result = spawnSync(process.platform === "win32" ? "where" : "which", ["ffmpeg"], { encoding: "utf8" });
   expect(result.status).toBe(0);
-  const original = result.stdout.split(/\r?\n/).find(line => line.trim())!.trim();
+  // Hosted Windows runners put a choco shim first in PATH; corrupting the shim breaks
+  // its launcher chain with an EPIPE before the real ffmpeg is reached. Pick the
+  // largest working candidate (the real binary) so appending marker bytes keeps it
+  // runnable — PE loaders ignore trailing data, which is exactly the invalidation
+  // this test exercises (Q-06c).
+  const original = result.stdout.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+    .filter(line => spawnSync(line, ["-version"], { stdio: "ignore" }).status === 0)
+    .map(line => ({ line, size: fs.statSync(line).size }))
+    .sort((a, b) => b.size - a.size)[0]?.line;
+  expect(original, "no working ffmpeg candidate found").toBeTruthy();
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "glint-ffmpeg-cache-"));
   const previousPath = process.env.PATH, previousCache = process.env.GLINT_CACHE_DIR;
   try {
     const bin = path.join(root, "bin"); fs.mkdirSync(bin);
     const executable = path.join(bin, process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
-    fs.copyFileSync(original, executable); fs.chmodSync(executable, 0o755);
+    fs.copyFileSync(original!, executable); fs.chmodSync(executable, 0o755);
     process.env.PATH = `${bin}${path.delimiter}${previousPath ?? ""}`;
     process.env.GLINT_CACHE_DIR = path.join(root, "cache");
     const project = { schemaVersion: 1, id: "ffmpeg-version", title: "Version", aspect: "16:9", fps: 10, knowledgeSources: [], scenes: [{ id: "one", kind: "title", title: "Version", narration: { text: "x", durationMs: 200 } }] };

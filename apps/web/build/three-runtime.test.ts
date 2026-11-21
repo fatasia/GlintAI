@@ -8,7 +8,9 @@ import { threeRuntime } from "./three-runtime";
 import { buildThreeRuntime } from "../../studio/scripts/decoders";
 
 it("emits and serves the same executable Three runtime without a pre-staged public file", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "glint-three-web-"));
+  // test-isolation points TEMP/TMP at a nested dir that may carry 8.3 short names on
+  // Windows runners; rollup emitFile rejects the resulting mixed-relative paths.
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "glint-three-web-")));
   const server = await createServer({
     configFile: false,
     root,

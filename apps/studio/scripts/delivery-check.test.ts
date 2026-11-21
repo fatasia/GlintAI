@@ -14,6 +14,10 @@ vi.mock("node:child_process", async original => {
   return { ...actual, spawn: (...args: Parameters<typeof actual.spawn>) => actual.spawn(...args) };
 });
 
+// CI slow runners take longer on real spawn+kill+wait chains; scale explicit test
+// timeouts the same way vitest.config scales the global default (Q-06c).
+const timeoutScale = process.env.GLINT_CI_SLOW ? 3 : 1;
+const scaledTimeout = (ms: number) => ms * timeoutScale;
 const installed = ["ffmpeg", "ffprobe"].every(command => {
   const result = childProcess.spawnSync(command, ["-version"], { stdio: "ignore" });
   if (result.error && (result.error as NodeJS.ErrnoException).code === "ENOENT") return false;
@@ -84,7 +88,7 @@ describe.skipIf(!installed)("delivery check with installed FFmpeg", () => {
     expect(fs.readFileSync(files.normalized!)).toEqual(before);
     expect(fs.statSync(files.normalized!).mtimeMs).toBe(stat.mtimeMs);
     expect(failures(await checkDelivery({ videoPath: files.normalized!, audio: "forbidden" }))).toContainEqual(expect.objectContaining({ name: "audio-policy" }));
-  }, 15_000);
+  }, scaledTimeout(15_000));
 
   it.each(["quiet", "silent"])("rejects present %s audio even when optional", async name => {
     const report = await checkDelivery({ videoPath: files[name]!, audio: "optional" });
@@ -95,7 +99,7 @@ describe.skipIf(!installed)("delivery check with installed FFmpeg", () => {
       expect(failures(await checkDelivery({ videoPath: files[name]!, audio: "required" }))).toContainEqual(expect.objectContaining({ name: "loudness:1" }));
       expect(JSON.stringify(report)).not.toContain("Infinity");
     }
-  }, 15_000);
+  }, scaledTimeout(15_000));
 
   it("enforces true peak independently and supports explicit loudness targets", async () => {
     const report = await checkDelivery({ videoPath: files.peak!, targetLufs: -10, toleranceLu: 10, maxTruePeakDbtp: -9 });
@@ -103,7 +107,7 @@ describe.skipIf(!installed)("delivery check with installed FFmpeg", () => {
     expect(failures(report)).toContainEqual(expect.objectContaining({ name: "true-peak:1" }));
     const adjusted = await checkDelivery({ videoPath: files.peak!, targetLufs: report.audioLoudness![0]!.integratedLufs!, toleranceLu: 0, maxTruePeakDbtp: 0 });
     expect(failures(adjusted)).toEqual([]);
-  }, 15_000);
+  }, scaledTimeout(15_000));
 
   it("fails actual full decode on corrupt packets despite readable stream metadata", async () => {
     const report = await checkDelivery({ videoPath: files.corrupt! });
@@ -143,7 +147,7 @@ describe.skipIf(!installed)("delivery check with installed FFmpeg", () => {
     const report = await checkDelivery({ videoPath: files.normalized!, signal: active.signal });
     expect(failures(report)).toContainEqual(expect.objectContaining({ name: "cancelled" }));
     expectExited(pid);
-  }, 15_000);
+  }, scaledTimeout(15_000));
 
   it.each([captureProcess, runMediaProcess])("shared media helper kills/waits for aborted and timed-out real subprocesses (%#)", async helper => {
     const spy = vi.spyOn(childProcess, "spawn");
