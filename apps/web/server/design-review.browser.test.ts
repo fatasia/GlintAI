@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { expect, it } from "vitest";
@@ -27,6 +27,8 @@ const initialState: ProjectDesignDocuments = { version: 1, projectId, activeId: 
 type ProposalRequest = { projectId: string; document: DesignDocument; instruction: string; selection: DesignSelection };
 
 it.skipIf(!browserGated)("真实 DesignEditor + ArtifactChat：多批注精准提案、影响单、确认应用、一次撤销，以及过期预览和旧批注请求拒绝", async () => {
+  // The evidence tree is private-repo material and absent from CI checkouts.
+  await mkdir(fileURLToPath(new URL("../../../evidence/", import.meta.url)), { recursive: true });
   const evidence = await mkdtemp(fileURLToPath(new URL("../../../evidence/design-review-browser-", import.meta.url)));
   const bundle = await build({ stdin: { contents: `
     import React,{useRef,useState} from 'react';import{createRoot}from'react-dom/client';

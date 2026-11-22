@@ -182,7 +182,9 @@ function assertCiPreparationOrder(text: string) {
     );
   }
   expect(linux).toContain("timeout-minutes: 20");
-  expect(windows).toContain("timeout-minutes: 30");
+  // The windows job window grew to 45 with GLINT_CI_SLOW scaling (Q-06c); the
+  // guard pins the live deadline so it cannot silently shrink again.
+  expect(windows).toContain("timeout-minutes: 45");
   expect(windows.indexOf("cargo +stable fetch --locked")).toBeGreaterThanOrEqual(0);
   expect(windows.indexOf("cargo +stable fetch --locked")).toBeLessThan(
     windows.indexOf("prepare-ci-fixtures.mjs runtime"),
