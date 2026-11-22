@@ -118,6 +118,9 @@ it("keeps real scene inputs enabled while saving and serializes the complete new
 
 
 
+// TEST-CHANGE: the fixed act chain flaked on hosted runners (r0 heading still shown
+// after two ticks); aligned to the sibling test's vi.waitFor retry pattern with the
+// same assertions (Q-06c flake evidence series).
 it("refreshes the container heading once when the shared timeline polls an external revision", async () => {
   const timeline = { schemaVersion: 1, id: "old-timeline", title: "Timeline", fps: 30, width: 1920, height: 1080,
     tracks: [{ id: "text", kind: "text", name: "Text", clips: [{ id: "clip", kind: "text", text: "Fixture", startMs: 0, durationMs: 1000 }] }] };
@@ -134,10 +137,14 @@ it("refreshes the container heading once when the shared timeline polls an exter
   expect(host.textContent).toContain("共享版本 r0"); expect(host.textContent).toContain("共享时间线 · r0");
   const initial = network.mock.calls.length;
   revision = 2;
-  await act(async () => { poll!(); await tick(); });
-  await act(async () => { await tick(); });
-  expect(host.textContent).toContain("共享版本 r2"); expect(host.textContent).toContain("共享时间线 · r2");
-  expect(network.mock.calls.length - initial).toBe(2); // One timeline poll, one parent refresh.
+  // Hosted runners interleave React commits differently; retry like the sibling
+  // test instead of trusting one fixed act chain (same assertions, retrying wait).
+  await vi.waitFor(async () => {
+    await act(async () => { poll!(); await tick(); });
+    await act(async () => { await tick(); });
+    expect(host.textContent).toContain("共享版本 r2"); expect(host.textContent).toContain("共享时间线 · r2");
+    expect(network.mock.calls.length - initial).toBe(2); // One timeline poll, one parent refresh.
+  });
   await act(async () => { poll!(); await tick(); });
   await act(async () => { await tick(); });
   expect(network.mock.calls.length - initial).toBe(3); // Unchanged status does not trigger a refresh loop.
