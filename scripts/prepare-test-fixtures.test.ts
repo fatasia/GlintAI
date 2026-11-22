@@ -111,6 +111,8 @@ it('preserves interrupted build output, releases own lock and refuses concurrent
 
 it('dispatches only selected real-generator arguments and verifies generated style receipts', () => {
   const root = temp(), chrome = path.join(root, 'chrome.exe'); fs.writeFileSync(chrome, 'local browser');
+  // A real browser binary is executable; resolveInstalledBrowser enforces X_OK on POSIX.
+  if (process.platform !== 'win32') fs.chmodSync(chrome, 0o755);
   const pkg = path.join(root, 'apps/studio/node_modules/tsx'); fs.mkdirSync(pkg, { recursive: true });
   fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: 'tsx', exports: { './esm': './esm.mjs' } }));
   fs.writeFileSync(path.join(pkg, 'esm.mjs'), '');

@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
-import { allowedIssues, normalize, sha256, sourceAt } from "./quality-git.mjs";
+import { allowedIssues, git, normalize, sha256, sourceAt } from "./quality-git.mjs";
 import { createAnalyzer } from "./quality-analyzer.mjs";
 const issue = (line: number, text = "consume(debt);", endLine = line) => ({
   kind: "lint",
@@ -18,11 +18,21 @@ it("retains unchanged debt after replacing an unrelated line and inserting a bla
 });
 it("retains actual analyzer diagnostics in the existing large server after upstream replacement and blank insertion", async () => {
   const root = fileURLToPath(new URL("../", import.meta.url));
-  const file = "apps/web/server/index.mjs",
-    before = sourceAt(root, "a601271a86fe8be336ff8e08d55fda5d97c2d655", file);
+  // The analyzer property must hold for any large historical revision of the
+  // server file; resolve the newest one instead of pinning a single repo's
+  // hash (private and public histories graft to different commit ids).
+  const file = "apps/web/server/index.mjs";
+  const history = git(root, ["log", "--format=%H", "--", file]).trim().split("\n");
+  const anchor = history.find(id => sourceAt(root, id, file).split("\n").length > 1000)!;
+  const before = sourceAt(root, anchor, file);
   expect(before.split("\n").length).toBeGreaterThan(1000);
-  expect(before.startsWith('import http from "node:http";')).toBe(true);
-  const after = before.replace('import http from "node:http";', 'import http from "http";\n');
+  // The unrelated-line edit targets whatever line currently carries the http
+  // import; its exact position drifted across eras of the server file.
+  const lines = before.split("\n");
+  const importLine = lines.findIndex(line => line === 'import http from "node:http";');
+  expect(importLine).toBeGreaterThanOrEqual(0);
+  lines[importLine] = 'import http from "http";';
+  const after = lines.join("\n");
   const analyze = await createAnalyzer(root),
     previous = await analyze(file, before),
     current = await analyze(file, after);
