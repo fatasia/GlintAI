@@ -66,6 +66,34 @@ it.skipIf(!browserGated)("renders export-copy brand colors consistently in PNG, 
   expect(strFromU8(archive["ppt/slides/slide1.xml"]!)).toContain('val="E0533D"');
   expect(JSON.stringify(source)).toBe(before);
 }, 120_000);
+it.skipIf(!browserGated)("S-04: zip manifest lists asset dependencies with sha256 and the pack reopens away from its origin", async () => {
+  const exporter = createDesignExporter({ outputDir: root });
+  const zip = await exporter.run({ document, format: "zip" });
+  const entries = unzipSync(await fs.readFile(zip.path));
+  const manifest = JSON.parse(strFromU8(entries["export-manifest.json"]!));
+  expect(manifest.version).toBe(1);
+  expect(manifest.pages).toHaveLength(2);
+  for (const asset of manifest.assets) {
+    const bytes = entries[asset.file]!;
+    expect(bytes).toBeTruthy();
+    const digest = await (async () => { const subtle = globalThis.crypto.subtle; const buf = await subtle.digest("SHA-256", bytes); return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join(""); })();
+    expect(digest).toBe(asset.sha256);
+  }
+  // Reopening depends only on the pack: the embedded document.json parses as the same
+  // design document and the portable pages are self-contained (no network refs).
+  const reopened = JSON.parse(strFromU8(entries["document.json"]!));
+  expect(reopened.id).toBe(document.id);
+  expect(reopened.pages).toHaveLength(2);
+  for (const page of manifest.pages) {
+    const portable = strFromU8(entries[page.portable]!);
+    // Self-contained: every resource travels inside the pack (inline or assets/).
+    expect(portable).not.toMatch(/(?:src|href)\s*=\s*["']https?:\/\//);
+  }
+  // HTML export keeps every resource inline: no network references at all (40).
+  const html = await exporter.run({ document, format: "html" });
+  const output = await fs.readFile(html.path, "utf8");
+  expect(output).not.toMatch(/(?:src|href)\s*=\s*["']https?:\/\//);
+}, 120_000);
 it("captures untrusted scripts, SVG and CSS without any outbound request or local file disclosure", async () => {
   let requests = 0;
   const server = createServer((_req, res) => { requests++; res.end("UNSAFE_NETWORK_CONTENT"); });
