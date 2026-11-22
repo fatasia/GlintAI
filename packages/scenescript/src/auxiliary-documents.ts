@@ -25,6 +25,13 @@ const annotation = z
     createdAt: timestamp,
   })
   .strict();
+// S-03 page transitions: same shape the web editor authors (120–1200ms integer range).
+const pageTransition = z
+  .object({
+    type: z.enum(["none", "fade", "push", "wipe", "zoom"]),
+    durationMs: z.number().int().min(120).max(1200),
+  })
+  .strict();
 const page = z
   .object({
     id,
@@ -32,6 +39,8 @@ const page = z
     html: z.string().max(1024 * 1024),
     notes: z.string().optional(),
     annotations: z.array(annotation).max(200).optional(),
+    transition: pageTransition.optional(),
+    stepReveal: z.boolean().optional(),
   })
   .strict()
   .superRefine((value, ctx) => {

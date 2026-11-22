@@ -4,7 +4,15 @@ import { executionBindings, executionRequest, type ExecutionQuote } from "./medi
 import { buildSubmissionInput, compositeMaskedPixels, dataUrlBytes, libraryAssetName, maskDiffStats, maskIsEmpty, sha256Hex, type MaskStats, type Rgba } from "./design-mask-edit";
 import { optimizeDesignImage } from "./design-image-optimize";
 
-const storageKey = (projectId: string) => `glint.design-mask:${projectId}`;
+// Per-image restore scope: a key without the source would restore strokes onto a
+// different picture after the page image changed between sessions. FNV-1a is
+// sufficient for a storage namespace (not a cryptographic context).
+const imageFingerprint = (imageSrc: string) => {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < imageSrc.length; i++) { hash ^= imageSrc.charCodeAt(i); hash = Math.imul(hash, 0x01000193); }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+};
+const storageKey = (projectId: string, imageSrc: string) => `glint.design-mask:${projectId}:${imageFingerprint(imageSrc)}`;
 const BRUSH_SIZES = [8, 24, 48];
 const PAGE_COPY_LIMIT = 512 * 1024;
 type Stroke = { points: Array<[number, number]>; erase: boolean };
@@ -58,7 +66,7 @@ export function DesignMaskEditor({ projectId, imageSrc, onClose, onAdopt, onNoti
   // Restore an in-flight task (and its strokes) so a reload never causes a double submission.
   useEffect(() => {
     let saved: Saved | null = null;
-    try { saved = JSON.parse(localStorage.getItem(storageKey(projectId)) ?? "null") as Saved | null; } catch { /* optional */ }
+    try { saved = JSON.parse(localStorage.getItem(storageKey(projectId, imageSrc)) ?? "null") as Saved | null; } catch { /* optional */ }
     if (saved && Array.isArray(saved.strokes)) {
       setStrokes(saved.strokes); setPrompt(saved.prompt ?? ""); setSize(saved.size || BRUSH_SIZES[1]!); setBindingId(saved.bindingId ?? "");
       if (saved.requestId && saved.taskId) void resume(saved.requestId, saved.taskId);
@@ -146,7 +154,7 @@ export function DesignMaskEditor({ projectId, imageSrc, onClose, onAdopt, onNoti
     try {
       await executionRequest("approve", { quoteId: quote.id, requestId, capCny: Number(cap), confirmed: true });
       const started = await executionRequest<{ taskId: string }>("submit", { ...input, quoteId: quote.id, requestId });
-      try { localStorage.setItem(storageKey(projectId), JSON.stringify({ requestId, taskId: started.taskId, strokes, prompt, bindingId, size } satisfies Saved)); } catch { /* optional */ }
+      try { localStorage.setItem(storageKey(projectId, imageSrc), JSON.stringify({ requestId, taskId: started.taskId, strokes, prompt, bindingId, size } satisfies Saved)); } catch { /* optional */ }
       setQuote(null); setTask({ requestId, taskId: started.taskId }); setPhase("running"); setStatus("已提交…");
       void poll(started.taskId);
     } catch (failure) { setError(failure instanceof Error ? failure.message : "提交失败；未批准的任务不会执行。"); }
@@ -164,7 +172,7 @@ export function DesignMaskEditor({ projectId, imageSrc, onClose, onAdopt, onNoti
       if (blob.size > PAGE_COPY_LIMIT) blob = await optimizeDesignImage(blob);
       onAdopt(await blobDataUrl(blob));
       if (!full.ok) onNotice("完整分辨率合成未能存入素材库；页面已使用压缩副本。");
-      try { localStorage.removeItem(storageKey(projectId)); } catch { /* optional */ }
+      try { localStorage.removeItem(storageKey(projectId, imageSrc)); } catch { /* optional */ }
     } catch (failure) { setError(failure instanceof Error ? failure.message : "采纳失败，页面未修改。"); }
   }
   function undoStroke() { setStrokes(current => current.slice(0, -1)); }
@@ -217,7 +225,7 @@ export function DesignMaskEditor({ projectId, imageSrc, onClose, onAdopt, onNoti
           <small>像素统计：掩膜外 {result.stats.outsideChangedPixels} / {result.stats.outsidePixels} 像素变化（最大 {result.stats.maxOutsideDelta}），掩膜内 {result.stats.insideChangedPixels} / {result.stats.insidePixels} 像素变化（平均 {result.stats.meanInsideDelta}）。</small>
           <div className="design-mask-actions">
             <button type="button" className="design-primary" onClick={() => void adopt()}>采纳并替换页面图片</button>
-            <button type="button" onClick={() => { setResult(null); setPhase("paint"); setStatus(""); try { localStorage.removeItem(storageKey(projectId)); } catch { /* optional */ } }}>放弃候选</button>
+            <button type="button" onClick={() => { setResult(null); setPhase("paint"); setStatus(""); try { localStorage.removeItem(storageKey(projectId, imageSrc)); } catch { /* optional */ } }}>放弃候选</button>
           </div>
         </section>}
         {error && <p role="alert" className="design-mask-error">{error}</p>}
