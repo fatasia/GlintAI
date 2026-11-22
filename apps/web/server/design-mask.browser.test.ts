@@ -22,6 +22,9 @@ it.skipIf(process.env.GLINT_BROWSER_UI_TEST !== "1" || !available)("paints a mas
   process.env.GLINT_DATA_DIR = dataDir;
 
   let opened: Awaited<ReturnType<typeof openCaptureBrowser>> | undefined, server: Server | undefined;
+  let shippedIndex: Buffer | undefined;
+  const precompressed = new Map<string, Buffer>();
+  let distDir = "";
   try {
     const red = path.join(root, "red.png"), blue = path.join(root, "blue.png");
     await runMediaProcess("ffmpeg", ["-nostdin", "-v", "error", "-f", "lavfi", "-i", "color=c=red:s=64x64:r=1", "-frames:v", "1", "-threads", "1", red]);
@@ -42,7 +45,13 @@ it.skipIf(process.env.GLINT_BROWSER_UI_TEST !== "1" || !available)("paints a mas
     const pageHtml = `<!doctype html><html><head><style>body{margin:0;background:white;padding:40px;font:24px sans-serif}</style></head><body><h1 data-design-id="head">掩膜演示</h1><img data-design-id="hero" src="${redDataUrl}" alt="页面图片"></body></html>`;
     const doc = { version: 1, projectId: "mask-project", activeId: "site", documents: [{ id: "site", title: "掩膜页", kind: "page", activePageId: "one", updatedAt: 0, pages: [{ id: "one", title: "掩膜页", html: pageHtml }] }] };
     // The server caches index.html at startup: the harness entry files must exist before it starts.
-    const distDir = process.env.GLINT_TEST_WEB_DIST ?? fileURLToPath(new URL("../dist", import.meta.url));
+    // distDir is SHARED across the whole verify-browser run: snapshot the shipped entry
+    // and restore it, or every later browser file in the same run would boot this harness.
+    distDir = process.env.GLINT_TEST_WEB_DIST ?? fileURLToPath(new URL("../dist", import.meta.url));
+    shippedIndex = fs.readFileSync(path.join(distDir, "index.html"));
+    for (const variant of ["index.html.br", "index.html.gz"]) {
+      try { precompressed.set(variant, fs.readFileSync(path.join(distDir, variant))); } catch { /* variant absent */ }
+    }
     const bundle = await build({ stdin: { contents: `import React from'react';import{createRoot}from'react-dom/client';import{DesignEditor}from'./DesignEditor';import'./app-theme.css';if(!localStorage.getItem('glint.project-designs.v1:mask-project'))localStorage.setItem('glint.project-designs.v1:mask-project',${JSON.stringify(JSON.stringify(doc))});createRoot(document.getElementById('app')).render(<DesignEditor projectId="mask-project"/>);`, resolveDir: fileURLToPath(new URL("../src", import.meta.url)), loader: "tsx" }, bundle: true, write: false, format: "iife", platform: "browser", jsx: "automatic", outdir: "harness" });
     for (const file of bundle.outputFiles) {
       const name = file.path.endsWith(".css") ? "harness.css" : "harness.js";
@@ -209,6 +218,12 @@ it.skipIf(process.env.GLINT_BROWSER_UI_TEST !== "1" || !available)("paints a mas
     const realRoot = fs.realpathSync(root), realTemp = fs.realpathSync(os.tmpdir());
     if (path.dirname(realRoot) !== realTemp || !path.basename(realRoot).startsWith("glint-mask-browser-")) throw new Error("Unexpected temporary test directory");
     fs.rmSync(realRoot, { recursive: true, force: true });
+    // Restore the shared dist entry so later files in the same run serve the real app.
+    if (shippedIndex) {
+      for (const name of ["harness.js", "harness.css"]) fs.rmSync(path.join(distDir, name), { force: true });
+      fs.writeFileSync(path.join(distDir, "index.html"), shippedIndex);
+      for (const [variant, bytes] of precompressed) fs.writeFileSync(path.join(distDir, variant), bytes);
+    }
     delete process.env.GLINT_DATA_DIR;
   }
 }, 120_000);

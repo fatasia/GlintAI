@@ -19,7 +19,11 @@ export function compositeMaskedPixels(original: Rgba, generated: Rgba, mask: Rgb
   if (mask.width !== original.width || mask.height !== original.height) throw new Error("掩膜尺寸与原图不一致。");
   const data = new Uint8ClampedArray(original.data.length);
   for (let i = 0; i < data.length; i += 4) {
-    const weight = luminance(mask.data[i]!, mask.data[i + 1]!, mask.data[i + 2]!);
+    // Sub-threshold antialiased brush edges must not tint the kept region at all:
+    // weight 0 makes "outside the mask stays byte-exact" true by construction, not
+    // by rounding luck. Inside the mask the luminance still grades the blend.
+    const raw = luminance(mask.data[i]!, mask.data[i + 1]!, mask.data[i + 2]!);
+    const weight = raw < MASK_EDGES ? 0 : raw;
     for (let channel = 0; channel < 3; channel++) {
       const kept = original.data[i + channel]!, edited = generated.data[i + channel]!;
       data[i + channel] = clamp8((kept * (255 - weight) + edited * weight) / 255);

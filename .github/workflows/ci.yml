@@ -34,8 +34,9 @@ jobs:
         run: node scripts/prepare-ci-fixtures.mjs runtime
         env:
           GLINT_CHROME_PATH: /usr/bin/google-chrome
+      # check:evidence is a private-tree discipline tool (evidence/ is deny-listed
+      # from the public tree), so the public verify job cannot run it.
       - run: pnpm verify:source
-      - run: pnpm check:evidence
       - run: pnpm check:ui
       - run: pnpm check:tests
       - run: pnpm test:scripts
