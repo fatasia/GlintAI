@@ -23,13 +23,20 @@ export function presentTransition(page: Pick<DesignPage, "transition">): DesignT
   const transition = resolvePageTransition(page);
   return transition && transition.type !== "none" ? transition : undefined;
 }
-export type SceneTransition = { in: "fade" | "slide-left" | "wipe" | "zoom-punch"; durationMs: number };
-/** Video scenes always had an entrance; unset pages keep the shipped fade, explicit none removes it. */
+export type SceneTransition = { in: "fade" | "slide-left" | "wipe" | "zoom-punch"; durationMs: number; overlapMs?: number };
+/**
+ * Video scenes always had an entrance; unset pages keep the shipped fade, explicit
+ * none removes it. Explicit transitions cross-dissolve 500ms into the previous page
+ * (S-03b): the timeline clamps overlap to 200ms clear of either neighbor, and unset
+ * pages keep the legacy hard-cut-with-fade so accepted exports stay byte-stable.
+ */
 export function sceneTransitionFor(page: Pick<DesignPage, "transition">): SceneTransition | undefined {
-  const transition = resolvePageTransition(page) ?? DESIGN_VIDEO_FALLBACK;
+  const explicit = resolvePageTransition(page);
+  const transition = explicit ?? DESIGN_VIDEO_FALLBACK;
   const map: Record<DesignTransitionType, SceneTransition["in"] | undefined> = { none: undefined, fade: "fade", push: "slide-left", wipe: "wipe", zoom: "zoom-punch" };
   const type = map[transition.type];
-  return type ? { in: type, durationMs: transition.durationMs } : undefined;
+  if (!type) return undefined;
+  return { in: type, durationMs: transition.durationMs, ...(explicit ? { overlapMs: 500 } : {}) };
 }
 const EASE = "cubic-bezier(.45,0,.25,1)";
 /** Keyframes live on wrapper elements: the incoming page sits on top of the frozen outgoing page. */

@@ -33,11 +33,13 @@ describe("delivery mapping", () => {
     expect(presentTransition(page({ transition: { type: "wipe", durationMs: 800 } }))).toEqual({ type: "wipe", durationMs: 800 });
   });
   it("video: absent keeps the shipped fade default; none removes; types map to scenescript", () => {
+    // Absent = legacy hard-cut-with-fade (accepted exports stay stable); explicit
+    // transitions cross-dissolve 500ms into the previous page (S-03b).
     expect(sceneTransitionFor(page())).toEqual({ in: "fade", durationMs: 300 });
     expect(sceneTransitionFor(page({ transition: { type: "none", durationMs: 300 } }))).toBeUndefined();
-    expect(sceneTransitionFor(page({ transition: { type: "push", durationMs: 600 } }))).toEqual({ in: "slide-left", durationMs: 600 });
-    expect(sceneTransitionFor(page({ transition: { type: "zoom", durationMs: 400 } }))).toEqual({ in: "zoom-punch", durationMs: 400 });
-    expect(sceneTransitionFor(page({ transition: { type: "wipe", durationMs: 1200 } }))).toEqual({ in: "wipe", durationMs: 1200 });
+    expect(sceneTransitionFor(page({ transition: { type: "push", durationMs: 600 } }))).toEqual({ in: "slide-left", durationMs: 600, overlapMs: 500 });
+    expect(sceneTransitionFor(page({ transition: { type: "zoom", durationMs: 400 } }))).toEqual({ in: "zoom-punch", durationMs: 400, overlapMs: 500 });
+    expect(sceneTransitionFor(page({ transition: { type: "wipe", durationMs: 1200 } }))).toEqual({ in: "wipe", durationMs: 1200, overlapMs: 500 });
   });
 });
 
