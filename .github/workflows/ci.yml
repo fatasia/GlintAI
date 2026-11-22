@@ -35,8 +35,10 @@ jobs:
         env:
           GLINT_CHROME_PATH: /usr/bin/google-chrome
       - run: pnpm verify:source
+      - run: pnpm check:evidence
       - run: pnpm check:ui
       - run: pnpm check:tests
+      - run: pnpm test:scripts
       - run: pnpm typecheck
       - run: pnpm test
       - run: python3 scripts/test-qwen-text.py
@@ -88,7 +90,7 @@ jobs:
   browser-core:
     # Local fixtures only: no provider credentials, model calls or historical style videos.
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       GLINT_CHROME_PATH: /usr/bin/google-chrome
     steps:
@@ -114,6 +116,13 @@ jobs:
           apps/web/server/reference-adoption.browser.test.ts
           apps/web/server/design-editor-bridge.browser.test.ts
           apps/web/server/design-export.browser.test.ts
+          apps/web/server/design-navigation.browser.test.ts
+          apps/web/server/design-transition.browser.test.ts
+          apps/web/server/design-mask.browser.test.ts
+          apps/web/server/design-edit-16-20.browser.test.ts
+          apps/web/server/design-signoff-6-8-27.browser.test.ts
+          apps/web/server/container-graph.browser.test.ts
+          apps/web/server/container-v2.browser.test.ts
           apps/web/server/project-git-workspace.browser.test.ts
           apps/desktop/scripts/legacy-origin-export.browser.test.ts
 
