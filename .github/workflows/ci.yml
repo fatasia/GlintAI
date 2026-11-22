@@ -121,6 +121,7 @@ jobs:
           apps/web/server/design-mask.browser.test.ts
           apps/web/server/design-edit-16-20.browser.test.ts
           apps/web/server/design-signoff-6-8-27.browser.test.ts
+          apps/web/server/design-review.browser.test.ts
           apps/web/server/container-graph.browser.test.ts
           apps/web/server/container-v2.browser.test.ts
           apps/web/server/project-git-workspace.browser.test.ts
