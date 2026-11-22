@@ -7,7 +7,7 @@ const slowScale = process.env.GLINT_CI_SLOW ? 3 : 1;
 
 export default defineConfig({
   test: {
-    include: ["packages/*/src/**/*.test.ts", "apps/studio/scripts/**/*.test.ts", "apps/web/**/*.test.ts", "apps/desktop/scripts/**/*.test.ts"],
+    include: ["packages/*/src/**/*.test.{ts,tsx}", "apps/studio/scripts/**/*.test.{ts,tsx}", "apps/web/**/*.test.{ts,tsx}", "apps/desktop/scripts/**/*.test.{ts,tsx}"],
     environment: "node",
     testTimeout: 5_000 * slowScale,
     hookTimeout: 10_000 * slowScale,
